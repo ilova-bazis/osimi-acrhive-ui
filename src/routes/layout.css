@@ -1,2 +1,39 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:wght@400;500;600;700&family=Manrope:wght@300;400;500;600;700&display=swap');
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
+
+:root {
+	--burnt-peach: #dd6e42;
+	--pearl-beige: #e8dab2;
+	--blue-slate: #4f6d7a;
+	--pale-sky: #c0d6df;
+	--alabaster-grey: #eaeaea;
+	--surface-white: #ffffff;
+	--text-ink: #1f2933;
+	--text-muted: #4b5563;
+	--border-soft: rgba(79, 109, 122, 0.25);
+	--border-strong: rgba(79, 109, 122, 0.45);
+	--font-display: 'Fraunces', serif;
+	--font-body: 'Manrope', sans-serif;
+	--font-scale: 1;
+}
+
+@layer base {
+	html {
+		font-size: calc(16px * var(--font-scale, 1));
+	}
+	body {
+		font-family: var(--font-body);
+		background: var(--alabaster-grey);
+		color: var(--text-ink);
+	}
+}
+
+@layer utilities {
+	.font-display {
+		font-family: var(--font-display);
+	}
+	.font-body {
+		font-family: var(--font-body);
+	}
+}
