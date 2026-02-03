@@ -6,11 +6,14 @@
 	--palette-burnt-peach: 221 110 66;
 	--palette-pearl-beige: 232 218 178;
 	--palette-blue-slate: 79 109 122;
+	--palette-blue-slate-mid-dark: 44 63 74;
+	--palette-blue-slate-deep: 31 47 56;
 	--palette-pale-sky: 192 214 223;
 	--palette-alabaster-grey: 234 234 234;
 	--palette-surface-white: 255 255 255;
 	--palette-text-ink: 31 41 51;
 	--palette-text-muted: 75 85 99;
+	--palette-dark-grey: 44 44 44;
 
 	--burnt-peach: rgb(var(--palette-burnt-peach));
 	--pearl-beige: rgb(var(--palette-pearl-beige));

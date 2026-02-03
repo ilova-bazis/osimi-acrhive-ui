@@ -13,18 +13,18 @@
 </script>
 
 <div class="min-h-screen bg-alabaster-grey text-text-ink">
-	<main class="mx-auto flex min-h-screen max-w-4xl flex-col justify-center gap-8 px-6 py-12 lg:flex-row lg:items-center">
-		<section class="flex-1 space-y-5">
+	<main class="mx-auto grid min-h-screen max-w-5xl grid-cols-1 gap-8 px-6 py-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:py-16">
+		<section class="order-2 space-y-6 lg:order-1">
 			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Osimi Digital Library</p>
 			<h1 class="font-display text-3xl text-burnt-peach">Authorized Access</h1>
-			<p class="max-w-md text-sm text-text-muted">
+			<p class="max-w-lg text-sm text-text-muted">
 				This interface is reserved for authorized archivists. Sign in to continue the ingestion workflow.
 			</p>
-			<div class="rounded-2xl border border-border-soft bg-surface-white p-5">
+			<div class="max-w-md rounded-2xl border border-border-soft bg-surface-white/70 p-4">
 				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Demo credentials</p>
-				<div class="mt-4 space-y-3 text-sm">
+				<div class="mt-3 grid gap-2 text-xs sm:grid-cols-2">
 					{#each demoAccounts as account (account.role)}
-						<div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border-soft bg-pale-sky/20 px-3 py-2">
+						<div class="flex items-center justify-between gap-2 rounded-xl border border-border-soft bg-pale-sky/20 px-3 py-2">
 							<span class="text-blue-slate">{account.role}</span>
 							<span class="text-text-ink">{account.username}:{account.password}</span>
 						</div>
@@ -33,7 +33,7 @@
 			</div>
 		</section>
 
-		<section class="flex w-full max-w-md flex-1 flex-col gap-4 rounded-2xl border border-border-soft bg-surface-white p-6">
+		<section class="order-1 flex w-full flex-col gap-4 rounded-2xl border border-border-soft bg-surface-white p-6 shadow-[0_18px_45px_rgba(79,109,122,0.15)] lg:order-2">
 			<div>
 				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Sign in</p>
 				<h2 class="mt-2 font-display text-2xl text-text-ink">Continue to ingestion</h2>
