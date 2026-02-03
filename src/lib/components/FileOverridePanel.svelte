@@ -11,30 +11,30 @@
 	}>();
 </script>
 
-<div class="rounded-2xl border border-[var(--border-soft)] bg-[var(--surface-white)] px-6 py-5">
-	<p class="text-xs uppercase tracking-[0.2em] text-[var(--blue-slate)]">{title}</p>
-	<p class="mt-1 text-sm text-[var(--text-muted)]">{subtitle}</p>
-	<div class="mt-4 space-y-3 text-sm text-[var(--text-ink)]">
-		{#each fields as field}
+<div class="rounded-2xl border border-border-soft bg-surface-white px-6 py-5">
+	<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{title}</p>
+	<p class="mt-1 text-sm text-text-muted">{subtitle}</p>
+	<div class="mt-4 space-y-3 text-sm text-text-ink">
+		{#each fields as field (field.label)}
 			<div class="flex items-center justify-between">
 				<span>{field.label}</span>
-				<span class="text-[var(--blue-slate)]">{field.value}</span>
+				<span class="text-blue-slate">{field.value}</span>
 			</div>
 		{/each}
 		<div class="flex flex-wrap gap-2">
-			{#each badges as badge}
+			{#each badges as badge (badge.label)}
 				<Chip
 					class={
 						badge.tone === 'attention'
-							? 'border-[var(--border-soft)] bg-[rgba(232,218,178,0.45)] text-[var(--burnt-peach)]'
-							: 'border-[var(--border-soft)] bg-[rgba(192,214,223,0.25)] text-[var(--blue-slate)]'
+							? 'border-border-soft bg-pearl-beige/45 text-burnt-peach'
+							: 'border-border-soft bg-pale-sky/25 text-blue-slate'
 					}
 				>
 					{badge.label}
 				</Chip>
 			{/each}
 		</div>
-		<p class="rounded-xl border border-[rgba(232,218,178,0.7)] bg-[rgba(232,218,178,0.55)] p-3 text-xs text-[var(--text-muted)]">
+		<p class="rounded-xl border border-pearl-beige/70 bg-pearl-beige/55 p-3 text-xs text-text-muted">
 			{note}
 		</p>
 	</div>

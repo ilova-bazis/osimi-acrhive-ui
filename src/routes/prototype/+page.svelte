@@ -109,7 +109,7 @@
 	$: overrideNote = selectedItem?.notes ?? t('overrides.note', dictionary);
 </script>
 
-<div class="min-h-screen bg-[var(--alabaster-grey)] text-[var(--text-ink)]">
+<div class="min-h-screen bg-alabaster-grey text-text-ink">
 	<PageHeader
 		library={t('header.library', dictionary)}
 		title={t('app.title', dictionary)}

@@ -30,7 +30,7 @@
 		onTextSizeChange={(value) => (textSize = value)}
 	/>
 	<div class="mx-auto flex max-w-3xl flex-col gap-3 px-6 py-10">
-		<h2 class="font-display text-2xl text-[var(--burnt-peach)]">PageHeader</h2>
-		<p class="text-sm text-[var(--text-muted)]">Interactive header with locale + text size controls.</p>
+		<h2 class="font-display text-2xl text-burnt-peach">PageHeader</h2>
+		<p class="text-sm text-text-muted">Interactive header with locale + text size controls.</p>
 	</div>
 </section>

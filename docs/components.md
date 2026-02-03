@@ -9,6 +9,19 @@ used on the `/prototype` route and serve as the reference layout for future UI w
 - The prototype assembly lives in `src/routes/prototype/+page.svelte`.
 - UI strings are sourced from `src/lib/i18n/translations.ts`.
 
+## Services (Data Sources)
+
+This UI uses service adapters to keep data fetching separate from presentation.
+
+### DashboardService
+
+Purpose: Provide role-aware dashboard summary data. Swappable for API-backed implementation.
+
+Location:
+- Interface: `src/lib/services/dashboard.ts`
+- Mock implementation: `src/lib/services/mockDashboardService.ts`
+- Adapter export: `src/lib/services/index.ts`
+
 ## Layout Components
 
 ### PageHeader
@@ -48,6 +61,30 @@ Props:
   localeLabel="UI"
   onLocaleChange={(value) => (locale = value)}
   onTextSizeChange={(value) => (textSize = value)}
+/>
+```
+
+### AppHeader
+
+Purpose: Global authenticated header with user role and logout action.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| library | string | yes | Header kicker text |
+| title | string | yes | Main title (e.g., “Dashboard”) |
+| username | string | yes | Signed-in username |
+| role | string | yes | User role label |
+| logoutLabel | string | no | Defaults to “Sign out” |
+
+```svelte
+<AppHeader
+  library="Osimi Digital Library"
+  title="Dashboard"
+  username="admin"
+  role="admin"
+  logoutLabel="Sign out"
 />
 ```
 

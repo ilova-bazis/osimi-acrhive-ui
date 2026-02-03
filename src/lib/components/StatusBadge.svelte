@@ -6,23 +6,23 @@
 	const badgeClass = () => {
 		switch (status) {
 			case 'queued':
-				return 'text-[var(--blue-slate)] border-[rgba(79,109,122,0.35)] bg-transparent';
+				return 'text-blue-slate border-blue-slate/35 bg-transparent';
 			case 'processing':
-				return 'text-[var(--blue-slate)] border-[rgba(79,109,122,0.25)] bg-[rgba(192,214,223,0.55)]';
+				return 'text-blue-slate border-blue-slate/25 bg-pale-sky/55';
 			case 'extracted':
-				return 'text-[var(--blue-slate)] border-[rgba(79,109,122,0.25)] bg-[rgba(192,214,223,0.75)]';
+				return 'text-blue-slate border-blue-slate/25 bg-pale-sky/75';
 			case 'needs-review':
-				return 'text-[var(--burnt-peach)] border-[rgba(221,110,66,0.45)] bg-[rgba(232,218,178,0.75)]';
+				return 'text-burnt-peach border-burnt-peach/45 bg-pearl-beige/75';
 			case 'approved':
-				return 'text-[var(--blue-slate)] border-[rgba(79,109,122,0.25)] bg-[rgba(192,214,223,0.6)]';
+				return 'text-blue-slate border-blue-slate/25 bg-pale-sky/60';
 			case 'blocked':
-				return 'text-[var(--burnt-peach)] border-[rgba(221,110,66,0.7)] bg-[rgba(232,218,178,0.6)]';
+				return 'text-burnt-peach border-burnt-peach/70 bg-pearl-beige/60';
 			case 'skipped':
-				return 'text-[rgba(79,109,122,0.85)] border-[rgba(79,109,122,0.25)] bg-[rgba(234,234,234,0.8)]';
+				return 'text-blue-slate/85 border-blue-slate/25 bg-alabaster-grey/80';
 			case 'failed':
-				return 'text-[var(--burnt-peach)] border-[rgba(221,110,66,0.55)] bg-[rgba(221,110,66,0.12)]';
+				return 'text-burnt-peach border-burnt-peach/55 bg-burnt-peach/12';
 			default:
-				return 'text-[var(--blue-slate)] border-[rgba(79,109,122,0.25)] bg-transparent';
+				return 'text-blue-slate border-blue-slate/25 bg-transparent';
 		}
 	};
 </script>

@@ -4,9 +4,9 @@
 
 <section class="min-h-[60vh]">
 	<div class="mx-auto flex max-w-3xl flex-col gap-3 px-6 py-12">
-		<p class="text-xs uppercase tracking-[0.2em] text-[var(--blue-slate)]">Component</p>
-		<h1 class="font-display text-3xl text-[var(--burnt-peach)]">FooterActions</h1>
-		<p class="text-sm text-[var(--text-muted)]">Footer with call-to-action buttons.</p>
+		<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Component</p>
+		<h1 class="font-display text-3xl text-burnt-peach">FooterActions</h1>
+		<p class="text-sm text-text-muted">Footer with call-to-action buttons.</p>
 	</div>
 	<FooterActions
 		note="Human intent confirmed. Review everything before ingestion starts."

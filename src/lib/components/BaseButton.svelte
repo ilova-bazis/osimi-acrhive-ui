@@ -14,8 +14,8 @@
 
 	const variantClass = () =>
 		variant === 'primary'
-			? 'bg-[var(--blue-slate)] text-[var(--surface-white)]'
-			: 'border border-[var(--blue-slate)] text-[var(--blue-slate)]';
+			? 'bg-blue-slate text-surface-white'
+			: 'border border-blue-slate text-blue-slate';
 </script>
 
 <button

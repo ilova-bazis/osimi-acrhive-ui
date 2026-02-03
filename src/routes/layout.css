@@ -1,22 +1,32 @@
+@config '../../tailwind.config.ts';
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:wght@400;500;600;700&family=Manrope:wght@300;400;500;600;700&display=swap');
 @import 'tailwindcss';
-@plugin '@tailwindcss/typography';
 
 :root {
-	--burnt-peach: #dd6e42;
-	--pearl-beige: #e8dab2;
-	--blue-slate: #4f6d7a;
-	--pale-sky: #c0d6df;
-	--alabaster-grey: #eaeaea;
-	--surface-white: #ffffff;
-	--text-ink: #1f2933;
-	--text-muted: #4b5563;
-	--border-soft: rgba(79, 109, 122, 0.25);
-	--border-strong: rgba(79, 109, 122, 0.45);
+	--palette-burnt-peach: 221 110 66;
+	--palette-pearl-beige: 232 218 178;
+	--palette-blue-slate: 79 109 122;
+	--palette-pale-sky: 192 214 223;
+	--palette-alabaster-grey: 234 234 234;
+	--palette-surface-white: 255 255 255;
+	--palette-text-ink: 31 41 51;
+	--palette-text-muted: 75 85 99;
+
+	--burnt-peach: rgb(var(--palette-burnt-peach));
+	--pearl-beige: rgb(var(--palette-pearl-beige));
+	--blue-slate: rgb(var(--palette-blue-slate));
+	--pale-sky: rgb(var(--palette-pale-sky));
+	--alabaster-grey: rgb(var(--palette-alabaster-grey));
+	--surface-white: rgb(var(--palette-surface-white));
+	--text-ink: rgb(var(--palette-text-ink));
+	--text-muted: rgb(var(--palette-text-muted));
+	--border-soft: rgb(var(--palette-blue-slate) / 0.25);
+	--border-strong: rgb(var(--palette-blue-slate) / 0.45);
 	--font-display: 'Fraunces', serif;
 	--font-body: 'Manrope', sans-serif;
 	--font-scale: 1;
 }
+
 
 @layer base {
 	html {
