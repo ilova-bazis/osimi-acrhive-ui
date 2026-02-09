@@ -1,11 +1,10 @@
-export type Role = 'admin' | 'archiver' | 'viewer';
+export type Role = 'admin' | 'archiver' | 'viewer' | string;
 
 export type Session = {
-	userId: string;
+	id: string;
 	username: string;
+	tenantId?: string | null;
 	role: Role;
-	issuedAt: string;
-	expiresAt: string;
 };
 
 export type Credentials = {

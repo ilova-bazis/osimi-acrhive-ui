@@ -45,6 +45,107 @@ export const translations = {
 			badgeTwo: 'Image tagging',
 			badgeThree: 'Needs human review'
 		},
+		common: {
+			cancel: 'Cancel',
+			confirm: 'Confirm',
+			confirmStart: 'Confirm & start',
+			close: 'Close',
+			remove: 'Remove',
+			startIngestion: 'Start ingestion'
+		},
+			ingestionSetup: {
+			header: {
+				kicker: 'New ingestion',
+				title: 'Batch setup',
+				subtitle: 'Draft batch {batchId} · No processing until you confirm.'
+			},
+			dropzone: {
+				label: 'Upload files',
+				headline: 'Drag files here or click to browse',
+				headlineDragging: 'Release to drop files',
+				support: 'We will stage files locally until you start ingestion.',
+				supportDragging: 'Drop to add files to the staging list.',
+				details: 'Images, PDFs, audio, video, and archives. Files stay staged until you start ingestion.',
+				browse: 'Browse files'
+			},
+			files: {
+				title: 'Files',
+				subtitle: 'Select files to override metadata and intent fields.',
+				selectedCount: 'Selected {count}',
+				empty: 'No files staged yet. Add files to begin setting metadata.'
+			},
+			fileTypes: {
+				image: 'Image',
+				photo: 'Photo',
+				pdf: 'PDF',
+				audio: 'Audio',
+				video: 'Video',
+				document: 'Document'
+			},
+			batchIntent: {
+				title: 'Batch intent',
+				description: 'Set batch defaults that apply to all files unless overridden.',
+				language: 'Default language',
+				classificationType: 'Document type',
+				tags: 'Tags',
+				pipelinePreset: 'Pipeline preset',
+				selectLanguage: 'Select language',
+				selectType: 'Select type',
+				tagsPlaceholder: 'People, places, themes'
+			},
+			languages: {
+				persian: 'Persian',
+				tajik: 'Tajik',
+				english: 'English',
+				mixed: 'Mixed / Unknown'
+			},
+			classificationTypes: {
+				document: 'Document',
+				newspaper_article: 'Newspaper article',
+				magazine_article: 'Magazine article',
+				book_chapter: 'Book chapter',
+				book: 'Book',
+				photo: 'Photo',
+				letter: 'Letter',
+				speech: 'Speech',
+				interview: 'Interview',
+				other: 'Other'
+			},
+			pipelinePresets: {
+				auto: 'Auto',
+				photos: 'Photos only (no OCR)',
+				newspapers: 'Newspapers (layout OCR + review)',
+				audioVideo: 'Audio/Video (speech-to-text)'
+			},
+			overrides: {
+				title: 'Per-file overrides',
+				subtitle: 'Overrides apply to the selected file and take precedence over batch defaults.',
+				language: 'Language',
+				classificationType: 'Document type',
+				tags: 'Tags',
+				notes: 'Notes',
+				useBatchDefault: 'Use batch default',
+				tagsPlaceholder: 'Tags for this file',
+				notesPlaceholder: 'Human context for this file',
+				emptyTitle: 'No file selected',
+				emptyBody: 'Select a file from the list to edit per-file overrides.'
+			},
+			readiness: {
+				title: 'Readiness',
+				ready: 'All required fields are filled. You can proceed to confirmation.',
+				missing: 'Language and document type are required for each file.',
+				missingCount: 'Missing fields on {count} files.'
+			},
+			confirmation: {
+				title: 'Confirm ingestion',
+				subtitle: 'Review before starting',
+				batch: 'Batch',
+				files: 'Files',
+				objects: 'Objects',
+				languages: 'Languages',
+				pipeline: 'Pipeline'
+			}
+		},
 		footer: {
 			note: 'Human intent confirmed. Review everything before ingestion starts.',
 			download: 'Download catalog.json',
@@ -120,6 +221,107 @@ export const translations = {
 			badgeOne: 'Макетный OCR',
 			badgeTwo: 'Тегирование изображений',
 			badgeThree: 'Нужна проверка'
+		},
+		common: {
+			cancel: 'Отмена',
+			confirm: 'Подтвердить',
+			confirmStart: 'Подтвердить и начать',
+			close: 'Закрыть',
+			remove: 'Удалить',
+			startIngestion: 'Начать обработку'
+		},
+		ingestionSetup: {
+			header: {
+				kicker: 'Новая загрузка',
+				title: 'Настройка партии',
+				subtitle: 'Черновик партии {batchId} · Без обработки до подтверждения.'
+			},
+			dropzone: {
+				label: 'Загрузка файлов',
+				headline: 'Перетащите файлы сюда или нажмите, чтобы выбрать',
+				headlineDragging: 'Отпустите, чтобы добавить файлы',
+				support: 'Файлы остаются локально, пока вы не начнете обработку.',
+				supportDragging: 'Отпустите, чтобы добавить файлы в список.',
+				details: 'Изображения, PDF, аудио, видео и архивы. Файлы остаются в очереди до запуска обработки.',
+				browse: 'Выбрать файлы'
+			},
+			files: {
+				title: 'Файлы',
+				subtitle: 'Выберите файлы для переопределения метаданных и намерений.',
+				selectedCount: 'Выбрано {count}',
+				empty: 'Файлы не добавлены. Загрузите файлы, чтобы начать настройку.'
+			},
+			fileTypes: {
+				image: 'Изображение',
+				photo: 'Фото',
+				pdf: 'PDF',
+				audio: 'Аудио',
+				video: 'Видео',
+				document: 'Документ'
+			},
+			batchIntent: {
+				title: 'Замысел партии',
+				description: 'Параметры партии применяются ко всем файлам, если нет переопределений.',
+				language: 'Язык по умолчанию',
+				classificationType: 'Тип документа',
+				tags: 'Теги',
+				pipelinePreset: 'Набор конвейеров',
+				selectLanguage: 'Выберите язык',
+				selectType: 'Выберите тип',
+				tagsPlaceholder: 'Люди, места, темы'
+			},
+			languages: {
+				persian: 'Персидский',
+				tajik: 'Таджикский',
+				english: 'Английский',
+				mixed: 'Смешанный / неизвестно'
+			},
+			classificationTypes: {
+				document: 'Документ',
+				newspaper_article: 'Газетная статья',
+				magazine_article: 'Журнальная статья',
+				book_chapter: 'Глава книги',
+				book: 'Книга',
+				photo: 'Фотография',
+				letter: 'Письмо',
+				speech: 'Выступление',
+				interview: 'Интервью',
+				other: 'Другое'
+			},
+			pipelinePresets: {
+				auto: 'Авто',
+				photos: 'Только фото (без OCR)',
+				newspapers: 'Газеты (макетный OCR + проверка)',
+				audioVideo: 'Аудио/видео (распознавание речи)'
+			},
+			overrides: {
+				title: 'Переопределения файла',
+				subtitle: 'Переопределения выбранного файла важнее параметров партии.',
+				language: 'Язык',
+				classificationType: 'Тип документа',
+				tags: 'Теги',
+				notes: 'Заметки',
+				useBatchDefault: 'Использовать параметры партии',
+				tagsPlaceholder: 'Теги для файла',
+				notesPlaceholder: 'Человеческий контекст для файла',
+				emptyTitle: 'Файл не выбран',
+				emptyBody: 'Выберите файл из списка, чтобы редактировать переопределения.'
+			},
+			readiness: {
+				title: 'Готовность',
+				ready: 'Все обязательные поля заполнены. Можно переходить к подтверждению.',
+				missing: 'Для каждого файла требуются язык и тип документа.',
+				missingCount: 'Не заполнены поля у {count} файлов.'
+			},
+			confirmation: {
+				title: 'Подтверждение обработки',
+				subtitle: 'Проверьте перед запуском',
+				batch: 'Партия',
+				files: 'Файлы',
+				objects: 'Объекты',
+				languages: 'Языки',
+				pipeline: 'Конвейер'
+			}
 		},
 		footer: {
 			note: 'Человеческий замысел подтвержден. Проверьте все до запуска.',

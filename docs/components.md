@@ -77,6 +77,7 @@ Props:
 | username | string | yes | Signed-in username |
 | role | string | yes | User role label |
 | logoutLabel | string | no | Defaults to “Sign out” |
+| onLogout | () => Promise<void> \| void | no | Logout callback handler |
 
 ```svelte
 <AppHeader

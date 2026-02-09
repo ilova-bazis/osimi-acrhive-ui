@@ -40,6 +40,13 @@
 		background: var(--alabaster-grey);
 		color: var(--text-ink);
 	}
+	button {
+		@apply cursor-pointer transition enabled:hover:ring-2 enabled:hover:ring-blue-slate/25 active:translate-y-[1px] active:scale-[0.99];
+		@apply disabled:cursor-not-allowed disabled:opacity-60;
+	}
+	a[role='button'] {
+		@apply cursor-pointer transition enabled:hover:ring-2 enabled:hover:ring-blue-slate/25 active:translate-y-[1px] active:scale-[0.99];
+	}
 }
 
 @layer utilities {

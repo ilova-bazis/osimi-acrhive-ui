@@ -4,13 +4,15 @@
 		title,
 		username,
 		role,
-		logoutLabel = 'Sign out'
+		logoutLabel = 'Sign out',
+		onLogout
 	} = $props<{
 		library: string;
 		title: string;
 		username: string;
 		role: string;
 		logoutLabel?: string;
+		onLogout?: () => Promise<void> | void;
 	}>();
 </script>
 
@@ -24,14 +26,13 @@
 			<div class="rounded-full border border-border-soft bg-surface-white px-4 py-2 text-xs text-blue-slate">
 				{username} · {role}
 			</div>
-			<form method="POST" action="/logout">
-				<button
-					type="submit"
-					class="rounded-full border border-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/35"
-				>
-					{logoutLabel}
-				</button>
-			</form>
+			<button
+				type="button"
+				onclick={() => onLogout?.()}
+				class="rounded-full border border-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/35"
+			>
+				{logoutLabel}
+			</button>
 		</div>
 	</div>
 </header>

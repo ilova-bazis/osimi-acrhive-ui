@@ -1,10 +1,10 @@
 <script lang="ts">
-	import type { Session } from '$lib/auth/types';
 	import type { DashboardSummary } from '$lib/services/dashboard';
+	import { session } from '$lib/auth/session';
 
-	let { data } = $props<{ data: { session: Session | null; summary: DashboardSummary } }>();
+	let { data } = $props<{ data: { summary: DashboardSummary } }>();
 
-	const displayName = data.session?.username ?? 'Guest';
+	const displayName = $derived($session?.username ?? 'Guest');
 	const summary = data.summary;
 </script>
 

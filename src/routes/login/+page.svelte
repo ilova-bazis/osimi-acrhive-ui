@@ -1,15 +1,25 @@
 <script lang="ts">
-	import type { ActionData } from './$types';
-	import { listDemoAccounts } from '$lib/auth/demoAccounts';
-
-	export let form: ActionData;
+	import { goto } from '$app/navigation';
+	import { loginWithPassword } from '$lib/auth/session';
 
 	let username = '';
 	let password = '';
+	let isSubmitting = false;
+	let errorMessage = '';
 
-	const demoAccounts = listDemoAccounts();
-
-	$: errorMessage = form?.error ?? '';
+	const handleSubmit = async (event: SubmitEvent) => {
+		event.preventDefault();
+		errorMessage = '';
+		isSubmitting = true;
+		try {
+			await loginWithPassword(username, password);
+			await goto('/');
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'Login failed';
+		} finally {
+			isSubmitting = false;
+		}
+	};
 </script>
 
 <div class="min-h-screen bg-alabaster-grey text-text-ink">
@@ -20,16 +30,8 @@
 			<p class="max-w-lg text-sm text-text-muted">
 				This interface is reserved for authorized archivists. Sign in to continue the ingestion workflow.
 			</p>
-			<div class="max-w-md rounded-2xl border border-border-soft bg-surface-white/70 p-4">
-				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Demo credentials</p>
-				<div class="mt-3 grid gap-2 text-xs sm:grid-cols-2">
-					{#each demoAccounts as account (account.role)}
-						<div class="flex items-center justify-between gap-2 rounded-xl border border-border-soft bg-pale-sky/20 px-3 py-2">
-							<span class="text-blue-slate">{account.role}</span>
-							<span class="text-text-ink">{account.username}:{account.password}</span>
-						</div>
-					{/each}
-				</div>
+			<div class="max-w-md rounded-2xl border border-border-soft bg-surface-white/70 p-4 text-xs text-text-muted">
+				Authentication is handled by the backend. Use your assigned credentials to continue.
 			</div>
 		</section>
 
@@ -39,7 +41,7 @@
 				<h2 class="mt-2 font-display text-2xl text-text-ink">Continue to ingestion</h2>
 				<p class="mt-2 text-sm text-text-muted">Use one of the demo accounts to test roles.</p>
 			</div>
-			<form class="space-y-4" method="POST">
+			<form class="space-y-4" onsubmit={handleSubmit}>
 				<div class="space-y-2">
 					<label class="text-xs uppercase tracking-[0.2em] text-blue-slate" for="username">
 						Username
@@ -75,9 +77,10 @@
 				{/if}
 				<button
 					type="submit"
+					disabled={isSubmitting}
 					class="w-full rounded-xl bg-blue-slate px-4 py-3 text-sm font-medium text-surface-white transition hover:opacity-90"
 				>
-					Sign in
+					{isSubmitting ? 'Signing in...' : 'Sign in'}
 				</button>
 			</form>
 			<p class="text-xs text-text-muted">
