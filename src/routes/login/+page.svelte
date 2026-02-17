@@ -1,25 +1,10 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { loginWithPassword } from '$lib/auth/session';
+	let { form } = $props<{ form?: { error?: string; username?: string } }>();
 
-	let username = '';
-	let password = '';
-	let isSubmitting = false;
-	let errorMessage = '';
-
-	const handleSubmit = async (event: SubmitEvent) => {
-		event.preventDefault();
-		errorMessage = '';
-		isSubmitting = true;
-		try {
-			await loginWithPassword(username, password);
-			await goto('/');
-		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'Login failed';
-		} finally {
-			isSubmitting = false;
-		}
-	};
+	let username = $state('');
+	let password = $state('');
+	let isSubmitting = $state(false);
+	const errorMessage = $derived(form?.error ?? '');
 </script>
 
 <div class="min-h-screen bg-alabaster-grey text-text-ink">
@@ -41,7 +26,7 @@
 				<h2 class="mt-2 font-display text-2xl text-text-ink">Continue to ingestion</h2>
 				<p class="mt-2 text-sm text-text-muted">Use one of the demo accounts to test roles.</p>
 			</div>
-			<form class="space-y-4" onsubmit={handleSubmit}>
+			<form class="space-y-4" method="POST" onsubmit={() => (isSubmitting = true)}>
 				<div class="space-y-2">
 					<label class="text-xs uppercase tracking-[0.2em] text-blue-slate" for="username">
 						Username

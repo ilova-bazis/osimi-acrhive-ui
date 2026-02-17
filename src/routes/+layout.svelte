@@ -2,38 +2,23 @@
 	import './layout.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
-	import { loadSession, logoutSession, session, sessionLoading } from '$lib/auth/session';
+	import { session, setSession } from '$lib/auth/session';
+	import type { Session } from '$lib/auth/types';
 
-	let { children } = $props<{ children: () => unknown }>();
+	let { children, data } = $props<{ children: () => unknown; data: { session: Session | null } }>();
 
 	const isPublicRoute = (pathname: string) =>
 		pathname === '/login' || pathname.startsWith('/login/') || pathname === '/prototype' || pathname.startsWith('/prototype/');
 
-	const enforceRouteAccess = async () => {
-		const pathname = $page.url.pathname;
-		if (!isPublicRoute(pathname) && !$session && !$sessionLoading) {
-			await goto('/login');
-		}
-		if (pathname === '/login' && $session) {
-			await goto('/');
-		}
-	};
-
-	onMount(async () => {
-		await loadSession();
-		await enforceRouteAccess();
-	});
-
 	$effect(() => {
-		enforceRouteAccess();
+		setSession(data.session);
 	});
 
 	const handleLogout = async () => {
-		await logoutSession();
-		await goto('/login');
+		await fetch('/auth/logout', { method: 'POST' });
+		setSession(null);
+		window.location.href = '/login';
 	};
 </script>
 
