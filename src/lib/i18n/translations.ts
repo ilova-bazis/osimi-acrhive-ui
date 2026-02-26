@@ -66,13 +66,24 @@ export const translations = {
 				support: 'We will stage files locally until you start ingestion.',
 				supportDragging: 'Drop to add files to the staging list.',
 				details: 'Images, PDFs, audio, video, and archives. Files stay staged until you start ingestion.',
-				browse: 'Browse files'
+				browse: 'Browse files',
+				unlockedType: 'Batch type unlocks from the first accepted file. Supported formats: {supportedFormats}.',
+				lockedType: 'Batch locked to {mediaType}. Allowed formats: {supportedFormats}.'
 			},
 			files: {
 				title: 'Files',
 				subtitle: 'Select files to override metadata and intent fields.',
 				selectedCount: 'Selected {count}',
-				empty: 'No files staged yet. Add files to begin setting metadata.'
+				empty: 'No files staged yet. Add files to begin setting metadata.',
+				batchType: 'Batch type: {mediaType}',
+				retryUpload: 'Retry upload',
+				cancelUpload: 'Cancel upload',
+				removing: 'Removing...',
+				cannotRemoveCommitted: 'Cannot remove committed file.',
+				removeFailed: 'Failed to remove file.',
+				typeMismatch: 'Only {expectedType} files are allowed in this batch. Rejected: {rejected}.',
+				unsupportedFormats: 'Unsupported format for this batch. Rejected: {rejected}. Supported formats: {supportedFormats}.',
+				expectedTypeFallback: 'the locked batch type'
 			},
 			fileTypes: {
 				image: 'Image',
@@ -94,6 +105,9 @@ export const translations = {
 				tagsPlaceholder: 'People, places, themes'
 			},
 			languages: {
+				en: 'English',
+				fa: 'Persian',
+				tg: 'Tajik',
 				persian: 'Persian',
 				tajik: 'Tajik',
 				english: 'English',
@@ -113,6 +127,12 @@ export const translations = {
 			},
 			pipelinePresets: {
 				auto: 'Auto',
+				none: 'None',
+				ocr_text: 'OCR text',
+				audio_transcript: 'Audio transcript',
+				video_transcript: 'Video transcript',
+				ocr_and_audio_transcript: 'OCR + audio transcript',
+				ocr_and_video_transcript: 'OCR + video transcript',
 				photos: 'Photos only (no OCR)',
 				newspapers: 'Newspapers (layout OCR + review)',
 				audioVideo: 'Audio/Video (speech-to-text)'
@@ -134,7 +154,9 @@ export const translations = {
 				title: 'Readiness',
 				ready: 'All required fields are filled. You can proceed to confirmation.',
 				missing: 'Language and document type are required for each file.',
-				missingCount: 'Missing fields on {count} files.'
+				missingCount: 'Missing fields on {count} files.',
+				uploading: 'Uploads are still in progress.',
+				uploadFailed: 'Some files failed to upload. Retry failed files to continue.'
 			},
 			confirmation: {
 				title: 'Confirm ingestion',
@@ -243,13 +265,24 @@ export const translations = {
 				support: 'Файлы остаются локально, пока вы не начнете обработку.',
 				supportDragging: 'Отпустите, чтобы добавить файлы в список.',
 				details: 'Изображения, PDF, аудио, видео и архивы. Файлы остаются в очереди до запуска обработки.',
-				browse: 'Выбрать файлы'
+				browse: 'Выбрать файлы',
+				unlockedType: 'Тип партии определяется первым принятым файлом. Поддерживаемые форматы: {supportedFormats}.',
+				lockedType: 'Партия зафиксирована для типа {mediaType}. Разрешенные форматы: {supportedFormats}.'
 			},
 			files: {
 				title: 'Файлы',
 				subtitle: 'Выберите файлы для переопределения метаданных и намерений.',
 				selectedCount: 'Выбрано {count}',
-				empty: 'Файлы не добавлены. Загрузите файлы, чтобы начать настройку.'
+				empty: 'Файлы не добавлены. Загрузите файлы, чтобы начать настройку.',
+				batchType: 'Тип партии: {mediaType}',
+				retryUpload: 'Повторить загрузку',
+				cancelUpload: 'Отменить загрузку',
+				removing: 'Удаление...',
+				cannotRemoveCommitted: 'Нельзя удалить уже подтвержденный файл.',
+				removeFailed: 'Не удалось удалить файл.',
+				typeMismatch: 'В этой партии разрешены только файлы типа {expectedType}. Отклонено: {rejected}.',
+				unsupportedFormats: 'Неподдерживаемый формат для этой партии. Отклонено: {rejected}. Поддерживаемые форматы: {supportedFormats}.',
+				expectedTypeFallback: 'зафиксированный тип партии'
 			},
 			fileTypes: {
 				image: 'Изображение',
@@ -271,6 +304,9 @@ export const translations = {
 				tagsPlaceholder: 'Люди, места, темы'
 			},
 			languages: {
+				en: 'Английский',
+				fa: 'Персидский',
+				tg: 'Таджикский',
 				persian: 'Персидский',
 				tajik: 'Таджикский',
 				english: 'Английский',
@@ -290,6 +326,12 @@ export const translations = {
 			},
 			pipelinePresets: {
 				auto: 'Авто',
+				none: 'Без конвейера',
+				ocr_text: 'OCR текст',
+				audio_transcript: 'Аудио транскрипт',
+				video_transcript: 'Видео транскрипт',
+				ocr_and_audio_transcript: 'OCR + аудио транскрипт',
+				ocr_and_video_transcript: 'OCR + видео транскрипт',
 				photos: 'Только фото (без OCR)',
 				newspapers: 'Газеты (макетный OCR + проверка)',
 				audioVideo: 'Аудио/видео (распознавание речи)'
@@ -311,7 +353,9 @@ export const translations = {
 				title: 'Готовность',
 				ready: 'Все обязательные поля заполнены. Можно переходить к подтверждению.',
 				missing: 'Для каждого файла требуются язык и тип документа.',
-				missingCount: 'Не заполнены поля у {count} файлов.'
+				missingCount: 'Не заполнены поля у {count} файлов.',
+				uploading: 'Загрузка файлов еще выполняется.',
+				uploadFailed: 'Часть файлов не загрузилась. Повторите загрузку для продолжения.'
 			},
 			confirmation: {
 				title: 'Подтверждение обработки',

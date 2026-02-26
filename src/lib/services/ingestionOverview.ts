@@ -1,6 +1,13 @@
-export type IngestionStatus = 'draft' | 'ingesting' | 'completed' | 'failed';
+export type IngestionStatus =
+	| 'draft'
+	| 'uploading'
+	| 'queued'
+	| 'ingesting'
+	| 'completed'
+	| 'failed'
+	| 'canceled';
 
-export type IngestionAction = 'view' | 'resume' | 'retry';
+export type IngestionAction = 'view' | 'resume' | 'retry' | 'cancel' | 'restore' | 'delete';
 
 export type IngestionBatch = {
 	id: string;
@@ -11,7 +18,7 @@ export type IngestionBatch = {
 		completed: number;
 		total: number;
 	};
-	action: IngestionAction;
+	actions: IngestionAction[];
 };
 
 export type IngestionStats = {
@@ -27,6 +34,13 @@ export type IngestionOverviewSummary = {
 	drafts: IngestionBatch[];
 };
 
+export type IngestionOverviewRequest = {
+	fetchFn: typeof fetch;
+	token: string;
+	limit?: number;
+	cursor?: string;
+};
+
 export type IngestionOverviewService = {
-	getSummary: () => Promise<IngestionOverviewSummary>;
+	getSummary: (request: IngestionOverviewRequest) => Promise<IngestionOverviewSummary>;
 };

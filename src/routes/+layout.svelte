@@ -6,10 +6,29 @@
 	import { session, setSession } from '$lib/auth/session';
 	import type { Session } from '$lib/auth/types';
 
+	type AppNavItem = {
+		label: string;
+		href: string;
+		matchPrefix?: string;
+	};
+
 	let { children, data } = $props<{ children: () => unknown; data: { session: Session | null } }>();
 
 	const isPublicRoute = (pathname: string) =>
 		pathname === '/login' || pathname.startsWith('/login/') || pathname === '/prototype' || pathname.startsWith('/prototype/');
+
+	const navItems: AppNavItem[] = [
+		{ label: 'Dashboard', href: '/' },
+		{ label: 'Ingestion', href: '/ingestion', matchPrefix: '/ingestion' },
+		{ label: 'Objects', href: '/objects', matchPrefix: '/objects' }
+	];
+
+	const currentTitle = () => {
+		const path = $page.url.pathname;
+		if (path.startsWith('/ingestion')) return 'Ingestion';
+		if (path.startsWith('/objects')) return 'Objects';
+		return 'Dashboard';
+	};
 
 	$effect(() => {
 		setSession(data.session);
@@ -27,9 +46,11 @@
 {#if $session && !isPublicRoute($page.url.pathname)}
 	<AppHeader
 		library="Osimi Digital Library"
-		title="Dashboard"
+		title={currentTitle()}
 		username={$session.username}
 		role={$session.role}
+		navItems={navItems}
+		currentPath={$page.url.pathname}
 		logoutLabel="Sign out"
 		onLogout={handleLogout}
 	/>

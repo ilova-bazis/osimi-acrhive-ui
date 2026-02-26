@@ -1,4 +1,4 @@
-import type { CreateIngestionRequest, CreateIngestionResponse, IngestionNewService } from './ingestionNew';
+import type { CreateIngestionResponse, IngestionNewService } from './ingestionNew';
 
 let counter = 42;
 
@@ -12,7 +12,7 @@ const makeBatchId = () => {
 };
 
 export const mockIngestionNewService: IngestionNewService = {
-	createDraft: async (_payload: CreateIngestionRequest): Promise<CreateIngestionResponse> => ({
+	createDraft: async (): Promise<CreateIngestionResponse> => ({
 		batchId: makeBatchId()
 	})
 };

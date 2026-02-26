@@ -1,0 +1,114 @@
+import { mapObjectsList } from '$lib/api/mappers/objectsMapper';
+import { objectsListResponseSchema } from '$lib/api/schemas/objects';
+import { backendRequest } from '$lib/server/apiClient';
+import type {
+	ObjectsFilters,
+	ObjectsListResponse,
+	ObjectsService
+} from './objects';
+
+const DEFAULT_PAGE_SIZE = 25;
+const MAX_PAGE_SIZE = 200;
+
+const clampLimit = (value: number | undefined): number => {
+	if (!value || Number.isNaN(value)) return DEFAULT_PAGE_SIZE;
+	if (value < 1) return 1;
+	if (value > MAX_PAGE_SIZE) return MAX_PAGE_SIZE;
+	return value;
+};
+
+const toObjectsPath = (filters: ObjectsFilters): string => {
+	const params = new URLSearchParams();
+	const limit = clampLimit(filters.limit);
+
+	params.set('limit', String(limit));
+
+	if (filters.cursor) {
+		params.set('cursor', filters.cursor);
+	}
+
+	if (filters.sort) {
+		params.set('sort', filters.sort);
+	}
+
+	if (filters.q) {
+		params.set('q', filters.q);
+	}
+
+	if (filters.availabilityState) {
+		params.set('availability_state', filters.availabilityState);
+	}
+
+	if (filters.accessLevel) {
+		params.set('access_level', filters.accessLevel);
+	}
+
+	if (filters.language) {
+		params.set('language', filters.language);
+	}
+
+	if (filters.batchLabel) {
+		params.set('batch_label', filters.batchLabel);
+	}
+
+	if (filters.type) {
+		params.set('type', filters.type);
+	}
+
+	if (filters.from) {
+		params.set('from', filters.from);
+	}
+
+	if (filters.to) {
+		params.set('to', filters.to);
+	}
+
+	if (filters.tag) {
+		params.set('tag', filters.tag);
+	}
+
+	return `/api/objects?${params.toString()}`;
+};
+
+const fetchObjectsList = async (params: {
+	filters: ObjectsFilters;
+	fetchFn: typeof fetch;
+	token: string;
+	context: string;
+}): Promise<ObjectsListResponse> => {
+	const limit = clampLimit(params.filters.limit);
+
+	const response = await backendRequest({
+		fetchFn: params.fetchFn,
+		path: toObjectsPath(params.filters),
+		context: params.context,
+		method: 'GET',
+		token: params.token,
+		responseSchema: objectsListResponseSchema
+	});
+
+	return mapObjectsList({ response, limit });
+};
+
+export const apiObjectsService: ObjectsService = {
+	listObjects: async ({ filters, context }) =>
+		fetchObjectsList({
+			filters,
+			fetchFn: context.fetchFn,
+			token: context.token,
+			context: 'objects.list'
+		}),
+	listRecent: async ({ context, limit = 6 }) => {
+		const list = await fetchObjectsList({
+			filters: {
+				limit,
+				sort: 'created_at_desc'
+			},
+			fetchFn: context.fetchFn,
+			token: context.token,
+			context: 'objects.recent'
+		});
+
+		return list.rows;
+	}
+};

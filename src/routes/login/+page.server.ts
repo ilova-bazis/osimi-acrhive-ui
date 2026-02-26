@@ -1,9 +1,16 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
 import { loginWithBackend, setSessionCookie } from '$lib/server/auth';
+import { isTrustedOrigin } from '$lib/server/csrf';
 
 export const actions: Actions = {
 	default: async ({ request, cookies, fetch }) => {
+		if (!isTrustedOrigin(request, new URL(request.url).origin)) {
+			return fail(403, {
+				error: 'Invalid request origin.'
+			});
+		}
+
 		const data = await request.formData();
 		const username = String(data.get('username') ?? '').trim();
 		const password = String(data.get('password') ?? '').trim();

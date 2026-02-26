@@ -19,6 +19,12 @@ export type DashboardSummary = {
 	recentActivity: DashboardActivity[];
 };
 
+export type DashboardSummaryRequest = {
+	role: Role;
+	fetchFn: typeof fetch;
+	token: string;
+};
+
 export type DashboardService = {
-	getSummary: (role: Role) => Promise<DashboardSummary>;
+	getSummary: (request: DashboardSummaryRequest) => Promise<DashboardSummary>;
 };

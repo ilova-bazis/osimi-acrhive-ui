@@ -1,4 +1,4 @@
-import type { DashboardService, DashboardSummary } from './dashboard';
+import type { DashboardService, DashboardSummary, DashboardSummaryRequest } from './dashboard';
 import type { Role } from '$lib/auth/types';
 
 const now = () => new Date();
@@ -101,5 +101,5 @@ const summaries: Record<Role, DashboardSummary> = {
 };
 
 export const mockDashboardService: DashboardService = {
-	getSummary: async (role: Role) => summaries[role]
+	getSummary: async (request: DashboardSummaryRequest) => summaries[request.role] ?? summaries.viewer
 };

@@ -5,6 +5,7 @@ import { backendErrorSchema } from '$lib/api/schemas/errors';
 export type ApiClientErrorCode =
 	| 'UNAUTHORIZED'
 	| 'FORBIDDEN'
+	| 'LOCKED'
 	| 'NOT_FOUND'
 	| 'BAD_REQUEST'
 	| 'INVALID_RESPONSE'
@@ -81,6 +82,7 @@ const toAppCode = (status: number, backendCode?: string): ApiClientErrorCode => 
 	if (backendCode === 'BAD_REQUEST' || status === 400) return 'BAD_REQUEST';
 	if (backendCode === 'UNAUTHORIZED' || status === 401) return 'UNAUTHORIZED';
 	if (backendCode === 'FORBIDDEN' || status === 403) return 'FORBIDDEN';
+	if (backendCode === 'LOCKED' || status === 423) return 'LOCKED';
 	if (backendCode === 'NOT_FOUND' || status === 404) return 'NOT_FOUND';
 	return 'UNKNOWN_ERROR';
 };

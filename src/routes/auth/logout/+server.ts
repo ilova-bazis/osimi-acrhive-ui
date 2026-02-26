@@ -5,8 +5,13 @@ import {
 	clearSessionCookie,
 	logoutWithBackend
 } from '$lib/server/auth';
+import { isTrustedOrigin } from '$lib/server/csrf';
 
-export const POST: RequestHandler = async ({ cookies, fetch }) => {
+export const POST: RequestHandler = async ({ cookies, fetch, request, url }) => {
+	if (!isTrustedOrigin(request, url.origin)) {
+		return json({ error: 'Invalid request origin.' }, { status: 403 });
+	}
+
 	const token = cookies.get(AUTH_COOKIE_NAME);
 
 	if (token) {

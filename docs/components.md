@@ -161,6 +161,90 @@ Props:
 
 ## Domain Panels
 
+### ObjectsPageHeader
+
+Purpose: Objects route page header with title/subtitle and selection-aware bulk action button.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| selectionCount | number | no | Defaults to `0`; disables bulk action when zero |
+
+```svelte
+<ObjectsPageHeader selectionCount={selectedIds.length} />
+```
+
+### ObjectsFilterPanel
+
+Purpose: Sticky objects filter bar with quick filters, active filter chips, and advanced filters drawer.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| filters | ObjectsFilters | yes | Current URL-backed filter state |
+| availabilityOptions | AvailabilityState[] | yes | Availability filter options |
+| accessOptions | AccessLevel[] | yes | Access-level options |
+| sortOptions | ObjectsSort[] | yes | Sort options |
+| activeChips | string[] | no | Active filter labels; defaults to `[]` |
+
+```svelte
+<ObjectsFilterPanel
+  filters={data.filters}
+  availabilityOptions={availabilityOptions}
+  accessOptions={accessOptions}
+  sortOptions={sortOptions}
+  activeChips={activeChips()}
+/>
+```
+
+### ObjectsRecentStrip
+
+Purpose: Horizontal strip for recently ingested objects on the `/objects` route.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| recent | ObjectRow[] | yes | Recent object rows |
+
+```svelte
+<ObjectsRecentStrip recent={data.recent} />
+```
+
+### ObjectsTable
+
+Purpose: Primary objects table with selection, processing badge, access reason messaging, and cursor pagination controls.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| rows | ObjectRow[] | yes | Current list rows |
+| selectedIds | string[] | yes | Selected row IDs |
+| onToggleSelection | (id: string) => void | yes | Row checkbox toggle handler |
+| hasActiveFilters | boolean | yes | Controls empty-state messaging |
+| queryEntries | [string, string][] | yes | Current query params for pagination forms |
+| nextCursor | string \| null | yes | `next_cursor` from backend |
+| showFirstPage | boolean | yes | Shows reset-to-first-page action |
+| filteredCount | number | yes | Count matching current filters |
+| totalCount | number | yes | Tenant-wide total count |
+
+```svelte
+<ObjectsTable
+  rows={data.list.rows}
+  selectedIds={selectedIds}
+  onToggleSelection={toggleSelection}
+  hasActiveFilters={hasActiveFilters()}
+  queryEntries={queryEntries()}
+  nextCursor={data.list.nextCursor ?? null}
+  showFirstPage={Boolean(data.filters.cursor)}
+  filteredCount={data.list.filteredCount}
+  totalCount={data.list.totalCount}
+/>
+```
+
 ### DropzonePanel
 
 Purpose: Upload staging area with archival emphasis.

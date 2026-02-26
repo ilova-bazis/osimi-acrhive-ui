@@ -14,7 +14,7 @@ const summary: IngestionOverviewSummary = {
 			createdAt: '2026-02-02T08:15:00Z',
 			status: 'ingesting',
 			progress: { completed: 7, total: 12 },
-			action: 'view'
+			actions: ['view']
 		},
 		{
 			id: 'BATCH-20260201-0029',
@@ -22,7 +22,7 @@ const summary: IngestionOverviewSummary = {
 			createdAt: '2026-02-01T14:05:00Z',
 			status: 'completed',
 			progress: { completed: 24, total: 24 },
-			action: 'view'
+			actions: ['view']
 		},
 		{
 			id: 'BATCH-20260131-0024',
@@ -30,7 +30,7 @@ const summary: IngestionOverviewSummary = {
 			createdAt: '2026-01-31T10:40:00Z',
 			status: 'failed',
 			progress: { completed: 3, total: 9 },
-			action: 'retry'
+			actions: ['view', 'retry', 'cancel']
 		},
 		{
 			id: 'BATCH-20260130-0020',
@@ -38,7 +38,7 @@ const summary: IngestionOverviewSummary = {
 			createdAt: '2026-01-30T09:25:00Z',
 			status: 'ingesting',
 			progress: { completed: 11, total: 18 },
-			action: 'view'
+			actions: ['view']
 		}
 	],
 	drafts: [
@@ -48,7 +48,7 @@ const summary: IngestionOverviewSummary = {
 			createdAt: '2026-02-02T09:30:00Z',
 			status: 'draft',
 			progress: { completed: 5, total: 10 },
-			action: 'resume'
+			actions: ['resume', 'delete']
 		}
 	]
 };

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import type { HTMLButtonAttributes } from 'svelte/elements';
+
 	let {
 		variant = 'primary',
 		type = 'button',
@@ -10,7 +12,7 @@
 		type?: 'button' | 'submit' | 'reset';
 		class?: string;
 		children?: () => unknown;
-	}>();
+	} & HTMLButtonAttributes>();
 
 	const variantClass = () =>
 		variant === 'primary'

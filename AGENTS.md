@@ -93,6 +93,12 @@ Design system colors (archival warmth):
 Button patterns: `rounded-full px-4 py-2 text-xs uppercase tracking-[0.2em]`
 Custom utilities: `font-display` (Fraunces), `font-body` (Manrope)
 
+### Component Reuse Rule
+- Prefer composing existing components from `src/lib/components` over building large inline route markup.
+- Before creating a new UI block, check `docs/components.md` and reuse matching components (`BaseButton`, `Chip`, `StatusBadge`, etc.).
+- If a required component does not exist, create a reusable component in `src/lib/components` and document it in `docs/components.md` in the same change.
+- Keep route files focused on data wiring/state orchestration; move presentational layout into components.
+
 ### Testing
 
 **Browser tests** (`.svelte.spec.ts`):

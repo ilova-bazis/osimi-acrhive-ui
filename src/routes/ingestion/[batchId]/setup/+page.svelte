@@ -1,11 +1,35 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import type { IngestionCapabilities, IngestionMediaKind } from '$lib/services/ingestionCapabilities';
+	import type { IngestionDetailFile } from '$lib/services/ingestionDetail';
 	import type { FileStatus } from '$lib/types';
 	import { translations, type LocaleKey } from '$lib/i18n/translations';
+	import { SvelteMap } from 'svelte/reactivity';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 
-	let { data } = $props<{ data: { batchId: string } }>();
+	let {
+		data
+	} = $props<{
+		data: {
+			batchId: string;
+			capabilities: IngestionCapabilities;
+			existingFiles: IngestionDetailFile[];
+			metadata: {
+				documentType: string;
+				languageCode: string;
+				pipelinePreset: string;
+				accessLevel: 'private' | 'family' | 'public';
+				embargoUntil: string | null;
+				rightsNote: string | null;
+				sensitivityNote: string | null;
+				summary: Record<string, unknown>;
+			};
+		};
+	}>();
 
 	const batchId = data.batchId;
+	const capabilities = data.capabilities;
 	let locale = $state<LocaleKey>('en');
 	const dictionary = $derived(translations[locale]);
 
@@ -26,7 +50,22 @@
 			Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match
 		);
 
-	let files = $state<Array<{ id: number; name: string; type: string; size: string; status: FileStatus }>>([]);
+	type LocalIngestionFile = {
+		id: number;
+		rawFile?: File;
+		source: 'local' | 'server';
+		name: string;
+		type: string;
+		mediaType: BatchMediaType;
+		size: string;
+		status: FileStatus;
+		backendFileId?: string;
+		uploadError?: string;
+	};
+
+	type BatchMediaType = IngestionMediaKind;
+
+	let files = $state<LocalIngestionFile[]>([]);
 	let nextFileId = 1;
 	let dragDepth = $state(0);
 	let isDragging = $state(false);
@@ -46,41 +85,98 @@
 		'other'
 	] as const;
 
-	const languages = ['persian', 'tajik', 'english', 'mixed'] as const;
+	const languages = ['en', 'fa', 'tg', 'mixed'] as const;
 
 	const pipelinePresets = [
 		'auto',
-		'photos',
-		'newspapers',
-		'audioVideo'
+		'none',
+		'ocr_text',
+		'audio_transcript',
+		'video_transcript',
+		'ocr_and_audio_transcript',
+		'ocr_and_video_transcript'
 	] as const;
 
-	let selectedIds = $state<Set<number>>(new Set());
+	let selectedIds = $state<number[]>([]);
 	let activeFileId = $state(0);
+	const toInputDateTime = (value: string | null): string => {
+		if (!value) return '';
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) return '';
+		const pad = (unit: number) => String(unit).padStart(2, '0');
+		return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+	};
+
+	const readSummaryTitle = (summary: Record<string, unknown>, fallback: string): string => {
+		const title = summary.title;
+		if (!title || typeof title !== 'object' || title === null) return fallback;
+		const primary = (title as Record<string, unknown>).primary;
+		return typeof primary === 'string' && primary.trim().length > 0 ? primary : fallback;
+	};
+
+	const readSummaryClassification = (summary: Record<string, unknown>): { tags: string[]; text: string } => {
+		const classification = summary.classification;
+		if (!classification || typeof classification !== 'object' || classification === null) {
+			return { tags: [], text: '' };
+		}
+
+		const tagsRaw = (classification as Record<string, unknown>).tags;
+		const tags = Array.isArray(tagsRaw)
+			? Array.from(
+					new Set(
+						tagsRaw
+							.map((tag) => (typeof tag === 'string' ? tag.trim() : ''))
+							.filter((tag) => tag.length > 0)
+					)
+			  )
+			: [];
+
+		const summaryText = (classification as Record<string, unknown>).summary;
+		return {
+			tags,
+			text: typeof summaryText === 'string' ? summaryText : ''
+		};
+	};
+
+	const summaryClassification = readSummaryClassification(data.metadata.summary);
+
 	let batchDefaults = $state({
-		language: '',
-		classificationType: '',
-		tags: '',
-		pipelinePreset: 'auto'
+		title: readSummaryTitle(data.metadata.summary, batchId),
+		language: data.metadata.languageCode || 'en',
+		classificationType: data.metadata.documentType || 'document',
+		classificationSummary: summaryClassification.text,
+		pipelinePreset: data.metadata.pipelinePreset || 'auto',
+		accessLevel: data.metadata.accessLevel,
+		embargoUntil: toInputDateTime(data.metadata.embargoUntil),
+		rightsNote: data.metadata.rightsNote ?? '',
+		sensitivityNote: data.metadata.sensitivityNote ?? ''
 	});
+	let summaryTags = $state<string[]>(summaryClassification.tags);
+	let summaryTagInput = $state('');
 
 	let fileOverrides =
 		$state<Record<number, { language?: string; classificationType?: string; tags?: string; notes?: string }>>({});
+	let isSubmitting = $state(false);
+	let submitError = $state('');
+	let addFilesError = $state('');
+	let removingIds = $state<number[]>([]);
+	let hydratedFromServer = $state(false);
+
+	const batchMediaType = $derived<BatchMediaType | null>(files[0]?.mediaType ?? null);
+	const uploadControllers = new SvelteMap<number, AbortController>();
 
 
 	const toggleSelection = (id: number) => {
-		const next = new Set(selectedIds);
-		if (next.has(id)) {
-			next.delete(id);
+		if (selectedIds.includes(id)) {
+			selectedIds = selectedIds.filter((selected) => selected !== id);
 		} else {
-			next.add(id);
+			selectedIds = [...selectedIds, id];
 		}
-		selectedIds = next;
 	};
 
 	const setActiveFile = (id: number) => {
 		activeFileId = id;
-		selectedIds = new Set([id]);
+		selectedIds = [id];
 	};
 
 	const toReadableSize = (bytes: number) => {
@@ -91,29 +187,300 @@
 		return `${mb.toFixed(1)} MB`;
 	};
 
-	const toTypeKey = (mimeType: string) => {
-		if (mimeType.startsWith('image/')) {
-			return mimeType.includes('jpeg') || mimeType.includes('png') ? 'photo' : 'image';
-		}
-		if (mimeType === 'application/pdf') return 'pdf';
-		if (mimeType.startsWith('audio/')) return 'audio';
-		if (mimeType.startsWith('video/')) return 'video';
-		return 'document';
+	const mediaKinds = capabilities.mediaKinds;
+	const extensionsByKind = capabilities.extensionsByKind;
+	const mimeByKind = capabilities.mimeByKind;
+	const mimeAliases = capabilities.mimeAliases;
+
+	type ParsedFileType = {
+		supported: true;
+		type: string;
+		mediaType: BatchMediaType;
 	};
+
+	type ParsedFileTypeError = {
+		supported: false;
+		reason: 'unsupported';
+	};
+
+	const getFileExtension = (fileName: string): string => {
+		const parts = fileName.toLowerCase().split('.');
+		if (parts.length < 2) return '';
+		return parts.at(-1) ?? '';
+	};
+
+	const normalizeMime = (value: string): string => value.trim().toLowerCase();
+
+	const isIn = (value: string, values: readonly string[]): boolean => values.includes(value);
+
+	const kindFromExtension = (extension: string): BatchMediaType | null => {
+		for (const mediaKind of mediaKinds) {
+			if (isIn(extension, extensionsByKind[mediaKind])) {
+				return mediaKind;
+			}
+		}
+
+		return null;
+	};
+
+	const kindFromMime = (rawMime: string): BatchMediaType | null => {
+		const normalized = normalizeMime(rawMime);
+		if (!normalized) return null;
+
+		const canonical = mimeAliases[normalized] ?? normalized;
+
+		for (const mediaKind of mediaKinds) {
+			if (isIn(canonical, mimeByKind[mediaKind])) {
+				return mediaKind;
+			}
+		}
+
+		if (canonical.startsWith('image/') && mediaKinds.includes('image')) return 'image';
+		if (canonical.startsWith('audio/') && mediaKinds.includes('audio')) return 'audio';
+		if (canonical.startsWith('video/') && mediaKinds.includes('video')) return 'video';
+		if (canonical === 'application/pdf' && mediaKinds.includes('document')) return 'document';
+
+		return null;
+	};
+
+	const parseFileType = (file: File): ParsedFileType | ParsedFileTypeError => {
+		const extension = getFileExtension(file.name);
+		const extensionKind = kindFromExtension(extension);
+		const mimeKind = kindFromMime(file.type);
+
+		if (mimeKind === 'image' && extensionKind !== 'image') {
+			return {
+				supported: false,
+				reason: 'unsupported'
+			};
+		}
+
+		if (!extensionKind) {
+			return {
+				supported: false,
+				reason: 'unsupported'
+			};
+		}
+
+		if (mimeKind && mimeKind !== extensionKind) {
+			return {
+				supported: false,
+				reason: 'unsupported'
+			};
+		}
+
+		if (extensionKind === 'image') {
+			return {
+				supported: true,
+				type: extension === 'jpg' || extension === 'jpeg' || extension === 'png' ? 'photo' : 'image',
+				mediaType: 'image'
+			};
+		}
+
+		if (extensionKind === 'document') {
+			return {
+				supported: true,
+				type: extension === 'pdf' ? 'pdf' : 'document',
+				mediaType: 'document'
+			};
+		}
+
+		if (extensionKind === 'audio') {
+			return {
+				supported: true,
+				type: 'audio',
+				mediaType: 'audio'
+			};
+		}
+
+		if (extensionKind === 'video') {
+			return {
+				supported: true,
+				type: 'video',
+				mediaType: 'video'
+			};
+		}
+
+		return {
+			supported: false,
+			reason: 'unsupported'
+		};
+	};
+
+	const formatsFor = (mediaType: BatchMediaType | null): string => {
+		const toFormatted = (extensions: string[]): string[] => extensions.map((ext) => `.${ext}`);
+
+		if (mediaType) {
+			return toFormatted(extensionsByKind[mediaType]).join(', ');
+		}
+
+		return mediaKinds
+			.flatMap((kind: BatchMediaType) => toFormatted(extensionsByKind[kind]))
+			.filter((value: string, index: number, values: string[]) => values.indexOf(value) === index)
+			.join(', ');
+	};
+
+	const mediaTypeLabel = (mediaType: BatchMediaType): string => {
+		if (mediaType === 'audio') return t('ingestionSetup.fileTypes.audio');
+		if (mediaType === 'video') return t('ingestionSetup.fileTypes.video');
+		if (mediaType === 'image') return t('ingestionSetup.fileTypes.image');
+		return t('ingestionSetup.fileTypes.document');
+	};
+
+	const toExistingFileStatus = (backendStatus: string): FileStatus => {
+		const normalized = backendStatus.toLowerCase();
+
+		if (normalized.includes('failed') || normalized.includes('error')) {
+			return 'failed';
+		}
+
+		if (normalized.includes('uploading') || normalized.includes('presigned') || normalized.includes('pending')) {
+			return 'processing';
+		}
+
+		if (normalized.includes('uploaded') || normalized.includes('validated') || normalized.includes('committed')) {
+			return 'approved';
+		}
+
+		if (normalized.includes('queue') || normalized.includes('pending') || normalized.includes('processing')) {
+			return 'processing';
+		}
+
+		return 'queued';
+	};
+
+	const toExistingFileType = (file: IngestionDetailFile): { type: string; mediaType: BatchMediaType } => {
+		const extension = getFileExtension(file.name);
+		const extensionKind = kindFromExtension(extension);
+		const mimeKind = kindFromMime(file.contentType ?? '');
+		const mediaType = extensionKind ?? mimeKind ?? 'document';
+
+		if (mediaType === 'image') {
+			return {
+				type: extension === 'jpg' || extension === 'jpeg' || extension === 'png' ? 'photo' : 'image',
+				mediaType
+			};
+		}
+
+		if (mediaType === 'document') {
+			return {
+				type: extension === 'pdf' ? 'pdf' : 'document',
+				mediaType
+			};
+		}
+
+		return {
+			type: mediaType,
+			mediaType
+		};
+	};
+
+	$effect(() => {
+		if (hydratedFromServer) return;
+		hydratedFromServer = true;
+
+		if (!data.existingFiles.length) return;
+
+		const mappedFiles: LocalIngestionFile[] = data.existingFiles.map((file: IngestionDetailFile, index: number) => {
+			const inferred = toExistingFileType(file);
+			return {
+				id: index + 1,
+				source: 'server',
+				name: file.name,
+				type: inferred.type,
+				mediaType: inferred.mediaType,
+				size: toReadableSize(file.sizeBytes ?? 0),
+				status: toExistingFileStatus(file.status),
+				backendFileId: file.id
+			};
+		});
+
+		files = mappedFiles;
+		nextFileId = mappedFiles.length + 1;
+		activeFileId = mappedFiles[0]?.id ?? 0;
+		selectedIds = mappedFiles[0] ? [mappedFiles[0].id] : [];
+	});
 
 	const addFiles = (incoming: FileList | File[]) => {
 		const list = Array.from(incoming);
 		if (!list.length) return;
-		const mapped = list.map((file) => ({
-			id: nextFileId++,
-			name: file.name,
-			type: toTypeKey(file.type),
-			size: toReadableSize(file.size),
-			status: 'queued' as FileStatus
-		}));
-		files = [...files, ...mapped];
-		if (!activeFileId && mapped.length) {
-			setActiveFile(mapped[0].id);
+
+		submitError = '';
+		addFilesError = '';
+
+		let lockedType: BatchMediaType | null = files[0]?.mediaType ?? null;
+		const accepted: LocalIngestionFile[] = [];
+		const mixedMediaNames: string[] = [];
+		const unsupportedNames: string[] = [];
+
+		for (const file of list) {
+			const parsed = parseFileType(file);
+			if (!parsed.supported) {
+				unsupportedNames.push(file.name);
+				continue;
+			}
+
+			const { type, mediaType } = parsed;
+
+			if (!lockedType) {
+				lockedType = mediaType;
+			}
+
+			if (mediaType !== lockedType) {
+				mixedMediaNames.push(file.name);
+				continue;
+			}
+
+			accepted.push({
+				id: nextFileId++,
+				source: 'local',
+				rawFile: file,
+				name: file.name,
+				type,
+				mediaType,
+				size: toReadableSize(file.size),
+				status: 'queued' as FileStatus
+			});
+		}
+
+		if (accepted.length > 0) {
+			files = [...files, ...accepted];
+		}
+
+		if (!activeFileId && accepted.length) {
+			setActiveFile(accepted[0].id);
+		}
+
+		for (const file of accepted) {
+			void uploadAndCommitFile(file.id);
+		}
+
+		const errorMessages: string[] = [];
+
+		if (mixedMediaNames.length > 0) {
+			const expectedType = lockedType
+				? mediaTypeLabel(lockedType)
+				: t('ingestionSetup.files.expectedTypeFallback');
+			const sample = mixedMediaNames.slice(0, 3).join(', ');
+			const remainder = mixedMediaNames.length > 3 ? ` +${mixedMediaNames.length - 3} more` : '';
+			errorMessages.push(format(t('ingestionSetup.files.typeMismatch'), {
+				expectedType,
+				rejected: `${sample}${remainder}`
+			}));
+		}
+
+		if (unsupportedNames.length > 0) {
+			const sample = unsupportedNames.slice(0, 3).join(', ');
+			const remainder = unsupportedNames.length > 3 ? ` +${unsupportedNames.length - 3} more` : '';
+			errorMessages.push(format(t('ingestionSetup.files.unsupportedFormats'), {
+				rejected: `${sample}${remainder}`,
+				supportedFormats: formatsFor(lockedType)
+			}));
+		}
+
+		addFilesError = errorMessages.join(' ');
+		if (errorMessages.length === 0) {
+			addFilesError = '';
 		}
 	};
 
@@ -184,18 +551,39 @@
 		isGlobalDragging = false;
 	};
 
-	const removeFile = (id: number) => {
-		files = files.filter((file) => file.id !== id);
-		selectedIds = new Set(Array.from(selectedIds).filter((selected) => selected !== id));
+	const removeLocalFile = (id: number): { file: LocalIngestionFile; index: number } | null => {
+		const index = files.findIndex((file) => file.id === id);
+		if (index === -1) return null;
+
+		const removed = files[index];
+		const nextFiles = files.filter((file) => file.id !== id);
+		files = nextFiles;
+		selectedIds = selectedIds.filter((selected) => selected !== id);
+
 		if (activeFileId === id) {
-			activeFileId = files[0]?.id ?? 0;
+			activeFileId = nextFiles[0]?.id ?? 0;
 			if (activeFileId) {
-				selectedIds = new Set([activeFileId]);
+				selectedIds = [activeFileId];
 			}
 		}
-		if (!files.length) {
-			selectedIds = new Set();
+
+		if (!nextFiles.length) {
+			selectedIds = [];
+			addFilesError = '';
 		}
+
+		return { file: removed, index };
+	};
+
+	const restoreLocalFile = (snapshot: { file: LocalIngestionFile; index: number }) => {
+		if (files.some((file) => file.id === snapshot.file.id)) {
+			return;
+		}
+
+		const next = [...files];
+		const index = Math.min(Math.max(snapshot.index, 0), next.length);
+		next.splice(index, 0, snapshot.file);
+		files = next;
 	};
 
 	const updateFileOverrides = (fileId: number, patch: Record<string, string>) => {
@@ -259,6 +647,350 @@
 
 	const missingCount = () => missingSummaries().length;
 	const objectCount = () => files.length;
+
+	const setFileStatus = (id: number, status: FileStatus, backendFileId?: string) => {
+		files = files.map((file) =>
+			file.id === id
+				? {
+						...file,
+						status,
+						backendFileId: backendFileId ?? file.backendFileId
+					}
+				: file
+		);
+	};
+
+	const setFileUploadError = (id: number, message: string | undefined) => {
+		files = files.map((file) =>
+			file.id === id
+				? {
+						...file,
+						uploadError: message
+					}
+				: file
+		);
+	};
+
+	const findFile = (id: number): LocalIngestionFile | undefined => files.find((file) => file.id === id);
+
+	const sha256Hex = async (file: File): Promise<string> => {
+		const bytes = await file.arrayBuffer();
+		const digest = await crypto.subtle.digest('SHA-256', bytes);
+		return Array.from(new Uint8Array(digest))
+			.map((byte) => byte.toString(16).padStart(2, '0'))
+			.join('');
+	};
+
+	const readErrorMessage = async (response: Response, fallback: string): Promise<string> => {
+		const payload = await response.json().catch(() => null);
+		if (
+			payload &&
+			typeof payload === 'object' &&
+			'error' in payload &&
+			typeof payload.error === 'string'
+		) {
+			return payload.error;
+		}
+		return fallback;
+	};
+
+	const setupEndpoint = resolve(`/ingestion/${batchId}/setup`);
+	const metadataEndpoint = resolve(`/ingestion/${batchId}/metadata`);
+	const fileDeleteEndpoint = (backendFileId: string) =>
+		resolve(`/ingestion/${batchId}/files/${encodeURIComponent(backendFileId)}`);
+	let metadataSaveTimer: ReturnType<typeof setTimeout> | null = null;
+	let metadataSaveError = $state('');
+
+	const saveBatchMetadata = async () => {
+		const summaryText = batchDefaults.classificationSummary.trim();
+		const embargoIso = batchDefaults.embargoUntil
+			? new Date(batchDefaults.embargoUntil).toISOString()
+			: null;
+		const batchLabel = batchDefaults.title.trim() || batchId;
+		const payload = {
+			batchLabel,
+			documentType: batchDefaults.classificationType,
+			languageCode: batchDefaults.language,
+			pipelinePreset: batchDefaults.pipelinePreset,
+			accessLevel: batchDefaults.accessLevel,
+			embargoUntil: embargoIso,
+			rightsNote: batchDefaults.rightsNote || null,
+			sensitivityNote: batchDefaults.sensitivityNote || null,
+			summary: {
+				title: {
+					primary: batchLabel,
+					original_script: null,
+					translations: []
+				},
+				classification: {
+					tags: summaryTags,
+					summary: summaryText.length > 0 ? summaryText : null
+				},
+				dates: {
+					published: {
+						value: null,
+						approximate: false,
+						confidence: 'medium',
+						note: null
+					},
+					created: {
+						value: null,
+						approximate: false,
+						confidence: 'medium',
+						note: null
+					}
+				}
+			}
+		};
+
+		const response = await fetch(metadataEndpoint, {
+			method: 'PATCH',
+			headers: {
+				'content-type': 'application/json'
+			},
+			body: JSON.stringify(payload)
+		});
+
+		if (response.status === 401) {
+			await goto(resolve('/login'));
+			return;
+		}
+
+		if (!response.ok) {
+			throw new Error(await readErrorMessage(response, 'Failed to update ingestion defaults.'));
+		}
+	};
+
+	const queueBatchMetadataSave = () => {
+		metadataSaveError = '';
+		if (metadataSaveTimer) {
+			clearTimeout(metadataSaveTimer);
+		}
+
+		metadataSaveTimer = setTimeout(async () => {
+			try {
+				await saveBatchMetadata();
+			} catch (error) {
+				metadataSaveError = error instanceof Error ? error.message : 'Failed to update ingestion defaults.';
+			}
+		}, 300);
+	};
+
+	const addSummaryTag = () => {
+		const normalized = summaryTagInput.trim().replace(/^#/, '');
+		if (!normalized) return;
+		if (!summaryTags.includes(normalized)) {
+			summaryTags = [...summaryTags, normalized];
+			queueBatchMetadataSave();
+		}
+		summaryTagInput = '';
+	};
+
+	const removeSummaryTag = (tag: string) => {
+		summaryTags = summaryTags.filter((value) => value !== tag);
+		queueBatchMetadataSave();
+	};
+
+	const postSetupAction = async (body: unknown, signal?: AbortSignal): Promise<Response> =>
+		fetch(setupEndpoint, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json'
+			},
+			body: JSON.stringify(body),
+			signal
+		});
+
+	const isAbortError = (error: unknown): boolean =>
+		error instanceof DOMException
+			? error.name === 'AbortError'
+			: error instanceof Error && error.name === 'AbortError';
+
+	const removeFile = async (id: number): Promise<void> => {
+		if (removingIds.includes(id)) return;
+
+		submitError = '';
+
+		const file = findFile(id);
+		if (!file) return;
+
+		const snapshot = removeLocalFile(id);
+		if (!snapshot) return;
+
+		removingIds = [...removingIds, id];
+		try {
+			uploadControllers.get(id)?.abort();
+			uploadControllers.delete(id);
+
+			if (file.backendFileId) {
+				const response = await fetch(fileDeleteEndpoint(file.backendFileId), {
+					method: 'DELETE'
+				});
+
+				if (response.status === 401) {
+					await goto(resolve('/login'));
+					return;
+				}
+
+				if (response.status === 409) {
+					restoreLocalFile(snapshot);
+					setFileUploadError(id, t('ingestionSetup.files.cannotRemoveCommitted'));
+					return;
+				}
+
+				if (!response.ok) {
+					restoreLocalFile(snapshot);
+					setFileUploadError(
+						id,
+						await readErrorMessage(response, t('ingestionSetup.files.removeFailed'))
+					);
+					return;
+				}
+			}
+		} catch {
+			restoreLocalFile(snapshot);
+			setFileUploadError(id, t('ingestionSetup.files.removeFailed'));
+		} finally {
+			removingIds = removingIds.filter((value) => value !== id);
+		}
+	};
+
+	const uploadAndCommitFile = async (fileId: number): Promise<void> => {
+		const file = findFile(fileId);
+		if (
+			!file ||
+			file.source !== 'local' ||
+			!file.rawFile ||
+			file.status === 'approved' ||
+			file.status === 'processing'
+		) {
+			return;
+		}
+
+		const uploadController = new AbortController();
+		uploadControllers.set(file.id, uploadController);
+
+		setFileUploadError(file.id, undefined);
+		setFileStatus(file.id, 'processing');
+
+		try {
+			const presignResponse = await postSetupAction({
+				action: 'presign',
+				filename: file.rawFile.name,
+				contentType: file.rawFile.type || 'application/octet-stream',
+				sizeBytes: file.rawFile.size
+			}, uploadController.signal);
+
+			if (presignResponse.status === 401) {
+				await goto(resolve('/login'));
+				return;
+			}
+
+			if (!presignResponse.ok) {
+				throw new Error(await readErrorMessage(presignResponse, `Failed to prepare upload for ${file.name}.`));
+			}
+
+			const presigned = await presignResponse.json();
+			if (!findFile(file.id)) {
+				return;
+			}
+
+			setFileStatus(file.id, 'processing', presigned.fileId);
+
+			const uploadHeaders = new Headers();
+			uploadHeaders.set(
+				'content-type',
+				presigned.headers?.contentType || file.rawFile.type || 'application/octet-stream'
+			);
+			uploadHeaders.set('content-length', presigned.headers?.contentLength || String(file.rawFile.size));
+
+			const uploadResponse = await fetch(presigned.uploadUrl, {
+				method: 'PUT',
+				headers: uploadHeaders,
+				body: file.rawFile,
+				signal: uploadController.signal
+			});
+
+			if (!uploadResponse.ok) {
+				throw new Error(`Failed to upload ${file.name}.`);
+			}
+
+			const checksumSha256 = await sha256Hex(file.rawFile);
+			const commitResponse = await postSetupAction({
+				action: 'commit',
+				fileId: presigned.fileId,
+				checksumSha256
+			}, uploadController.signal);
+
+			if (commitResponse.status === 401) {
+				await goto(resolve('/login'));
+				return;
+			}
+
+			if (!commitResponse.ok) {
+				throw new Error(await readErrorMessage(commitResponse, `Failed to commit ${file.name}.`));
+			}
+
+			if (!findFile(file.id)) {
+				return;
+			}
+
+			setFileStatus(file.id, 'approved', presigned.fileId);
+		} catch (error) {
+			if (isAbortError(error)) {
+				return;
+			}
+
+			const message = error instanceof Error ? error.message : `Failed to upload ${file.name}.`;
+			setFileStatus(file.id, 'failed');
+			setFileUploadError(file.id, message);
+		} finally {
+			uploadControllers.delete(file.id);
+		}
+	};
+
+	const retryUpload = (fileId: number) => {
+		submitError = '';
+		const file = findFile(fileId);
+		if (!file || file.source !== 'local') {
+			return;
+		}
+		void uploadAndCommitFile(fileId);
+	};
+
+	const hasPendingUploads = () =>
+		files.some((file) => file.status === 'queued' || file.status === 'processing');
+	const hasUploadFailures = () => files.some((file) => file.status === 'failed');
+	const hasCommittedFiles = () => files.some((file) => file.status === 'approved');
+	const canStartIngestion = () =>
+		isReady() && hasCommittedFiles() && !hasPendingUploads() && !hasUploadFailures() && !isSubmitting;
+
+	const startIngestion = async () => {
+		if (!canStartIngestion()) return;
+
+		isSubmitting = true;
+		submitError = '';
+
+		try {
+			const submitResponse = await postSetupAction({ action: 'submit' });
+
+			if (submitResponse.status === 401) {
+				await goto(resolve('/login'));
+				return;
+			}
+
+			if (!submitResponse.ok) {
+				throw new Error(await readErrorMessage(submitResponse, 'Failed to submit ingestion.'));
+			}
+
+			await goto(resolve('/ingestion'));
+		} catch (error) {
+			submitError = error instanceof Error ? error.message : 'Failed to submit ingestion.';
+		} finally {
+			isSubmitting = false;
+			showConfirm = false;
+		}
+	};
 </script>
 
 <main
@@ -302,6 +1034,18 @@
 						: t('ingestionSetup.dropzone.support')}
 				</p>
 				<p class="mt-2 text-sm text-text-muted">{t('ingestionSetup.dropzone.details')}</p>
+				<p class="mt-2 text-[11px] uppercase tracking-[0.16em] text-text-muted">
+					{#if batchMediaType}
+						{format(t('ingestionSetup.dropzone.lockedType'), {
+							mediaType: mediaTypeLabel(batchMediaType),
+							supportedFormats: formatsFor(batchMediaType)
+						})}
+					{:else}
+						{format(t('ingestionSetup.dropzone.unlockedType'), {
+							supportedFormats: formatsFor(null)
+						})}
+					{/if}
+				</p>
 				<button
 					onclick={() => fileInput?.click()}
 					class="mt-5 rounded-full border border-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate"
@@ -323,11 +1067,23 @@
 						<div>
 							<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionSetup.files.title')}</p>
 							<p class="mt-1 text-sm text-text-muted">{t('ingestionSetup.files.subtitle')}</p>
+							{#if batchMediaType}
+								<p class="mt-2 inline-flex rounded-full border border-blue-slate/40 bg-pale-sky/30 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate">
+									{format(t('ingestionSetup.files.batchType'), {
+										mediaType: mediaTypeLabel(batchMediaType)
+									})}
+								</p>
+							{/if}
 						</div>
 						<div class="text-xs text-text-muted">
-							{format(t('ingestionSetup.files.selectedCount'), { count: selectedIds.size })}
+							{format(t('ingestionSetup.files.selectedCount'), { count: selectedIds.length })}
 						</div>
 					</div>
+					{#if addFilesError}
+						<p class="mt-3 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach">
+							{addFilesError}
+						</p>
+					{/if}
 				</div>
 				{#if files.length === 0}
 					<div class="px-6 py-8 text-center text-sm text-text-muted">
@@ -346,7 +1102,7 @@
 									<input
 										type="checkbox"
 										class="mt-1 h-4 w-4 rounded border-border-soft text-blue-slate"
-										checked={selectedIds.has(file.id)}
+										checked={selectedIds.includes(file.id)}
 										onclick={(event) => event.stopPropagation()}
 										onchange={() => toggleSelection(file.id)}
 									/>
@@ -355,17 +1111,39 @@
 									<p class="mt-1 text-xs text-text-muted">
 										{t(`ingestionSetup.fileTypes.${file.type}`)} · {file.size}
 									</p>
+									{#if file.uploadError}
+										<p class="mt-1 text-xs text-burnt-peach">{file.uploadError}</p>
+									{/if}
 								</div>
 								</label>
 								<div class="flex items-center gap-3">
+								{#if file.status === 'failed' && file.source === 'local'}
+									<button
+										class="text-xs uppercase tracking-[0.2em] text-burnt-peach"
+										disabled={removingIds.includes(file.id)}
+										onclick={(event) => {
+											event.stopPropagation();
+											retryUpload(file.id);
+										}}
+									>
+										{t('ingestionSetup.files.retryUpload')}
+									</button>
+								{/if}
 								<button
 									class="text-xs uppercase tracking-[0.2em] text-blue-slate"
+									disabled={removingIds.includes(file.id)}
 									onclick={(event) => {
 										event.stopPropagation();
-										removeFile(file.id);
+										void removeFile(file.id);
 									}}
 								>
-									{t('common.remove')}
+									{#if removingIds.includes(file.id)}
+										{t('ingestionSetup.files.removing')}
+									{:else if file.status === 'processing' && file.source === 'local'}
+										{t('ingestionSetup.files.cancelUpload')}
+									{:else}
+										{t('common.remove')}
+									{/if}
 								</button>
 								<StatusBadge status={file.status} label={statusLabel(file.status)} />
 								</div>
@@ -381,7 +1159,23 @@
 			<div class="rounded-2xl border border-border-strong bg-blue-slate-deep px-6 py-6 text-pale-sky">
 				<p class="text-xs uppercase tracking-[0.2em] text-burnt-peach">{t('ingestionSetup.batchIntent.title')}</p>
 				<p class="mt-2 text-sm text-pale-sky">{t('ingestionSetup.batchIntent.description')}</p>
+				{#if metadataSaveError}
+					<p class="mt-3 rounded-xl border border-burnt-peach/45 bg-pearl-beige/20 px-3 py-2 text-xs text-burnt-peach">
+						{metadataSaveError}
+					</p>
+				{/if}
 				<div class="mt-4 space-y-3 text-sm">
+					<div>
+						<label class="text-xs uppercase tracking-[0.2em] text-burnt-peach">Title</label>
+						<input
+							class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+							value={batchDefaults.title}
+							oninput={(event) => {
+								batchDefaults.title = event.currentTarget.value;
+								queueBatchMetadataSave();
+							}}
+						/>
+					</div>
 					<div>
 						<label class="text-xs uppercase tracking-[0.2em] text-burnt-peach">
 							{t('ingestionSetup.batchIntent.language')}
@@ -389,10 +1183,13 @@
 						<select
 							class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
 							value={batchDefaults.language}
-							onchange={(event) => (batchDefaults.language = event.currentTarget.value)}
+							onchange={(event) => {
+								batchDefaults.language = event.currentTarget.value;
+								queueBatchMetadataSave();
+							}}
 						>
 							<option value="">{t('ingestionSetup.batchIntent.selectLanguage')}</option>
-							{#each languages as language}
+							{#each languages as language (language)}
 								<option value={language}>{t(`ingestionSetup.languages.${language}`)}</option>
 							{/each}
 						</select>
@@ -404,10 +1201,13 @@
 						<select
 							class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
 							value={batchDefaults.classificationType}
-							onchange={(event) => (batchDefaults.classificationType = event.currentTarget.value)}
+							onchange={(event) => {
+								batchDefaults.classificationType = event.currentTarget.value;
+								queueBatchMetadataSave();
+							}}
 						>
 							<option value="">{t('ingestionSetup.batchIntent.selectType')}</option>
-							{#each classificationTypes as type}
+							{#each classificationTypes as type (type)}
 								<option value={type}>{t(`ingestionSetup.classificationTypes.${type}`)}</option>
 							{/each}
 						</select>
@@ -416,12 +1216,52 @@
 						<label class="text-xs uppercase tracking-[0.2em] text-burnt-peach">
 							{t('ingestionSetup.batchIntent.tags')}
 						</label>
-						<input
-							class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-							placeholder={t('ingestionSetup.batchIntent.tagsPlaceholder')}
-							value={batchDefaults.tags}
-							oninput={(event) => (batchDefaults.tags = event.currentTarget.value)}
-						/>
+						<div class="mt-2 flex items-center gap-2">
+							<input
+								class="w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								placeholder={t('ingestionSetup.batchIntent.tagsPlaceholder')}
+								value={summaryTagInput}
+								oninput={(event) => (summaryTagInput = event.currentTarget.value)}
+								onkeydown={(event) => {
+									if (event.key === 'Enter') {
+										event.preventDefault();
+										addSummaryTag();
+									}
+								}}
+							/>
+							<button
+								type="button"
+								onclick={addSummaryTag}
+								class="rounded-full border border-pale-sky/40 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-pale-sky"
+							>
+								Add
+							</button>
+						</div>
+						{#if summaryTags.length > 0}
+							<div class="mt-2 flex flex-wrap gap-2">
+								{#each summaryTags as tag (tag)}
+									<button
+										type="button"
+										onclick={() => removeSummaryTag(tag)}
+										class="rounded-full border border-pale-sky/35 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-pale-sky"
+									>
+										{tag} ×
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+					<div>
+						<label class="text-xs uppercase tracking-[0.2em] text-burnt-peach">Summary</label>
+						<textarea
+							rows="2"
+							class="mt-2 w-full resize-none rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+							value={batchDefaults.classificationSummary}
+							oninput={(event) => {
+								batchDefaults.classificationSummary = event.currentTarget.value;
+								queueBatchMetadataSave();
+							}}
+						></textarea>
 					</div>
 					<div>
 						<label class="text-xs uppercase tracking-[0.2em] text-burnt-peach">
@@ -430,12 +1270,64 @@
 						<select
 							class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
 							value={batchDefaults.pipelinePreset}
-							onchange={(event) => (batchDefaults.pipelinePreset = event.currentTarget.value)}
+							onchange={(event) => {
+								batchDefaults.pipelinePreset = event.currentTarget.value;
+								queueBatchMetadataSave();
+							}}
 						>
-							{#each pipelinePresets as preset}
+							{#each pipelinePresets as preset (preset)}
 								<option value={preset}>{t(`ingestionSetup.pipelinePresets.${preset}`)}</option>
 							{/each}
 						</select>
+					</div>
+					<div>
+						<label class="text-xs uppercase tracking-[0.2em] text-burnt-peach">Access level</label>
+						<select
+							class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+							value={batchDefaults.accessLevel}
+							onchange={(event) => {
+								batchDefaults.accessLevel = event.currentTarget.value as 'private' | 'family' | 'public';
+								queueBatchMetadataSave();
+							}}
+						>
+							<option value="private">Private</option>
+							<option value="family">Family</option>
+							<option value="public">Public</option>
+						</select>
+					</div>
+					<div>
+						<label class="text-xs uppercase tracking-[0.2em] text-burnt-peach">Embargo until</label>
+						<input
+							type="datetime-local"
+							class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+							value={batchDefaults.embargoUntil}
+							onchange={(event) => {
+								batchDefaults.embargoUntil = event.currentTarget.value;
+								queueBatchMetadataSave();
+							}}
+						/>
+					</div>
+					<div>
+						<label class="text-xs uppercase tracking-[0.2em] text-burnt-peach">Rights note</label>
+						<input
+							class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+							value={batchDefaults.rightsNote}
+							oninput={(event) => {
+								batchDefaults.rightsNote = event.currentTarget.value;
+								queueBatchMetadataSave();
+							}}
+						/>
+					</div>
+					<div>
+						<label class="text-xs uppercase tracking-[0.2em] text-burnt-peach">Sensitivity note</label>
+						<input
+							class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+							value={batchDefaults.sensitivityNote}
+							oninput={(event) => {
+								batchDefaults.sensitivityNote = event.currentTarget.value;
+								queueBatchMetadataSave();
+							}}
+						/>
 					</div>
 				</div>
 			</div>
@@ -461,7 +1353,7 @@
 								onchange={(event) => updateFileOverrides(activeFileId, { language: event.currentTarget.value })}
 							>
 								<option value="">{t('ingestionSetup.overrides.useBatchDefault')}</option>
-								{#each languages as language}
+								{#each languages as language (language)}
 									<option value={language}>{t(`ingestionSetup.languages.${language}`)}</option>
 								{/each}
 							</select>
@@ -476,7 +1368,7 @@
 								onchange={(event) => updateFileOverrides(activeFileId, { classificationType: event.currentTarget.value })}
 							>
 								<option value="">{t('ingestionSetup.overrides.useBatchDefault')}</option>
-								{#each classificationTypes as type}
+								{#each classificationTypes as type (type)}
 									<option value={type}>{t(`ingestionSetup.classificationTypes.${type}`)}</option>
 								{/each}
 							</select>
@@ -515,9 +1407,13 @@
 			<div class="space-y-2">
 				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionSetup.readiness.title')}</p>
 				<p class="text-sm text-text-muted">
-					{isReady()
+					{canStartIngestion()
 						? t('ingestionSetup.readiness.ready')
-						: t('ingestionSetup.readiness.missing')}
+						: hasPendingUploads()
+							? t('ingestionSetup.readiness.uploading')
+							: hasUploadFailures()
+								? t('ingestionSetup.readiness.uploadFailed')
+								: t('ingestionSetup.readiness.missing')}
 				</p>
 				{#if !isReady()}
 					<div class="rounded-xl border border-border-soft bg-pale-sky/15 px-4 py-3 text-xs text-text-muted">
@@ -533,11 +1429,16 @@
 					</div>
 				{/if}
 			</div>
+			{#if submitError}
+				<p class="rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach">
+					{submitError}
+				</p>
+			{/if}
 			<button
-				disabled={!isReady()}
+				disabled={!canStartIngestion()}
 				onclick={() => (showConfirm = true)}
 				class={`rounded-full px-5 py-2 text-xs uppercase tracking-[0.2em] text-surface-white ${
-					isReady() ? 'bg-blue-slate' : 'bg-blue-slate/40 text-surface-white/70'
+					canStartIngestion() ? 'bg-blue-slate' : 'bg-blue-slate/40 text-surface-white/70'
 				}`}
 			>
 				{t('common.startIngestion')}
@@ -582,9 +1483,10 @@
 					</button>
 					<button
 						class="rounded-full bg-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-surface-white"
-						onclick={() => (window.location.href = `/ingestion/${batchId}`)}
+						onclick={startIngestion}
+						disabled={!canStartIngestion()}
 					>
-						{t('common.confirmStart')}
+						{isSubmitting ? 'Submitting...' : t('common.confirmStart')}
 					</button>
 				</div>
 			</div>

@@ -1,58 +1,120 @@
-import type { ObjectsListResponse, ObjectsService, ObjectRow } from './objects';
+import type {
+	ObjectsListRequest,
+	ObjectsRecentRequest,
+	ObjectsService,
+	ObjectRow
+} from './objects';
 
 const rows: ObjectRow[] = [
 	{
 		id: 'OBJ-20260202-000312',
+		objectId: 'OBJ-20260202-000312',
 		title: 'NoorMags Issue 80-82',
-		type: 'newspaper_article',
-		status: 'READY',
+		type: 'DOCUMENT',
+		processingState: 'index_done',
+		curationState: 'reviewed',
+		availabilityState: 'AVAILABLE',
+		accessLevel: 'family',
 		language: 'fa',
+		tenantId: 'tenant-1',
+		sourceIngestionId: 'ingestion-1',
+		sourceBatchLabel: 'BATCH-20260202-0031',
+		metadata: {},
+		embargoUntil: null,
+		embargoKind: 'none',
+		embargoCurationState: null,
+		rightsNote: null,
+		sensitivityNote: null,
+		canDownload: true,
+		accessReasonCode: 'OK',
+		createdAt: '2026-02-01T10:40:00Z',
 		updatedAt: '2026-02-02T10:40:00Z',
-		batchId: 'BATCH-20260202-0031',
-		thumbnailUrl: '/assets/objects/placeholder-1.jpg',
-		indicators: { ocr: true, transcript: false, embeddings: true }
+		indicators: { accessPdf: true, ocr: true, index: true }
 	},
 	{
 		id: 'OBJ-20260201-000287',
+		objectId: 'OBJ-20260201-000287',
 		title: null,
-		type: 'photo',
-		status: 'NEEDS_REVIEW',
+		type: 'IMAGE',
+		processingState: 'derivatives_done',
+		curationState: 'needs_review',
+		availabilityState: 'RESTORE_PENDING',
+		accessLevel: 'private',
 		language: 'fa',
+		tenantId: 'tenant-1',
+		sourceIngestionId: 'ingestion-2',
+		sourceBatchLabel: 'BATCH-20260201-0029',
+		metadata: {},
+		embargoUntil: null,
+		embargoKind: 'none',
+		embargoCurationState: null,
+		rightsNote: null,
+		sensitivityNote: null,
+		canDownload: false,
+		accessReasonCode: 'RESTORE_IN_PROGRESS',
+		createdAt: '2026-02-01T14:00:00Z',
 		updatedAt: '2026-02-01T14:18:00Z',
-		batchId: 'BATCH-20260201-0029',
-		thumbnailUrl: null,
-		indicators: { ocr: false, transcript: false, embeddings: true }
+		indicators: { accessPdf: false, ocr: false, index: true }
 	},
 	{
 		id: 'OBJ-20260131-000255',
+		objectId: 'OBJ-20260131-000255',
 		title: 'Tajik Radio Interview – Episode 4',
-		type: 'interview',
-		status: 'INGESTING',
+		type: 'AUDIO',
+		processingState: 'ingesting',
+		curationState: 'review_in_progress',
+		availabilityState: 'UNAVAILABLE',
+		accessLevel: 'public',
 		language: 'tg',
+		tenantId: 'tenant-1',
+		sourceIngestionId: 'ingestion-3',
+		sourceBatchLabel: 'BATCH-20260131-0024',
+		metadata: {},
+		embargoUntil: null,
+		embargoKind: 'none',
+		embargoCurationState: null,
+		rightsNote: null,
+		sensitivityNote: null,
+		canDownload: false,
+		accessReasonCode: 'TEMP_UNAVAILABLE',
+		createdAt: '2026-01-31T11:00:00Z',
 		updatedAt: '2026-01-31T12:02:00Z',
-		batchId: 'BATCH-20260131-0024',
-		thumbnailUrl: '/assets/objects/placeholder-2.jpg',
-		indicators: { ocr: false, transcript: true, embeddings: false }
+		indicators: { accessPdf: false, ocr: false, index: false }
 	},
 	{
 		id: 'OBJ-20260130-000231',
+		objectId: 'OBJ-20260130-000231',
 		title: 'Letter from Dushanbe',
-		type: 'letter',
-		status: 'FAILED',
+		type: 'DOCUMENT',
+		processingState: 'processing_failed',
+		curationState: 'curation_failed',
+		availabilityState: 'ARCHIVED',
+		accessLevel: 'private',
 		language: 'tg',
+		tenantId: 'tenant-1',
+		sourceIngestionId: 'ingestion-4',
+		sourceBatchLabel: 'BATCH-20260130-0020',
+		metadata: {},
+		embargoUntil: null,
+		embargoKind: 'none',
+		embargoCurationState: null,
+		rightsNote: null,
+		sensitivityNote: null,
+		canDownload: false,
+		accessReasonCode: 'RESTORE_REQUIRED',
+		createdAt: '2026-01-30T07:00:00Z',
 		updatedAt: '2026-01-30T08:40:00Z',
-		batchId: 'BATCH-20260130-0020',
-		thumbnailUrl: null,
-		indicators: { ocr: true, transcript: false, embeddings: false }
+		indicators: { accessPdf: false, ocr: true, index: false }
 	}
 ];
 
 export const mockObjectsService: ObjectsService = {
-	listObjects: async (_filters) => ({
+	listObjects: async (request: ObjectsListRequest) => ({
 		rows,
-		page: 1,
-		pageSize: 25,
-		total: 128
+		limit: request.filters.limit ?? 25,
+		totalCount: 128,
+		filteredCount: rows.length,
+		nextCursor: null
 	}),
-	listRecent: async () => rows.slice(0, 6)
+	listRecent: async (request: ObjectsRecentRequest) => rows.slice(0, request.limit ?? 6)
 };
