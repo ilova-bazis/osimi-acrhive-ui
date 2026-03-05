@@ -69,6 +69,50 @@ const defaultSummary = (title: string) => ({
 	}
 });
 
+const DEFAULT_CLASSIFICATION_TYPE = 'document' as const;
+const DEFAULT_ITEM_KIND = 'document' as const;
+
+const normalizeClassificationType = (
+	value: string | undefined
+):
+	| 'newspaper_article'
+	| 'magazine_article'
+	| 'book_chapter'
+	| 'book'
+	| 'letter'
+	| 'speech'
+	| 'interview'
+	| 'report'
+	| 'manuscript'
+	| 'image'
+	| 'document'
+	| 'other' => {
+	if (value === 'newspaper_article') return value;
+	if (value === 'magazine_article') return value;
+	if (value === 'book_chapter') return value;
+	if (value === 'book') return value;
+	if (value === 'letter') return value;
+	if (value === 'speech') return value;
+	if (value === 'interview') return value;
+	if (value === 'report') return value;
+	if (value === 'manuscript') return value;
+	if (value === 'image') return value;
+	if (value === 'other') return value;
+	if (value === 'photo') return 'image';
+	return DEFAULT_CLASSIFICATION_TYPE;
+};
+
+const normalizeItemKind = (
+	value: string | undefined
+): 'photo' | 'audio' | 'video' | 'scanned_document' | 'document' | 'other' => {
+	if (value === 'photo') return value;
+	if (value === 'audio') return value;
+	if (value === 'video') return value;
+	if (value === 'scanned_document') return value;
+	if (value === 'other') return value;
+	return DEFAULT_ITEM_KIND;
+};
+
 	const toAccessLevel = (value: string | undefined): 'private' | 'family' | 'public' => {
 		if (value === 'family' || value === 'public') return value;
 		return 'private';
@@ -93,7 +137,10 @@ const mapDetail = (ingestion: IngestionDto, files: IngestionFileDto[]): Ingestio
 		id,
 		batchLabel: ingestion.batch_label ?? id,
 		status: toIngestionStatus(ingestion.status),
-		documentType: ingestion.document_type ?? 'document',
+		classificationType: normalizeClassificationType(
+			ingestion.classification_type ?? ingestion.document_type
+		),
+		itemKind: normalizeItemKind(ingestion.item_kind),
 		languageCode: ingestion.language_code ?? 'en',
 		pipelinePreset: ingestion.pipeline_preset ?? 'auto',
 		accessLevel: toAccessLevel(ingestion.access_level),
@@ -171,7 +218,8 @@ export const apiIngestionDetailService: IngestionDetailService = {
 			token,
 			body: {
 				batch_label: payload.batchLabel,
-				document_type: payload.documentType,
+				classification_type: payload.classificationType,
+				item_kind: payload.itemKind,
 				language_code: payload.languageCode,
 				pipeline_preset: payload.pipelinePreset,
 				access_level: payload.accessLevel,

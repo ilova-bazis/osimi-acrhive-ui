@@ -72,7 +72,7 @@ const toActivityDescription = (
 	return defaultMessage;
 };
 
-const mapActivity = (
+export const mapActivity = (
 	activityResponse: DashboardActivityResponse
 ): DashboardActivity[] =>
 	activityResponse.activity.slice(0, 12).map((item) => {
@@ -82,7 +82,12 @@ const mapActivity = (
 			id: item.id,
 			title,
 			description: toActivityDescription(item, `${title} recorded.`),
-			timestamp: item.created_at
+			timestamp: item.created_at,
+			type: item.type,
+			ingestionId: item.ingestion_id ?? null,
+			objectId: item.object_id ?? null,
+			actorUserId: item.actor_user_id ?? null,
+			payload: item.payload ?? null
 		};
 	});
 

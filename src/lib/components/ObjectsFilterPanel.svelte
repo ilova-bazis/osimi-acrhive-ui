@@ -2,7 +2,10 @@
 	import { resolve } from '$app/paths';
 	import BaseButton from '$lib/components/BaseButton.svelte';
 	import Chip from '$lib/components/Chip.svelte';
-import type {
+	import { locale } from '$lib/i18n/locale';
+	import { translations } from '$lib/i18n/translations';
+	import { formatTemplate, translate } from '$lib/i18n/translate';
+	import type {
 		AccessLevel,
 		AvailabilityState,
 		ObjectsFilters,
@@ -30,35 +33,43 @@ import type {
 
 	let isDrawerOpen = $state(false);
 	let quickFiltersForm = $state<HTMLFormElement | null>(null);
-	let drawerType = $state(filters.type ?? '');
-	let drawerLanguage = $state(filters.language ?? '');
-	let drawerBatchLabel = $state(filters.batchLabel ?? '');
-	let drawerTag = $state(filters.tag ?? '');
+	let drawerType = $state('');
+	let drawerLanguage = $state('');
+	let drawerBatchLabel = $state('');
+	let drawerTag = $state('');
 	let drawerFromDate = $state('');
 	let drawerToDate = $state('');
-	let drawerLimit = $state(String(filters.limit ?? 25));
+	let drawerLimit = $state('25');
+	const dictionary = $derived(translations[$locale]);
+	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
 
-	const sortLabelMap: Record<ObjectsSort, string> = {
-		created_at_desc: 'Created (Newest)',
-		created_at_asc: 'Created (Oldest)',
-		updated_at_desc: 'Updated (Newest)',
-		updated_at_asc: 'Updated (Oldest)',
-		title_asc: 'Title (A-Z)',
-		title_desc: 'Title (Z-A)'
-	};
+	const sortLabelMap = $derived<Record<ObjectsSort, string>>({
+		created_at_desc: t('objects.sorts.created_at_desc'),
+		created_at_asc: t('objects.sorts.created_at_asc'),
+		updated_at_desc: t('objects.sorts.updated_at_desc'),
+		updated_at_asc: t('objects.sorts.updated_at_asc'),
+		title_asc: t('objects.sorts.title_asc'),
+		title_desc: t('objects.sorts.title_desc')
+	});
 
 	const applyQuickFilters = () => {
 		quickFiltersForm?.requestSubmit();
 	};
 
-	const languageOptions = [
-		{ value: 'en', label: 'English (en)' },
-		{ value: 'fa', label: 'Persian (fa)' },
-		{ value: 'tg', label: 'Tajik (tg)' },
-		{ value: 'ru', label: 'Russian (ru)' }
-	];
+	const languageOptions = $derived([
+		{ value: 'en', label: t('objects.languages.en') },
+		{ value: 'fa', label: t('objects.languages.fa') },
+		{ value: 'tg', label: t('objects.languages.tg') },
+		{ value: 'ru', label: t('objects.languages.ru') }
+	]);
 
 	const objectTypeOptions = ['GENERIC', 'IMAGE', 'AUDIO', 'VIDEO', 'DOCUMENT'] as const;
+	const accessOptionLabel = (value: AccessLevel): string =>
+		value === 'private'
+			? t('ingestionSetup.batchIntent.accessLevels.private')
+			: value === 'family'
+				? t('ingestionSetup.batchIntent.accessLevels.family')
+				: t('ingestionSetup.batchIntent.accessLevels.public');
 
 	const dateInputValue = (value: string | undefined): string => {
 		if (!value) return '';
@@ -81,6 +92,12 @@ import type {
 		drawerToDate = dateInputValue(filters.to);
 		drawerLimit = String(filters.limit ?? 25);
 	};
+
+	$effect(() => {
+		if (!isDrawerOpen) {
+			syncDrawerState();
+		}
+	});
 
 	const openDrawer = () => {
 		syncDrawerState();
@@ -125,6 +142,8 @@ import type {
 			drawerToDate,
 			drawerLimit !== '25' ? drawerLimit : ''
 		].filter(Boolean).length;
+
+	const hiddenChipCount = () => (activeChips.length > 2 ? activeChips.length - 2 : 0);
 </script>
 
 <section class="sticky top-0 z-10 rounded-2xl border border-blue-slate/30 bg-pearl-beige/55 px-4 py-3 shadow-[0_0_0_2px_rgba(79,109,122,0.08)] backdrop-blur-sm">
@@ -141,41 +160,41 @@ import type {
 				type="search"
 				name="q"
 				value={filters.q ?? ''}
-				placeholder="Search title, object id, OCR..."
+				placeholder={t('objects.filters.searchPlaceholder')}
 				class="h-11 min-w-[220px] flex-1 rounded-full border border-border-soft bg-surface-white px-4 text-sm text-text-ink"
 			/>
-			<BaseButton type="submit" class="h-11">Search</BaseButton>
+			<BaseButton type="submit" class="h-11">{t('objects.filters.search')}</BaseButton>
 		</div>
-		<p class="text-[11px] text-text-muted">Press Enter to search. Availability, access, and sort apply immediately.</p>
+		<p class="text-[11px] text-text-muted">{t('objects.filters.hint')}</p>
 		<div class="flex flex-wrap items-center gap-2">
 			<label class="hidden sm:inline-flex items-center gap-2 rounded-full border border-border-soft bg-surface-white px-3 py-2">
-				<span class="text-[10px] uppercase tracking-[0.18em] text-text-muted">Availability</span>
+				<span class="text-[10px] uppercase tracking-[0.18em] text-text-muted">{t('objects.filters.availability')}</span>
 				<select
 					name="availability_state"
 					class="bg-transparent text-xs text-text-ink focus:outline-none"
 					onchange={applyQuickFilters}
 				>
-					<option value="">All</option>
+					<option value="">{t('objects.filters.all')}</option>
 					{#each availabilityOptions as option (option)}
 						<option value={option} selected={filters.availabilityState === option}>{option}</option>
 					{/each}
 				</select>
 			</label>
 			<label class="hidden sm:inline-flex items-center gap-2 rounded-full border border-border-soft bg-surface-white px-3 py-2">
-				<span class="text-[10px] uppercase tracking-[0.18em] text-text-muted">Access</span>
+				<span class="text-[10px] uppercase tracking-[0.18em] text-text-muted">{t('objects.filters.access')}</span>
 				<select
 					name="access_level"
 					class="bg-transparent text-xs text-text-ink focus:outline-none"
 					onchange={applyQuickFilters}
 				>
-					<option value="">All</option>
+					<option value="">{t('objects.filters.all')}</option>
 					{#each accessOptions as option (option)}
-						<option value={option} selected={filters.accessLevel === option}>{option}</option>
+						<option value={option} selected={filters.accessLevel === option}>{accessOptionLabel(option)}</option>
 					{/each}
 				</select>
 			</label>
 			<label class="hidden sm:inline-flex items-center gap-2 rounded-full border border-border-soft bg-surface-white px-3 py-2">
-				<span class="text-[10px] uppercase tracking-[0.18em] text-text-muted">Sort</span>
+				<span class="text-[10px] uppercase tracking-[0.18em] text-text-muted">{t('objects.filters.sort')}</span>
 				<select
 					name="sort"
 					class="bg-transparent text-xs text-text-ink focus:outline-none"
@@ -189,11 +208,11 @@ import type {
 				</select>
 			</label>
 			<BaseButton variant="secondary" type="button" class="h-10" onclick={openDrawer}>
-				More filters
+				{t('objects.filters.moreFilters')}
 			</BaseButton>
 			{#if activeChips.length > 0}
 				<a href={resolve('/objects')} class="ml-auto text-xs text-text-muted hover:text-blue-slate">
-					Clear filters
+					{t('objects.filters.clearFilters')}
 				</a>
 			{/if}
 		</div>
@@ -201,13 +220,16 @@ import type {
 
 	<div class="mt-2 flex flex-wrap items-center gap-2">
 		{#if activeChips.length === 0}
-			<span class="text-xs text-text-muted">No active filters</span>
+			<span class="text-xs text-text-muted">{t('objects.filters.noActiveFilters')}</span>
 		{:else}
 			{#each activeChips as chip, index (chip.label)}
 				<a href={resolve(chip.href)} class={index > 1 ? 'hidden sm:inline-flex' : ''}>
 					<Chip class="border-blue-slate/30 bg-pale-sky/20 text-blue-slate">{chip.label} ×</Chip>
 				</a>
 			{/each}
+			{#if hiddenChipCount() > 0}
+				<span class="text-xs text-text-muted sm:hidden">+{hiddenChipCount()} {t('objects.filters.moreSelected')}</span>
+			{/if}
 		{/if}
 	</div>
 </section>
@@ -215,17 +237,17 @@ import type {
 {#if isDrawerOpen}
 	<button
 		type="button"
-		aria-label="Close filters"
+		aria-label={t('objects.filters.closeFilters')}
 		class="fixed inset-0 z-40 bg-dark-grey/60"
 		onclick={() => (isDrawerOpen = false)}
 	></button>
 	<aside class="fixed right-0 top-0 z-50 h-full w-full max-w-md border-l border-border-soft bg-surface-white p-6 shadow-[0_30px_80px_rgba(31,47,56,0.35)]">
 		<div class="flex items-start justify-between">
 			<div>
-				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Filters</p>
-				<h3 class="mt-2 font-display text-xl text-text-ink">Refine objects ({drawerActiveCount()} active)</h3>
+				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.filters.drawerTitle')}</p>
+				<h3 class="mt-2 font-display text-xl text-text-ink">{formatTemplate(t('objects.filters.drawerSubtitle'), { count: drawerActiveCount() })}</h3>
 			</div>
-			<button class="text-sm text-text-muted" onclick={() => (isDrawerOpen = false)}>Close</button>
+			<button class="text-sm text-text-muted" onclick={() => (isDrawerOpen = false)}>{t('common.close')}</button>
 		</div>
 
 		<form method="GET" action={resolve('/objects')} class="mt-6 space-y-4 text-sm text-text-muted">
@@ -241,52 +263,50 @@ import type {
 			<input type="hidden" name="to" value={toIsoEnd(drawerToDate)} />
 			<input type="hidden" name="limit" value={drawerLimit} />
 
-			<div class="rounded-xl border border-border-soft bg-alabaster-grey/40 p-3 text-xs text-text-muted">
-				Use this panel for detailed filters. Quick filters above apply instantly; this form applies as a batch.
-			</div>
+			<div class="rounded-xl border border-border-soft bg-alabaster-grey/40 p-3 text-xs text-text-muted">{t('objects.filters.drawerHint')}</div>
 
 			<label class="block">
-				<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">Type</span>
+				<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.filters.type')}</span>
 				<select bind:value={drawerType} class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-4 py-2">
-					<option value="">Any type</option>
+					<option value="">{t('objects.filters.anyType')}</option>
 					{#each objectTypeOptions as option (option)}
 						<option value={option}>{option}</option>
 					{/each}
 				</select>
-				<p class="mt-1 text-[11px] text-text-muted">Uses backend enum values.</p>
+				<p class="mt-1 text-[11px] text-text-muted">{t('objects.filters.typeHint')}</p>
 			</label>
 			<label class="block">
-				<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">Language</span>
+				<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.filters.language')}</span>
 				<select bind:value={drawerLanguage} class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-4 py-2">
-					<option value="">Any language</option>
+					<option value="">{t('objects.filters.anyLanguage')}</option>
 					{#each languageOptions as option (option.value)}
 						<option value={option.value}>{option.label}</option>
 					{/each}
 				</select>
-				<p class="mt-1 text-[11px] text-text-muted">Choose a common language code used in object metadata.</p>
+				<p class="mt-1 text-[11px] text-text-muted">{t('objects.filters.languageHint')}</p>
 			</label>
 			<label class="block">
-				<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">Batch label</span>
-				<input bind:value={drawerBatchLabel} placeholder="batch-2026" class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-4 py-2" />
+				<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.filters.batchLabel')}</span>
+				<input bind:value={drawerBatchLabel} placeholder={t('objects.filters.batchPlaceholder')} class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-4 py-2" />
 			</label>
 			<label class="block">
-				<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">Tag</span>
-				<input bind:value={drawerTag} placeholder="tag" class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-4 py-2" />
+				<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.filters.tag')}</span>
+				<input bind:value={drawerTag} placeholder={t('objects.filters.tagPlaceholder')} class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-4 py-2" />
 			</label>
 
 			<div>
-				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Date presets</p>
+				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.filters.datePresets')}</p>
 				<div class="mt-2 flex flex-wrap gap-2">
-					<button type="button" class="rounded-full border border-border-soft px-3 py-1 text-[11px]" onclick={() => setPresetRange(1)}>Last 24h</button>
-					<button type="button" class="rounded-full border border-border-soft px-3 py-1 text-[11px]" onclick={() => setPresetRange(7)}>Last 7d</button>
-					<button type="button" class="rounded-full border border-border-soft px-3 py-1 text-[11px]" onclick={() => setPresetRange(30)}>Last 30d</button>
-					<button type="button" class="rounded-full border border-border-soft px-3 py-1 text-[11px]" onclick={setThisMonth}>This month</button>
+					<button type="button" class="rounded-full border border-border-soft px-3 py-1 text-[11px]" onclick={() => setPresetRange(1)}>{t('objects.filters.last24h')}</button>
+					<button type="button" class="rounded-full border border-border-soft px-3 py-1 text-[11px]" onclick={() => setPresetRange(7)}>{t('objects.filters.last7d')}</button>
+					<button type="button" class="rounded-full border border-border-soft px-3 py-1 text-[11px]" onclick={() => setPresetRange(30)}>{t('objects.filters.last30d')}</button>
+					<button type="button" class="rounded-full border border-border-soft px-3 py-1 text-[11px]" onclick={setThisMonth}>{t('objects.filters.thisMonth')}</button>
 				</div>
 			</div>
 
 			<div class="grid grid-cols-2 gap-3">
 				<label class="block">
-					<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">From</span>
+					<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.filters.from')}</span>
 					<input
 						type="date"
 						bind:value={drawerFromDate}
@@ -294,7 +314,7 @@ import type {
 					/>
 				</label>
 				<label class="block">
-					<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">To</span>
+					<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.filters.to')}</span>
 					<input
 						type="date"
 						bind:value={drawerToDate}
@@ -303,10 +323,10 @@ import type {
 				</label>
 			</div>
 			{#if isDateRangeInvalid()}
-				<p class="text-xs text-burnt-peach">Invalid range: start date must be earlier than end date.</p>
+				<p class="text-xs text-burnt-peach">{t('objects.filters.invalidRange')}</p>
 			{/if}
 			<label class="block">
-				<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">Limit</span>
+				<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.filters.limit')}</span>
 				<select bind:value={drawerLimit} class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-4 py-2">
 					<option value="25">25</option>
 					<option value="50">50</option>
@@ -316,13 +336,13 @@ import type {
 
 			<div class="sticky bottom-0 mt-6 flex items-center justify-end gap-3 border-t border-border-soft bg-surface-white pt-4">
 				<BaseButton variant="secondary" type="button" onclick={clearDrawerFields}>
-					Reset
+					{t('objects.filters.reset')}
 				</BaseButton>
 				<BaseButton variant="secondary" type="button" onclick={() => (isDrawerOpen = false)}>
-					Cancel
+					{t('common.cancel')}
 				</BaseButton>
 				<BaseButton type="submit" disabled={isDateRangeInvalid()}>
-					Apply filters
+					{t('objects.filters.applyFilters')}
 				</BaseButton>
 			</div>
 		</form>

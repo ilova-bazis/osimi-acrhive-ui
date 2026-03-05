@@ -21,7 +21,14 @@ export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) =
 		createdAt: string | null;
 	}> = [];
 	let metadata = {
-		documentType: 'document',
+		classificationType: 'document',
+		itemKind: 'document' as
+			| 'photo'
+			| 'audio'
+			| 'video'
+			| 'scanned_document'
+			| 'document'
+			| 'other',
 		languageCode: 'en',
 		pipelinePreset: 'auto',
 		accessLevel: 'private' as 'private' | 'family' | 'public',
@@ -59,7 +66,8 @@ export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) =
 		}));
 
 		metadata = {
-			documentType: detail.documentType,
+			classificationType: detail.classificationType,
+			itemKind: detail.itemKind,
 			languageCode: detail.languageCode,
 			pipelinePreset: detail.pipelinePreset,
 			accessLevel: detail.accessLevel,

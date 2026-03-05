@@ -8,7 +8,8 @@ const DEFAULTS = {
 	languageCode: 'en',
 	accessLevel: 'private' as const,
 	pipelinePreset: 'auto' as const,
-	documentType: 'document' as const
+	classificationType: 'document' as const,
+	itemKind: 'document' as const
 };
 
 const toOptionalString = (value: FormDataEntryValue | null): string | undefined => {
@@ -41,6 +42,26 @@ const toBatchLabel = (value: string): string => {
 	return `Untitled ingestion ${stamp}`;
 };
 
+const classificationFromItemKind = (
+	itemKind: 'photo' | 'audio' | 'video' | 'scanned_document' | 'document' | 'other'
+):
+	| 'newspaper_article'
+	| 'magazine_article'
+	| 'book_chapter'
+	| 'book'
+	| 'letter'
+	| 'speech'
+	| 'interview'
+	| 'report'
+	| 'manuscript'
+	| 'image'
+	| 'document'
+	| 'other' => {
+	if (itemKind === 'photo') return 'image';
+	if (itemKind === 'audio' || itemKind === 'video' || itemKind === 'other') return 'other';
+	return 'document';
+};
+
 export const actions: Actions = {
 	default: async ({ request, fetch, cookies, locals }) => {
 		const token = cookies.get(AUTH_COOKIE_NAME);
@@ -50,18 +71,29 @@ export const actions: Actions = {
 
 		const data = await request.formData();
 		const name = toBatchLabel(String(data.get('name') ?? ''));
-		const documentType =
-			(String(data.get('documentType') ?? '').trim() as
+		const inputClassificationType =
+			(String(data.get('classificationType') ?? data.get('documentType') ?? '').trim() as
 				| 'newspaper_article'
 				| 'magazine_article'
 				| 'book_chapter'
 				| 'book'
-				| 'photo'
 				| 'letter'
 				| 'speech'
 				| 'interview'
+				| 'report'
+				| 'manuscript'
+				| 'image'
 				| 'document'
-				| 'other') || DEFAULTS.documentType;
+				| 'other') || '';
+		const itemKind =
+			(String(data.get('itemKind') ?? '').trim() as
+				| 'photo'
+				| 'audio'
+				| 'video'
+				| 'scanned_document'
+				| 'document'
+				| 'other') || DEFAULTS.itemKind;
+		const classificationType = inputClassificationType || classificationFromItemKind(itemKind);
 		const languageCode = String(data.get('languageCode') ?? '').trim() || DEFAULTS.languageCode;
 		const pipelinePreset =
 			(String(data.get('pipelinePreset') ?? '').trim() as
@@ -111,7 +143,8 @@ export const actions: Actions = {
 			result = await ingestionNewService.createDraft({
 				payload: {
 					name,
-					documentType,
+					classificationType,
+					itemKind,
 					languageCode,
 					pipelinePreset,
 					accessLevel,

@@ -65,7 +65,8 @@ describe('/ingestion/[batchId]/metadata +server', () => {
 			method: 'PATCH',
 			body: JSON.stringify({
 				batchLabel: 'Batch 1',
-				documentType: 'document',
+				classificationType: 'document',
+				itemKind: 'document',
 				languageCode: 'en',
 				pipelinePreset: 'auto',
 				accessLevel: 'private',
@@ -96,7 +97,8 @@ describe('/ingestion/[batchId]/metadata +server', () => {
 			method: 'PATCH',
 			body: JSON.stringify({
 				batchLabel: 'Batch 1',
-				documentType: 'document',
+				classificationType: 'document',
+				itemKind: 'document',
 				languageCode: 'en',
 				pipelinePreset: 'auto',
 				accessLevel: 'private',
@@ -130,5 +132,24 @@ describe('/ingestion/[batchId]/metadata +server', () => {
 		} as never);
 
 		expect(response.status).toBe(400);
+	});
+
+	it('rejects invalid item kind and classification type values', async () => {
+		const response = await PATCH({
+			params: { batchId: 'batch-1' },
+			request: new Request('https://example.test', {
+				method: 'PATCH',
+				body: JSON.stringify({
+					classificationType: 'photo',
+					itemKind: 'image'
+				})
+			}),
+			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'archiver' } },
+			cookies: { get: () => 'token-1', delete: vi.fn() },
+			fetch: vi.fn()
+		} as never);
+
+		expect(response.status).toBe(400);
+		expect(updateMock).not.toHaveBeenCalled();
 	});
 });

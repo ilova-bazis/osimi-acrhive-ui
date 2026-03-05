@@ -1,5 +1,13 @@
 import type { IngestionStatus } from './ingestionOverview';
-import type { IngestionSummaryDto } from '$lib/api/schemas/ingestions';
+import type {
+	IngestionSummaryDto,
+	classificationTypeSchema,
+	itemKindSchema
+} from '$lib/api/schemas/ingestions';
+import type { z } from 'zod';
+
+type ClassificationType = z.infer<typeof classificationTypeSchema>;
+type ItemKind = z.infer<typeof itemKindSchema>;
 
 export type IngestionDetailFile = {
 	id: string;
@@ -14,7 +22,8 @@ export type IngestionDetail = {
 	id: string;
 	batchLabel: string;
 	status: IngestionStatus;
-	documentType: string;
+	classificationType: ClassificationType;
+	itemKind: ItemKind;
 	languageCode: string;
 	pipelinePreset: string;
 	accessLevel: 'private' | 'family' | 'public';
@@ -65,17 +74,8 @@ export type UpdateIngestionRequest = {
 	batchId: string;
 	payload: {
 		batchLabel?: string;
-		documentType?:
-			| 'newspaper_article'
-			| 'magazine_article'
-			| 'book_chapter'
-			| 'book'
-			| 'photo'
-			| 'letter'
-			| 'speech'
-			| 'interview'
-			| 'document'
-			| 'other';
+		classificationType?: ClassificationType;
+		itemKind?: ItemKind;
 		languageCode?: string;
 		pipelinePreset?:
 			| 'auto'

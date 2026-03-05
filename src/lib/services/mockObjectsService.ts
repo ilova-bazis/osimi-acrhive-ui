@@ -9,6 +9,7 @@ const rows: ObjectRow[] = [
 	{
 		id: 'OBJ-20260202-000312',
 		objectId: 'OBJ-20260202-000312',
+		thumbnailArtifactId: 'artifact-thumb-1',
 		title: 'NoorMags Issue 80-82',
 		type: 'DOCUMENT',
 		processingState: 'index_done',
@@ -34,6 +35,7 @@ const rows: ObjectRow[] = [
 	{
 		id: 'OBJ-20260201-000287',
 		objectId: 'OBJ-20260201-000287',
+		thumbnailArtifactId: null,
 		title: null,
 		type: 'IMAGE',
 		processingState: 'derivatives_done',
@@ -59,6 +61,7 @@ const rows: ObjectRow[] = [
 	{
 		id: 'OBJ-20260131-000255',
 		objectId: 'OBJ-20260131-000255',
+		thumbnailArtifactId: 'artifact-thumb-3',
 		title: 'Tajik Radio Interview – Episode 4',
 		type: 'AUDIO',
 		processingState: 'ingesting',
@@ -84,6 +87,7 @@ const rows: ObjectRow[] = [
 	{
 		id: 'OBJ-20260130-000231',
 		objectId: 'OBJ-20260130-000231',
+		thumbnailArtifactId: null,
 		title: 'Letter from Dushanbe',
 		type: 'DOCUMENT',
 		processingState: 'processing_failed',
@@ -116,5 +120,105 @@ export const mockObjectsService: ObjectsService = {
 		filteredCount: rows.length,
 		nextCursor: null
 	}),
-	listRecent: async (request: ObjectsRecentRequest) => rows.slice(0, request.limit ?? 6)
+	listRecent: async (request: ObjectsRecentRequest) => rows.slice(0, request.limit ?? 6),
+	getObjectDetail: async ({ objectId }) => {
+		const found = rows.find((row) => row.objectId === objectId || row.id === objectId) ?? rows[0];
+		if (!found) {
+			throw new Error('Object not found');
+		}
+
+		return {
+			...found,
+			ingestManifest: {
+				schema_version: '1.0',
+				object_id: found.objectId,
+				classification: {
+					type: found.type,
+					language: found.language,
+					tags: []
+				}
+			},
+			isAuthorized: found.accessReasonCode !== 'FORBIDDEN_POLICY',
+			isDeliverable: found.availabilityState === 'AVAILABLE'
+		};
+	},
+	listObjectArtifacts: async ({ objectId }) => [
+		{
+			id: `${objectId}-artifact-pdf`,
+			kind: 'access_pdf',
+			variant: null,
+			storageKey: `objects/${objectId}/access.pdf`,
+			contentType: 'application/pdf',
+			sizeBytes: 120340,
+			createdAt: '2026-02-20T10:00:00Z'
+		},
+		{
+			id: `${objectId}-artifact-ocr`,
+			kind: 'ocr_text',
+			variant: null,
+			storageKey: `objects/${objectId}/ocr.txt`,
+			contentType: 'text/plain',
+			sizeBytes: 26000,
+			createdAt: '2026-02-20T10:02:00Z'
+		}
+	],
+	listObjectAvailableFiles: async ({ objectId }) => [
+		{
+			id: '11111111-1111-4111-8111-111111111111',
+			archiveFileKey: `${objectId}/original.pdf`,
+			artifactKind: 'original',
+			variant: null,
+			displayName: 'Original PDF',
+			contentType: 'application/pdf',
+			sizeBytes: 421337,
+			checksumSha256: null,
+			metadata: {},
+			isAvailable: true,
+			syncedAt: '2026-03-02T10:00:00.000Z'
+		},
+		{
+			id: '22222222-2222-4222-8222-222222222222',
+			archiveFileKey: `${objectId}/ocr.txt`,
+			artifactKind: 'ocr_text',
+			variant: null,
+			displayName: 'OCR text',
+			contentType: 'text/plain',
+			sizeBytes: 26000,
+			checksumSha256: null,
+			metadata: {},
+			isAvailable: true,
+			syncedAt: '2026-03-02T10:00:00.000Z'
+		}
+	],
+	listObjectDownloadRequests: async () => [
+		{
+			id: '33333333-3333-4333-8333-333333333333',
+			availableFileId: '11111111-1111-4111-8111-111111111111',
+			requestedBy: 'user-1',
+			artifactKind: 'original',
+			variant: null,
+			status: 'COMPLETED',
+			failureReason: null,
+			createdAt: '2026-03-02T09:20:00.000Z',
+			updatedAt: '2026-03-02T09:40:00.000Z',
+			completedAt: '2026-03-02T09:40:00.000Z'
+		}
+	],
+	createObjectDownloadRequest: async ({ objectId, availableFileId }) => ({
+		status: 'queued',
+		objectId,
+		artifact: null,
+		request: {
+			id: '44444444-4444-4444-8444-444444444444',
+			availableFileId,
+			requestedBy: 'user-1',
+			artifactKind: 'original',
+			variant: null,
+			status: 'QUEUED',
+			failureReason: null,
+			createdAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString(),
+			completedAt: null
+		}
+	})
 };

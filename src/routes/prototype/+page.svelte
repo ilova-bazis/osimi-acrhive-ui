@@ -83,7 +83,7 @@
 
 	$: selectedFile = files.find((file) => file.id === selectedId);
 	$: selectedItem = sampleBatch.items.find((item) => item.originalFilename === selectedFile?.name);
-	$: batchTags = Array.from(
+	const batchTags = Array.from(
 		new Set(sampleBatch.items.flatMap((item) => item.tags ?? []).filter((tag) => tag.length > 0))
 	);
 

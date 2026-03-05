@@ -56,7 +56,8 @@ describe('/ingestion/new +page.server', () => {
 		expect(createDraftMock).toHaveBeenCalledWith(
 			expect.objectContaining({
 				payload: expect.objectContaining({
-					documentType: 'document',
+					classificationType: 'document',
+					itemKind: 'document',
 					languageCode: 'en',
 					pipelinePreset: 'auto',
 					accessLevel: 'private',
@@ -88,6 +89,36 @@ describe('/ingestion/new +page.server', () => {
 			status: 303,
 			location: '/ingestion/batch-01/setup'
 		});
+	});
+
+	it('derives classification type from item kind when omitted', async () => {
+		const form = new FormData();
+		form.set('name', 'Photo batch');
+		form.set('itemKind', 'photo');
+		const request = new Request('https://example.test/ingestion/new', { method: 'POST', body: form });
+
+		createDraftMock.mockResolvedValue({ batchId: 'batch-photo' });
+
+		await expect(
+			actions.default({
+				request,
+				locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
+				cookies: { get: () => 'token-1', delete: vi.fn() },
+				fetch: vi.fn()
+			} as never)
+		).rejects.toMatchObject({
+			status: 303,
+			location: '/ingestion/batch-photo/setup'
+		});
+
+		expect(createDraftMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				payload: expect.objectContaining({
+					itemKind: 'photo',
+					classificationType: 'image'
+				})
+			})
+		);
 	});
 
 	it('returns fail(502) for backend errors', async () => {

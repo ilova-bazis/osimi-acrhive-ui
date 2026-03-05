@@ -7,6 +7,11 @@
 		matchPrefix?: string;
 	};
 
+	type LocaleOption = {
+		key: string;
+		label: string;
+	};
+
 	let {
 		library,
 		title,
@@ -15,6 +20,10 @@
 		navItems = [],
 		currentPath = '/',
 		logoutLabel = 'Sign out',
+		locales = [],
+		locale = 'en',
+		localeLabel = 'UI',
+		onLocaleChange,
 		onLogout
 	} = $props<{
 		library: string;
@@ -24,6 +33,10 @@
 		navItems?: NavItem[];
 		currentPath?: string;
 		logoutLabel?: string;
+		locales?: ReadonlyArray<LocaleOption>;
+		locale?: string;
+		localeLabel?: string;
+		onLocaleChange?: (locale: string) => void;
 		onLogout?: () => Promise<void> | void;
 	}>();
 
@@ -45,6 +58,20 @@
 				<h1 class="font-display text-2xl text-burnt-peach">{title}</h1>
 			</div>
 			<div class="flex flex-wrap items-center gap-3">
+				{#if locales.length > 0}
+					<label class="flex items-center gap-2 rounded-full border border-border-soft bg-surface-white px-3 py-2 text-xs text-blue-slate">
+						<span class="uppercase tracking-[0.16em]">{localeLabel}</span>
+						<select
+							value={locale}
+							onchange={(event) => onLocaleChange?.(event.currentTarget.value)}
+							class="rounded-full border border-border-soft bg-surface-white px-2 py-1 text-xs text-blue-slate"
+						>
+							{#each locales as option (option.key)}
+								<option value={option.key}>{option.label}</option>
+							{/each}
+						</select>
+					</label>
+				{/if}
 				<div class="rounded-full border border-border-soft bg-surface-white px-4 py-2 text-xs text-blue-slate">
 					{username} · {role}
 				</div>

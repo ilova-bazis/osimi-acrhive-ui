@@ -113,6 +113,7 @@ Planned addition: `LOCKED` (for HTTP `423` state-based non-deliverable condition
 - Query params:
   - `limit` (optional int, default `50`, max `200`)
   - `cursor` (optional opaque base64url string)
+  - `ingestion_id` (optional UUID; filters activity to a single ingestion)
 - 200 response:
   - `activity[]` where each item includes:
     - `id`, `event_id`, `type`, `ingestion_id`, `object_id`, `payload`, `actor_user_id`, `created_at`
@@ -127,7 +128,8 @@ Planned addition: `LOCKED` (for HTTP `423` state-based non-deliverable condition
 - Body:
   - `batch_label` (string)
   - `schema_version` (string, must be `"1.0"`)
-  - `document_type` (string; one of `newspaper_article`, `magazine_article`, `book_chapter`, `book`, `photo`, `letter`, `speech`, `interview`, `document`, `other`)
+  - `classification_type` (string; one of `newspaper_article`, `magazine_article`, `book_chapter`, `book`, `letter`, `speech`, `interview`, `report`, `manuscript`, `image`, `document`, `other`)
+  - `item_kind` (string; one of `photo`, `audio`, `video`, `scanned_document`, `document`, `other`)
   - `language_code` (string, non-empty; unrestricted)
   - `pipeline_preset` (string; one of `auto`, `none`, `ocr_text`, `audio_transcript`, `video_transcript`, `ocr_and_audio_transcript`, `ocr_and_video_transcript`)
   - `access_level` (string; `private`, `family`, `public`)
@@ -150,7 +152,6 @@ Planned addition: `LOCKED` (for HTTP `423` state-based non-deliverable condition
           - `confidence` (`low`, `medium`, `high`)
           - `note` (string or `null`)
     - optional fields:
-      - `item_kind` (`scanned_document|photo|audio|video|document|other`)
       - `processing`
         - `ocr_text`, `audio_transcript`, `video_transcript` (each optional `{ enabled, language? }`)
       - `publication` (`name`, `issue`, `volume`, `pages`, `place`)
@@ -185,7 +186,8 @@ Planned addition: `LOCKED` (for HTTP `423` state-based non-deliverable condition
 - Roles: `archiver`, `admin`
 - Body (partial update, optional fields):
   - `batch_label` (string)
-  - `document_type` (string; one of `newspaper_article`, `magazine_article`, `book_chapter`, `book`, `photo`, `letter`, `speech`, `interview`, `document`, `other`)
+  - `classification_type` (string; one of `newspaper_article`, `magazine_article`, `book_chapter`, `book`, `letter`, `speech`, `interview`, `report`, `manuscript`, `image`, `document`, `other`)
+  - `item_kind` (string; one of `photo`, `audio`, `video`, `scanned_document`, `document`, `other`)
   - `language_code` (string, non-empty; unrestricted)
   - `pipeline_preset` (string; one of `auto`, `none`, `ocr_text`, `audio_transcript`, `video_transcript`, `ocr_and_audio_transcript`, `ocr_and_video_transcript`)
   - `access_level` (string; `private`, `family`, `public`)
@@ -193,7 +195,8 @@ Planned addition: `LOCKED` (for HTTP `423` state-based non-deliverable condition
   - `rights_note` (optional string, nullable)
   - `sensitivity_note` (optional string, nullable)
   - `summary` (object; ingestion-stage metadata, based on `catalog.json` fields)
-    - see summary shape in `POST /api/ingestions`
+    - full object replacement (same strict schema as `POST /api/ingestions`)
+    - partial nested updates are not supported; send the complete summary block
 - Preconditions:
   - ingestion status is `DRAFT`, `UPLOADING`, or `CANCELED`
   - ingestion has not started processing (no active lease)
@@ -227,6 +230,8 @@ Planned addition: `LOCKED` (for HTTP `423` state-based non-deliverable condition
 - Roles: `archiver`, `admin`
 - Body (new file):
   - `filename`, `content_type`, `size_bytes`
+- Planned (not yet implemented):
+  - optional `source_order` (integer `>= 0`) to persist client-intended page/file sequence
 - Body (re-presign existing):
   - `file_id`
 - 201 response:
@@ -383,6 +388,7 @@ Example response:
     {
       "id": "OBJ-20260213-ABC123",
       "object_id": "OBJ-20260213-ABC123",
+      "thumbnail_artifact_id": "60000000-0000-4000-8000-000000000777",
       "title": "Document title",
       "processing_state": "queued",
       "curation_state": "needs_review",
@@ -411,12 +417,20 @@ Example response:
 }
 ```
 
+Each object item includes `thumbnail_artifact_id`:
+
+- preferred thumbnail artifact id (`variant = null` preferred, otherwise latest)
+- `null` when no thumbnail artifact currently exists
+
 ### GET `/api/objects/:object_id`
 
 - Auth: Bearer token
 - Roles: `viewer`, `archiver`, `admin`
 - 200 response:
   - `object` including `ingest_manifest` (or `null`)
+  - `object.thumbnail_artifact_id`:
+    - preferred thumbnail artifact id for the object
+    - `null` when no thumbnail artifact is available yet
   - access projection fields:
     - `is_authorized`
     - `is_deliverable`
@@ -433,6 +447,7 @@ Example response:
   - `metadata` patching is intentionally not supported in this phase.
 - 200 response:
   - `object` (updated)
+  - includes `thumbnail_artifact_id` (`null` unless thumbnail artifact exists)
 
 ### GET `/api/objects/:object_id/artifacts`
 
@@ -440,7 +455,133 @@ Example response:
 - Roles: `viewer`, `archiver`, `admin`
 - 200 response:
   - `object_id`
-  - `artifacts[]` (`id`, `kind`, `storage_key`, `content_type`, `size_bytes`, `created_at`)
+  - `artifacts[]` (`id`, `kind`, `variant`, `storage_key`, `content_type`, `size_bytes`, `created_at`)
+
+### GET `/api/objects/:object_id/available-files`
+
+- Auth: Bearer token
+- Roles: `viewer`, `archiver`, `admin`
+- 200 response:
+  - `object_id`
+  - `available_files[]` (`id`, `archive_file_key`, `artifact_kind`, `variant`, `display_name`, `content_type`, `size_bytes`, `checksum_sha256`, `metadata`, `is_available`, `synced_at`)
+
+### POST `/api/objects/:object_id/download-requests`
+
+- Auth: Bearer token
+- Roles: `viewer`, `archiver`, `admin`
+- Body:
+  - `available_file_id` (UUID from `GET /api/objects/:object_id/available-files`)
+- Behavior:
+  - If matching artifact already exists on backend (`object_id + artifact_kind + variant`), request is not queued and response returns `status = available` with artifact payload.
+  - If artifact is missing, backend queues (or reuses existing active) request and returns `status = queued` with request payload.
+- 200 response:
+  - when artifact already exists: `status: "available"`, `object_id`, `artifact`
+  - when an active request already exists: `status: "queued"`, `object_id`, `request`
+- 201 response:
+  - when a new queue request is created: `status: "queued"`, `object_id`, `request`
+
+### GET `/api/objects/:object_id/download-requests`
+
+- Auth: Bearer token
+- Roles: `viewer`, `archiver`, `admin`
+- 200 response:
+  - `object_id`
+  - `requests[]` (`id`, `available_file_id`, `requested_by`, `artifact_kind`, `variant`, `status`, `failure_reason`, `failure_details`, `created_at`, `updated_at`, `completed_at`)
+
+### PUT `/api/internal/objects/:object_id/available-files`
+
+- Auth: `x-worker-auth-token`
+- Body:
+  - `files[]` full-replace snapshot entries:
+    - `archive_file_key` (string)
+    - `artifact_kind` (`artifact_kind` enum)
+    - `variant` (nullable string)
+    - `display_name` (string)
+    - `content_type` (nullable string)
+    - `size_bytes` (nullable number)
+    - `checksum_sha256` (nullable string)
+    - `metadata` (object, optional)
+    - `is_available` (boolean, optional; defaults true)
+- Behavior:
+  - Replaces object snapshot by archive key: upserts provided entries and marks omitted entries unavailable.
+  - Auto-thumbnail side effect: when snapshot contains available `thumbnail` entries, backend auto-queues one thumbnail download request if no thumbnail artifact exists and no active thumbnail request exists.
+  - Auto-thumbnail selection priority: prefer `variant = null`; otherwise choose lexicographically lowest `archive_file_key`.
+- 200 response:
+  - `object_id`
+  - `synced_files` (number)
+
+### POST `/api/object-download-requests/lease`
+
+- Auth: `x-worker-auth-token`
+- Optional: `x-worker-id`
+- 200 response:
+  - `request: null` when no pending work
+  - otherwise `request` with:
+    - `request_id`, `lease_id`, `lease_token`, `lease_expires_at`
+    - `object_id`, `tenant_id`, `available_file_id`, `artifact_kind`, `variant`
+    - `available_file` (nullable object from available-files snapshot)
+
+### POST `/api/object-download-requests/:id/lease/heartbeat`
+
+- Auth: `x-worker-auth-token`
+- Body:
+  - `lease_token`
+- 200 response:
+  - `request` (`request_id`, `lease_id`, `lease_token`, `lease_expires_at`)
+
+### POST `/api/object-download-requests/:id/lease/release`
+
+- Auth: `x-worker-auth-token`
+- Body:
+  - `lease_token`
+- 200 response:
+  - `status: "ok"`, `request_id`
+
+### POST `/api/object-download-requests/:id/artifacts/presign`
+
+- Auth: `x-worker-auth-token`
+- Body:
+  - `lease_token`
+  - `content_type`
+  - `size_bytes`
+  - `extension`
+- 200 response:
+  - `upload_token`
+  - `upload_url` (for `PUT` upload)
+  - `storage_key`
+  - `expires_at`
+  - `headers` (`content-type`, `content-length`)
+
+### PUT `/api/object-download-requests/uploads/:token`
+
+- Auth: none (signed token in path)
+- Body must satisfy token constraints (`content-type`, `content-length`, exact byte size)
+- 200 response:
+  - `status: "ok"`, `request_id`, `size_bytes`
+
+### POST `/api/object-download-requests/:id/complete`
+
+- Auth: `x-worker-auth-token`
+- Body:
+  - `lease_token`
+  - `upload_token`
+- Behavior:
+  - idempotent success when matching artifact already exists
+- 200 response:
+  - `status: "completed"`, `request_id`, `object_id`, `artifact`
+
+### POST `/api/object-download-requests/:id/fail`
+
+- Auth: `x-worker-auth-token`
+- Body:
+  - `lease_token`
+  - `failure` object:
+    - `code` (string)
+    - `message` (string)
+    - `retryable` (boolean)
+    - `details` (object, optional)
+- 200 response:
+  - `status: "failed"`, `request_id`, `retryable`
 
 ### GET `/api/objects/:object_id/artifacts/:artifact_id/download`
 
@@ -570,6 +711,20 @@ Integration guide for archive worker teams: `docs/archive-system-integration.md`
 - ingestion-stage leases may provide `catalog_json.object_id = null`
 - each `download_urls[]` item includes `checksum_sha256` for worker validation
 - each `download_urls[]` item includes `processing_overrides` (object; per-file overrides)
+- Planned (not yet implemented): each `download_urls[]` item will also include `filename` and `source_order`
+- Ordering rule target (planned): `source_order ASC NULLS LAST`, then `filename`, then `file_id`
+
+### POST `/api/ingestions/:id/lease`
+
+- Auth: `x-worker-auth-token` header
+- Optional: `x-worker-id`
+- Path:
+  - `:id` ingestion UUID
+- 200 response:
+  - `lease { lease_id, lease_token, lease_expires_at, ingestion_id, batch_label, tenant_id, download_urls[], catalog_json }`
+- 404 when ingestion does not exist
+- 409 when ingestion exists but is not currently leasable (for example, active lease, not in `QUEUED`, or terminal state)
+- no active-lease takeover is allowed; this endpoint is for deterministic reacquire/recovery
 
 ### POST `/api/ingestions/:id/lease/heartbeat`
 

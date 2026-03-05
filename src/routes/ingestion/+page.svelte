@@ -7,6 +7,9 @@
 		IngestionOverviewSummary,
 		IngestionStatus
 	} from '$lib/services/ingestionOverview';
+	import { locale } from '$lib/i18n/locale';
+	import { translations } from '$lib/i18n/translations';
+	import { formatTemplate, translate } from '$lib/i18n/translate';
 	import type { FileStatus } from '$lib/types';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 
@@ -15,18 +18,20 @@
 	const summary = $derived(data.summary);
 	const activeAndRecent = $derived(summary.activeAndRecent);
 	const drafts = $derived(summary.drafts);
+ 	const dictionary = $derived(translations[$locale]);
+	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
 
-	const statusLabelMap: Record<IngestionStatus, string> = {
-		draft: 'Draft',
-		uploading: 'Uploading',
-		queued: 'Queued',
-		ingesting: 'Ingesting',
-		completed: 'Completed',
-		failed: 'Failed',
-		canceled: 'Canceled'
-	};
+	const statusLabelMap = $derived({
+		draft: t('ingestionOverview.statuses.draft'),
+		uploading: t('ingestionOverview.statuses.uploading'),
+		queued: t('ingestionOverview.statuses.queued'),
+		ingesting: t('ingestionOverview.statuses.ingesting'),
+		completed: t('ingestionOverview.statuses.completed'),
+		failed: t('ingestionOverview.statuses.failed'),
+		canceled: t('ingestionOverview.statuses.canceled')
+	});
 
-	const statusToneMap: Record<IngestionStatus, FileStatus> = {
+	const statusToneMap: Record<string, FileStatus> = {
 		draft: 'queued',
 		uploading: 'processing',
 		queued: 'processing',
@@ -36,20 +41,22 @@
 		canceled: 'blocked'
 	};
 
-	const actionLabelMap: Record<IngestionAction, string> = {
-		view: 'View',
-		resume: 'Resume',
-		retry: 'Retry',
-		cancel: 'Cancel',
-		restore: 'Restore',
-		delete: 'Delete'
-	};
+	const actionLabelMap = $derived({
+		view: t('ingestionOverview.actions.view'),
+		resume: t('ingestionOverview.actions.resume'),
+		retry: t('ingestionOverview.actions.retry'),
+		cancel: t('ingestionOverview.actions.cancel'),
+		restore: t('ingestionOverview.actions.restore'),
+		delete: t('ingestionOverview.actions.delete')
+	});
 
-	const getStatusTone = (status: IngestionStatus) => statusToneMap[status];
-	const getStatusLabel = (status: IngestionStatus) => statusLabelMap[status];
-	const getActionLabel = (action: IngestionAction) => actionLabelMap[action];
+	const getStatusTone = (status: IngestionStatus) => statusToneMap[status] ?? 'queued';
+	const getStatusLabel = (status: IngestionStatus) =>
+		statusLabelMap[status as keyof typeof statusLabelMap] ?? status;
+	const getActionLabel = (action: IngestionAction) =>
+		actionLabelMap[action as keyof typeof actionLabelMap] ?? action;
 
-	const getActionPath = (batchId: string, action: IngestionAction): string => {
+	const getActionPath = (batchId: string, action: string): string => {
 		if (action === 'retry') return resolve(`/ingestion/${batchId}/retry`);
 		if (action === 'cancel') return resolve(`/ingestion/${batchId}/cancel`);
 		if (action === 'restore') return resolve(`/ingestion/${batchId}/restore`);
@@ -89,8 +96,12 @@
 
 		actingBatchId = batch.id;
 		try {
+			const actionMethodMap: Record<string, 'POST' | 'DELETE'> = {
+				delete: 'DELETE'
+			};
+			const method = actionMethodMap[action] ?? 'POST';
 			const response = await fetch(getActionPath(batch.id, action), {
-				method: action === 'delete' ? 'DELETE' : 'POST'
+				method
 			});
 
 			if (response.status === 401) {
@@ -98,20 +109,30 @@
 				return;
 			}
 
-			if (response.status === 409 && action === 'delete') {
-				throw new Error('Only draft, uploading, or canceled ingestions can be deleted.');
+			if (response.status === 409) {
+				throw new Error(t('ingestionOverview.errors.deleteConflict'));
 			}
 
 			if (!response.ok) {
 				throw new Error(
-					await readErrorMessage(response, `Failed to ${getActionLabel(action).toLowerCase()} ingestion ${batch.name}.`)
+					await readErrorMessage(
+						response,
+						formatTemplate(t('ingestionOverview.errors.failedNamed'), {
+							action: getActionLabel(action).toLowerCase(),
+							name: batch.name
+						})
+					)
 				);
 			}
 
 			await invalidateAll();
 		} catch (error) {
 			actionError =
-				error instanceof Error ? error.message : `Failed to ${getActionLabel(action).toLowerCase()} ingestion.`;
+				error instanceof Error
+					? error.message
+					: formatTemplate(t('ingestionOverview.errors.failed'), {
+						action: getActionLabel(action).toLowerCase()
+					});
 		} finally {
 			actingBatchId = '';
 		}
@@ -127,60 +148,58 @@
 <main class="mx-auto flex min-h-[80vh] max-w-6xl flex-col gap-6 px-6 py-10">
 	<section class="flex flex-wrap items-center justify-between gap-4">
 		<div>
-			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Ingestion</p>
-			<h2 class="mt-2 font-display text-2xl text-text-ink">Ingestion</h2>
+			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionOverview.title')}</p>
+			<h2 class="mt-2 font-display text-2xl text-text-ink">{t('ingestionOverview.title')}</h2>
 		</div>
 		<a
 			href={resolve('/ingestion/new')}
 			class="inline-flex items-center gap-2 rounded-full bg-blue-slate px-5 py-2 text-xs uppercase tracking-[0.2em] text-surface-white"
 		>
-			➕ New Ingestion
+			➕ {t('ingestionOverview.newIngestion')}
 		</a>
 	</section>
 
 	{#if emptyState}
 		<section class="rounded-2xl border border-border-soft bg-surface-white px-6 py-8 text-center">
-			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">No ingestions yet</p>
-			<h3 class="mt-3 font-display text-xl text-text-ink">Start your first ingestion</h3>
-			<p class="mt-2 text-sm text-text-muted">
-				Ingestion happens in batches. Create your first batch to begin the workflow.
-			</p>
+			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionOverview.emptyKicker')}</p>
+			<h3 class="mt-3 font-display text-xl text-text-ink">{t('ingestionOverview.emptyTitle')}</h3>
+			<p class="mt-2 text-sm text-text-muted">{t('ingestionOverview.emptyBody')}</p>
 			<a
 				href={resolve('/ingestion/new')}
 				class="mt-5 inline-flex items-center gap-2 rounded-full bg-blue-slate px-5 py-2 text-xs uppercase tracking-[0.2em] text-surface-white"
 			>
-				Start your first ingestion
+				{t('ingestionOverview.emptyTitle')}
 			</a>
 		</section>
 	{:else}
 		<section class="grid gap-3 md:grid-cols-4">
 			<div class="rounded-2xl border border-border-soft bg-surface-white px-4 py-4">
-				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Total batches</p>
+				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionOverview.stats.totalBatches')}</p>
 				<p class="mt-2 text-2xl font-semibold text-text-ink">{summary.stats.totalBatches}</p>
-				<p class="mt-1 text-xs text-text-muted">All batches tracked.</p>
+				<p class="mt-1 text-xs text-text-muted">{t('ingestionOverview.stats.totalBatchesHint')}</p>
 			</div>
 			<div class="rounded-2xl border border-border-soft bg-surface-white px-4 py-4">
-				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Objects created</p>
+				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionOverview.stats.objectsCreated')}</p>
 				<p class="mt-2 text-2xl font-semibold text-text-ink">{summary.stats.objectsCreated}</p>
-				<p class="mt-1 text-xs text-text-muted">Items from ingestions.</p>
+				<p class="mt-1 text-xs text-text-muted">{t('ingestionOverview.stats.objectsCreatedHint')}</p>
 			</div>
 			<div class="rounded-2xl border border-border-soft bg-surface-white px-4 py-4">
-				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">In progress</p>
+				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionOverview.stats.inProgress')}</p>
 				<p class="mt-2 text-2xl font-semibold text-text-ink">{summary.stats.inProgress}</p>
-				<p class="mt-1 text-xs text-text-muted">Pipelines running.</p>
+				<p class="mt-1 text-xs text-text-muted">{t('ingestionOverview.stats.inProgressHint')}</p>
 			</div>
 			<div class="rounded-2xl border border-border-soft bg-surface-white px-4 py-4">
-				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Failed / attention</p>
+				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionOverview.stats.needsAttention')}</p>
 				<p class="mt-2 text-2xl font-semibold text-text-ink">{summary.stats.needsAttention}</p>
-				<p class="mt-1 text-xs text-text-muted">Needs action.</p>
+				<p class="mt-1 text-xs text-text-muted">{t('ingestionOverview.stats.needsAttentionHint')}</p>
 			</div>
 		</section>
 
 		<section class="rounded-2xl border border-border-soft bg-surface-white px-6 py-6">
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<div>
-					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Active & recent batches</p>
-					<p class="mt-1 text-sm text-text-muted">Track ongoing and completed ingestions.</p>
+					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionOverview.sections.activeRecent')}</p>
+					<p class="mt-1 text-sm text-text-muted">{t('ingestionOverview.sections.activeRecentHint')}</p>
 				</div>
 				{#if actionError}
 					<p class="rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach">
@@ -190,10 +209,10 @@
 			</div>
 			<div class="mt-5">
 				<div class="hidden border-b border-border-soft pb-3 text-xs uppercase tracking-[0.2em] text-text-muted md:grid md:grid-cols-[2fr_1fr_1fr_auto] md:gap-3">
-					<span>Batch</span>
-					<span>Created</span>
-					<span>Progress</span>
-					<span class="text-right">Action</span>
+					<span>{t('ingestionOverview.table.batch')}</span>
+					<span>{t('ingestionOverview.table.created')}</span>
+					<span>{t('ingestionOverview.table.progress')}</span>
+					<span class="text-right">{t('ingestionOverview.table.action')}</span>
 				</div>
 				<div class="mt-4 space-y-3">
 				{#each activeAndRecent as batch (batch.id)}
@@ -208,14 +227,19 @@
 							</div>
 							<p class="text-xs text-text-muted">{formatDate(batch.createdAt)}</p>
 							<p class="text-xs text-text-muted">
-								{batch.progress.completed} / {batch.progress.total} objects
+								{formatTemplate(t('ingestionOverview.table.objects'), {
+									completed: batch.progress.completed,
+									total: batch.progress.total
+								})}
 							</p>
 							<div class="flex justify-start md:justify-end">
 								<details class="group relative">
 									<summary
 										class="cursor-pointer list-none rounded-full border border-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate"
 									>
-										{isActionRunning(batch.id) ? 'Working...' : 'Actions'}
+										{isActionRunning(batch.id)
+											? t('ingestionOverview.actions.working')
+											: t('ingestionOverview.actions.menu')}
 									</summary>
 									<div class="absolute right-0 z-10 mt-2 min-w-40 rounded-xl border border-border-soft bg-surface-white p-2 shadow-lg">
 										<div class="flex flex-col gap-1">
@@ -243,16 +267,16 @@
 			<section class="rounded-2xl border border-border-soft bg-surface-white px-6 py-6">
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<div>
-						<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Draft and pending batches</p>
-						<p class="mt-1 text-sm text-text-muted">Manage drafts, uploads, and canceled ingestions.</p>
+						<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionOverview.sections.drafts')}</p>
+						<p class="mt-1 text-sm text-text-muted">{t('ingestionOverview.sections.draftsHint')}</p>
 					</div>
 				</div>
 				<div class="mt-5">
 					<div class="hidden border-b border-border-soft pb-3 text-xs uppercase tracking-[0.2em] text-text-muted md:grid md:grid-cols-[2fr_1fr_1fr_auto] md:gap-3">
-						<span>Batch</span>
-						<span>Created</span>
-						<span>Progress</span>
-						<span class="text-right">Action</span>
+						<span>{t('ingestionOverview.table.batch')}</span>
+						<span>{t('ingestionOverview.table.created')}</span>
+						<span>{t('ingestionOverview.table.progress')}</span>
+						<span class="text-right">{t('ingestionOverview.table.action')}</span>
 					</div>
 					<div class="mt-4 space-y-3">
 					{#each drafts as batch (batch.id)}
@@ -267,14 +291,19 @@
 								</div>
 								<p class="text-xs text-text-muted">{formatDate(batch.createdAt)}</p>
 								<p class="text-xs text-text-muted">
-									{batch.progress.completed} / {batch.progress.total} objects
+									{formatTemplate(t('ingestionOverview.table.objects'), {
+										completed: batch.progress.completed,
+										total: batch.progress.total
+									})}
 								</p>
 								<div class="flex justify-start md:justify-end">
 									<details class="group relative">
 										<summary
 											class="cursor-pointer list-none rounded-full border border-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate"
 										>
-											{isActionRunning(batch.id) ? 'Working...' : 'Actions'}
+											{isActionRunning(batch.id)
+												? t('ingestionOverview.actions.working')
+												: t('ingestionOverview.actions.menu')}
 										</summary>
 										<div class="absolute right-0 z-10 mt-2 min-w-40 rounded-xl border border-border-soft bg-surface-white p-2 shadow-lg">
 											<div class="flex flex-col gap-1">

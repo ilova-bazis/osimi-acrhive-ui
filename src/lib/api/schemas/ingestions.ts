@@ -1,5 +1,29 @@
 import { z } from 'zod';
 
+export const classificationTypeSchema = z.enum([
+	'newspaper_article',
+	'magazine_article',
+	'book_chapter',
+	'book',
+	'letter',
+	'speech',
+	'interview',
+	'report',
+	'manuscript',
+	'image',
+	'document',
+	'other'
+]);
+
+export const itemKindSchema = z.enum([
+	'photo',
+	'audio',
+	'video',
+	'scanned_document',
+	'document',
+	'other'
+]);
+
 const summaryDateValueSchema = z.union([
 	z.null(),
 	z.string().regex(/^(\d{4}|\d{4}-\d{2}|\d{4}-\d{2}-\d{2})$/)
@@ -100,6 +124,8 @@ export const ingestionDtoSchema = z.object({
 	batch_id: z.string().min(1).optional(),
 	batch_label: z.string().min(1).optional(),
 	schema_version: z.string().min(1).optional(),
+	classification_type: classificationTypeSchema.optional(),
+	item_kind: itemKindSchema.optional(),
 	document_type: z.string().min(1).optional(),
 	language_code: z.string().min(1).optional(),
 	pipeline_preset: z.string().min(1).optional(),
@@ -128,18 +154,8 @@ export const createIngestionRequestSchema = z
 	.object({
 		batch_label: z.string().min(1),
 		schema_version: z.literal('1.0'),
-		document_type: z.enum([
-			'newspaper_article',
-			'magazine_article',
-			'book_chapter',
-			'book',
-			'photo',
-			'letter',
-			'speech',
-			'interview',
-			'document',
-			'other'
-		]),
+		classification_type: classificationTypeSchema,
+		item_kind: itemKindSchema,
 		language_code: z.string().min(1),
 		pipeline_preset: z.enum([
 			'auto',
@@ -161,20 +177,8 @@ export const createIngestionRequestSchema = z
 export const updateIngestionRequestSchema = z
 	.object({
 		batch_label: z.string().min(1).optional(),
-		document_type: z
-			.enum([
-				'newspaper_article',
-				'magazine_article',
-				'book_chapter',
-				'book',
-				'photo',
-				'letter',
-				'speech',
-				'interview',
-				'document',
-				'other'
-			])
-			.optional(),
+		classification_type: classificationTypeSchema.optional(),
+		item_kind: itemKindSchema.optional(),
 		language_code: z.string().min(1).optional(),
 		pipeline_preset: z
 			.enum([

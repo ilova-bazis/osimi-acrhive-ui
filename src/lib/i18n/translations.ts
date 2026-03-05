@@ -8,7 +8,13 @@ export const translations = {
 		header: {
 			library: 'Osimi Digital Library',
 			textSize: 'Text size',
-			locale: 'UI'
+			locale: 'UI',
+			signOut: 'Sign out',
+			nav: {
+				dashboard: 'Dashboard',
+				ingestion: 'Ingestion',
+				objects: 'Objects'
+			}
 		},
 		dropzone: {
 			label: 'Dropzone',
@@ -53,7 +59,368 @@ export const translations = {
 			remove: 'Remove',
 			startIngestion: 'Start ingestion'
 		},
-			ingestionSetup: {
+		dashboard: {
+			title: 'Dashboard',
+			welcome: 'Welcome back, {name}',
+			ingestion: 'Ingestion',
+			metrics: {
+				activeBatches: 'Active batches',
+				activeBatchesHint: 'Currently in processing or review.',
+				needsReview: 'Needs review',
+				needsReviewHint: 'Human confirmation required before publish.',
+				pendingUploads: 'Pending uploads',
+				pendingUploadsHint: 'Staged items awaiting batch assignment.'
+			},
+			recentActivity: 'Recent activity',
+			lastDays: 'Last 7 days',
+			intentTitle: 'Human intent checkpoint',
+			intentBody:
+				'Every ingestion begins with declared intent and ends with human review. Keep batches scoped and deliberate.'
+		},
+		login: {
+			library: 'Osimi Digital Library',
+			title: 'Authorized Access',
+			description:
+				'This interface is reserved for authorized archivists. Sign in to continue the ingestion workflow.',
+			authHint:
+				'Authentication is handled by the backend. Use your assigned credentials to continue.',
+			signIn: 'Sign in',
+			continue: 'Continue to ingestion',
+			demoHint: 'Use one of the demo accounts to test roles.',
+			username: 'Username',
+			password: 'Password',
+			signingIn: 'Signing in...',
+			byContinuing:
+				'By continuing, you confirm that this session will handle sensitive archival material.'
+		},
+		ingestionOverview: {
+			title: 'Ingestion',
+			newIngestion: 'New ingestion',
+			emptyKicker: 'No ingestions yet',
+			emptyTitle: 'Start your first ingestion',
+			emptyBody: 'Ingestion happens in batches. Create your first batch to begin the workflow.',
+			stats: {
+				totalBatches: 'Total batches',
+				totalBatchesHint: 'All batches tracked.',
+				objectsCreated: 'Objects created',
+				objectsCreatedHint: 'Items from ingestions.',
+				inProgress: 'In progress',
+				inProgressHint: 'Pipelines running.',
+				needsAttention: 'Failed / attention',
+				needsAttentionHint: 'Needs action.'
+			},
+			sections: {
+				activeRecent: 'Active & recent batches',
+				activeRecentHint: 'Track ongoing and completed ingestions.',
+				drafts: 'Draft and pending batches',
+				draftsHint: 'Manage drafts, uploads, and canceled ingestions.'
+			},
+			table: {
+				batch: 'Batch',
+				created: 'Created',
+				progress: 'Progress',
+				action: 'Action',
+				objects: '{completed} / {total} objects'
+			},
+			actions: {
+				view: 'View',
+				resume: 'Resume',
+				retry: 'Retry',
+				cancel: 'Cancel',
+				restore: 'Restore',
+				delete: 'Delete',
+				working: 'Working...',
+				menu: 'Actions'
+			},
+			statuses: {
+				draft: 'Draft',
+				uploading: 'Uploading',
+				queued: 'Queued',
+				ingesting: 'Ingesting',
+				completed: 'Completed',
+				failed: 'Failed',
+				canceled: 'Canceled'
+			},
+			errors: {
+				deleteConflict: 'Only draft, uploading, or canceled ingestions can be deleted.',
+				failedNamed: 'Failed to {action} ingestion {name}.',
+				failed: 'Failed to {action} ingestion.'
+			}
+		},
+		ingestionDetail: {
+			title: 'Ingestion details',
+			back: 'Back to ingestion',
+			metrics: {
+				status: 'Status',
+				created: 'Created',
+				updated: 'Updated',
+				progress: 'Progress'
+			},
+			files: {
+				title: 'Files',
+				subtitle: 'Files currently registered in this ingestion batch.',
+				empty: 'No files found for this ingestion.',
+				headers: {
+					file: 'File',
+					status: 'Status',
+					type: 'Type',
+					size: 'Size',
+					created: 'Created'
+				}
+			},
+			logs: {
+				title: 'Activity log',
+				subtitle: 'Events scoped to this ingestion',
+				empty: 'No activity events found for this ingestion yet.',
+				eventType: 'Event type',
+				objectId: 'Object',
+				actor: 'Actor',
+				payload: 'View payload'
+			},
+			actions: {
+				resume: 'Resume',
+				retry: 'Retry',
+				cancel: 'Cancel',
+				restore: 'Restore',
+				delete: 'Delete',
+				working: 'Working...',
+				menu: 'Actions',
+				confirmTitle: 'Confirm action'
+			},
+			messages: {
+				unknown: 'Unknown',
+				actionFailed: 'Action failed.',
+				delete: 'Delete this ingestion? This action cannot be undone.',
+				cancel: 'Cancel this ingestion? You can restore it later while processing has not started.',
+				retry: 'Retry this ingestion now?',
+				restore: 'Restore this canceled ingestion?'
+			},
+			errors: {
+				failed: 'Failed to {action} ingestion.'
+			}
+		},
+		ingestionNew: {
+			title: 'Create new ingestion',
+			description:
+				'Start with archival defaults, then refine in setup. If you leave core fields unchanged, we use recommended values automatically.',
+			defaults: 'Defaults: Language `en` · Pipeline `auto` · Access `private`',
+			fields: {
+				batchLabel: 'Batch label',
+				batchLabelPlaceholder: 'Optional - defaults to Untitled ingestion <timestamp>',
+				itemKind: 'Item kind',
+				classificationType: 'Classification type',
+				classificationHintDocument: 'Required for document and scanned document batches.',
+				classificationHintAuto: 'Auto-defaulted from item kind; you can refine it later in setup.',
+				languageCode: 'Language code',
+				pipelinePreset: 'Pipeline preset',
+				accessLevel: 'Access level',
+				embargoUntil: 'Embargo until',
+				rightsNote: 'Rights note',
+				sensitivityNote: 'Sensitivity note'
+			},
+			policyNotes: 'Policy and notes',
+			summary: {
+				title: 'Summary metadata',
+				subtitle: 'These fields populate ingestion summary context and can be refined in setup.',
+				tags: 'Tags',
+				tagsPlaceholder: 'Type tag and press Add',
+				add: 'Add',
+				summaryText: 'Summary text',
+				summaryPlaceholder: 'Short contextual summary for classification metadata'
+			},
+			continue: 'Continue to setup'
+		},
+		objects: {
+			header: {
+				title: 'Objects',
+				subtitle: 'Archive object catalog with access and availability states.',
+				matching: '{filtered} matching objects · {total} total',
+				bulkActions: 'Bulk actions',
+				selectVisible: 'Select visible',
+				clearSelection: 'Clear selection',
+				copySelectionIds: 'Copy selected IDs',
+				copiedSelection: 'Copied IDs',
+				selectionState: '{selected} selected from {visible} visible'
+			},
+			filters: {
+				searchPlaceholder: 'Search title, object id, OCR...',
+				search: 'Search',
+				hint: 'Press Enter to search. Availability, access, and sort apply immediately.',
+				availability: 'Availability',
+				access: 'Access',
+				sort: 'Sort',
+				all: 'All',
+				moreFilters: 'More filters',
+				clearFilters: 'Clear filters',
+				noActiveFilters: 'No active filters',
+				closeFilters: 'Close filters',
+				drawerTitle: 'Filters',
+				drawerSubtitle: 'Refine objects ({count} active)',
+				drawerHint:
+					'Use this panel for detailed filters. Quick filters above apply instantly; this form applies as a batch.',
+				type: 'Type',
+				anyType: 'Any type',
+				typeHint: 'Uses backend enum values.',
+				language: 'Language',
+				anyLanguage: 'Any language',
+				languageHint: 'Choose a common language code used in object metadata.',
+				batchLabel: 'Batch label',
+				tag: 'Tag',
+				datePresets: 'Date presets',
+				last24h: 'Last 24h',
+				last7d: 'Last 7d',
+				last30d: 'Last 30d',
+				thisMonth: 'This month',
+				from: 'From',
+				to: 'To',
+				invalidRange: 'Invalid range: start date must be earlier than end date.',
+				limit: 'Limit',
+				reset: 'Reset',
+				applyFilters: 'Apply filters',
+				batchPlaceholder: 'batch-2026',
+				tagPlaceholder: 'tag',
+				moreSelected: 'more'
+			},
+			recent: {
+				title: 'Recently ingested',
+				subtitle: 'Quick access to recent work',
+				lastCount: 'Last {count} objects',
+				restricted: 'Restricted',
+				untitled: 'Untitled - {suffix}'
+			},
+			table: {
+				headers: {
+					preview: 'Preview',
+					title: 'Title',
+					type: 'Type',
+					processing: 'Processing',
+					indicators: 'Indicators',
+					access: 'Access',
+					updated: 'Updated',
+					batch: 'Batch',
+					actions: 'Actions'
+				},
+				emptyFiltered: 'No objects match current filters.',
+				empty: 'No objects available for this tenant yet.',
+				rowActions: 'Row actions',
+				open: 'Open',
+				copyId: 'Copy ID',
+				copied: 'Copied',
+				batchLink: 'Batch',
+				showing: 'Showing {rows} of {filtered} (total {total})',
+				firstPage: 'First page',
+				next: 'Next',
+				noMore: 'No more',
+				untitled: 'Untitled - {suffix}',
+				reasons: {
+					OK: 'Available to download',
+					FORBIDDEN_POLICY: 'Access restricted by policy',
+					EMBARGO_ACTIVE: 'Embargo currently active',
+					RESTORE_REQUIRED: 'Restore required before download',
+					RESTORE_IN_PROGRESS: 'Restore in progress',
+					TEMP_UNAVAILABLE: 'Temporarily unavailable'
+				},
+				reasonActions: {
+					RESTORE_REQUIRED: 'Request restore',
+					FORBIDDEN_POLICY: 'Request access',
+					RESTORE_IN_PROGRESS: 'Restore pending'
+				},
+				menuHints: {
+					RESTORE_REQUIRED: 'Download requires restore before files become deliverable.',
+					FORBIDDEN_POLICY: 'Access policy blocks download for your role.',
+					RESTORE_IN_PROGRESS: 'Restore is running. Try again when availability becomes AVAILABLE.'
+				}
+			},
+			sorts: {
+				created_at_desc: 'Created (Newest)',
+				created_at_asc: 'Created (Oldest)',
+				updated_at_desc: 'Updated (Newest)',
+				updated_at_asc: 'Updated (Oldest)',
+				title_asc: 'Title (A-Z)',
+				title_desc: 'Title (Z-A)'
+			},
+			languages: {
+				en: 'English (en)',
+				fa: 'Persian (fa)',
+				tg: 'Tajik (tg)',
+				ru: 'Russian (ru)'
+			},
+			detail: {
+				title: 'Object detail',
+				back: 'Back to objects',
+				untitled: 'Untitled - {suffix}',
+				metrics: {
+					processing: 'Processing',
+					curation: 'Curation',
+					availability: 'Availability',
+					access: 'Access'
+				},
+				common: {
+					yes: 'Yes',
+					no: 'No'
+				},
+				access: {
+					title: 'Access and deliverability',
+					canDownload: 'Download allowed',
+					restricted: 'Restricted',
+					authorized: 'Authorized',
+					deliverable: 'Deliverable',
+					embargoUntil: 'Embargo until',
+					language: 'Language',
+					rightsNote: 'Rights note',
+					sensitivityNote: 'Sensitivity note'
+				},
+				provenance: {
+					title: 'Provenance',
+					created: 'Created',
+					updated: 'Updated',
+					type: 'Object type',
+					batch: 'Source batch',
+					ingestion: 'Source ingestion'
+				},
+				artifacts: {
+					title: 'Artifacts',
+					count: '{count} files',
+					empty: 'No artifacts found for this object.',
+					kind: 'Kind',
+					variant: 'Variant',
+					contentType: 'Content type',
+					size: 'Size',
+					created: 'Created',
+					actions: 'Actions',
+					download: 'Download'
+				},
+				availableFiles: {
+					title: 'Available archive files',
+					count: '{count} files',
+					empty: 'No available archive files for this object.',
+					displayName: 'File',
+					kind: 'Artifact kind',
+					variant: 'Variant',
+					contentType: 'Content type',
+					size: 'Size',
+					syncedAt: 'Synced',
+					actions: 'Actions',
+					requestDownload: 'Request download'
+				},
+				downloadRequests: {
+					title: 'Download requests',
+					count: '{count} requests',
+					empty: 'No download requests yet.',
+					kind: 'Artifact kind',
+					variant: 'Variant',
+					status: 'Status',
+					created: 'Created',
+					updated: 'Updated',
+					completed: 'Completed'
+				},
+				manifest: {
+					title: 'Ingest manifest',
+					subtitle: 'Raw ingestion metadata attached to this object.'
+				}
+			}
+		},
+		ingestionSetup: {
 			header: {
 				kicker: 'New ingestion',
 				title: 'Batch setup',
@@ -76,6 +443,9 @@ export const translations = {
 				selectedCount: 'Selected {count}',
 				empty: 'No files staged yet. Add files to begin setting metadata.',
 				batchType: 'Batch type: {mediaType}',
+				createOverride: 'Create override',
+				editOverride: 'Edit override',
+				removeOverride: 'Remove override',
 				retryUpload: 'Retry upload',
 				cancelUpload: 'Cancel upload',
 				removing: 'Removing...',
@@ -96,10 +466,53 @@ export const translations = {
 			batchIntent: {
 				title: 'Batch intent',
 				description: 'Set batch defaults that apply to all files unless overridden.',
+				sections: {
+					coreMetadata: 'Core metadata',
+					summaryContext: 'Summary context',
+					dates: 'Dates',
+					accessPolicy: 'Access and policy'
+				},
+				titleLabel: 'Title',
 				language: 'Default language',
-				classificationType: 'Document type',
+				itemKind: 'Item kind',
+				classificationType: 'Classification type',
+				classificationHintDocument: 'For document/scanned document, choose the closest classification.',
+				classificationHintAuto: 'Defaulted from item kind; adjust only if needed.',
 				tags: 'Tags',
+				addTag: 'Add',
+				summary: 'Summary',
+				datesTitle: 'Important dates',
+				dateHint: 'Choose precision, then pick the date.',
+				publishedDate: 'Publication date',
+				createdDate: 'Creation date',
+				precisionNone: 'Not set',
+				precisionYear: 'Year',
+				precisionMonth: 'Month',
+				precisionDay: 'Day',
+				noDateSelected: 'No date selected for this field.',
+				yearPlaceholder: 'YYYY',
+				approximateDate: 'Approximate',
+				confidenceLow: 'Low confidence',
+				confidenceMedium: 'Medium confidence',
+				confidenceHigh: 'High confidence',
+				dateNotePlaceholder: 'Optional note',
+				invalidYear: '{label}: enter a valid year (YYYY).',
+				invalidMonth: '{label}: enter a valid month (YYYY-MM).',
+				invalidDay: '{label}: enter a valid date (YYYY-MM-DD).',
 				pipelinePreset: 'Pipeline preset',
+				accessLevel: 'Access level',
+				embargoUntil: 'Embargo until',
+				rightsNote: 'Rights note',
+				sensitivityNote: 'Sensitivity note',
+				saveStateIdle: 'Changes save automatically',
+				saveStateSaving: 'Saving changes',
+				saveStateSaved: 'All changes saved',
+				saveStateError: 'Save failed',
+				accessLevels: {
+					private: 'Private',
+					family: 'Family',
+					public: 'Public'
+				},
 				selectLanguage: 'Select language',
 				selectType: 'Select type',
 				tagsPlaceholder: 'People, places, themes'
@@ -119,10 +532,20 @@ export const translations = {
 				magazine_article: 'Magazine article',
 				book_chapter: 'Book chapter',
 				book: 'Book',
-				photo: 'Photo',
 				letter: 'Letter',
 				speech: 'Speech',
 				interview: 'Interview',
+				report: 'Report',
+				manuscript: 'Manuscript',
+				image: 'Image',
+				other: 'Other'
+			},
+			itemKinds: {
+				document: 'Document',
+				scanned_document: 'Scanned document',
+				photo: 'Photo',
+				audio: 'Audio',
+				video: 'Video',
 				other: 'Other'
 			},
 			pipelinePresets: {
@@ -140,6 +563,7 @@ export const translations = {
 			overrides: {
 				title: 'Per-file overrides',
 				subtitle: 'Overrides apply to the selected file and take precedence over batch defaults.',
+				editorTitle: 'Override · {fileName}',
 				language: 'Language',
 				classificationType: 'Document type',
 				tags: 'Tags',
@@ -153,7 +577,7 @@ export const translations = {
 			readiness: {
 				title: 'Readiness',
 				ready: 'All required fields are filled. You can proceed to confirmation.',
-				missing: 'Language and document type are required for each file.',
+				missing: 'Language and classification type are required for each file.',
 				missingCount: 'Missing fields on {count} files.',
 				uploading: 'Uploads are still in progress.',
 				uploadFailed: 'Some files failed to upload. Retry failed files to continue.'
@@ -165,7 +589,16 @@ export const translations = {
 				files: 'Files',
 				objects: 'Objects',
 				languages: 'Languages',
-				pipeline: 'Pipeline'
+				pipeline: 'Pipeline',
+				submitting: 'Submitting...'
+			},
+			mismatch: {
+				title: 'Item kind mismatch',
+				subtitle: 'Uploaded files do not match selected item kind',
+				details: 'Selected kind: {expected}. Incoming files look like: {incoming}.',
+				rejected: '{count} file(s) were rejected: {sample}.',
+				keep: 'Keep current kind',
+				switchAndContinue: 'Switch kind and continue'
 			}
 		},
 		footer: {
@@ -207,7 +640,13 @@ export const translations = {
 		header: {
 			library: 'Цифровая библиотека Осими',
 			textSize: 'Размер текста',
-			locale: 'Интерфейс'
+			locale: 'Интерфейс',
+			signOut: 'Выйти',
+			nav: {
+				dashboard: 'Панель',
+				ingestion: 'Загрузка',
+				objects: 'Объекты'
+			}
 		},
 		dropzone: {
 			label: 'Зона загрузки',
@@ -252,6 +691,367 @@ export const translations = {
 			remove: 'Удалить',
 			startIngestion: 'Начать обработку'
 		},
+		dashboard: {
+			title: 'Панель',
+			welcome: 'С возвращением, {name}',
+			ingestion: 'Загрузка',
+			metrics: {
+				activeBatches: 'Активные партии',
+				activeBatchesHint: 'Сейчас в обработке или на проверке.',
+				needsReview: 'Нужна проверка',
+				needsReviewHint: 'Перед публикацией нужна проверка человеком.',
+				pendingUploads: 'Ожидающие загрузки',
+				pendingUploadsHint: 'Подготовленные элементы ждут назначения партии.'
+			},
+			recentActivity: 'Недавняя активность',
+			lastDays: 'Последние 7 дней',
+			intentTitle: 'Контроль человеческого замысла',
+			intentBody:
+				'Каждая загрузка начинается с заявленного замысла и заканчивается проверкой человеком. Держите партии осмысленными и ограниченными.'
+		},
+		login: {
+			library: 'Цифровая библиотека Осими',
+			title: 'Авторизованный доступ',
+			description:
+				'Этот интерфейс предназначен для уполномоченных архивистов. Войдите, чтобы продолжить рабочий процесс загрузки.',
+			authHint:
+				'Аутентификацию обрабатывает backend. Используйте выданные учетные данные, чтобы продолжить.',
+			signIn: 'Войти',
+			continue: 'Продолжить к загрузке',
+			demoHint: 'Используйте одну из демо-учетных записей для проверки ролей.',
+			username: 'Имя пользователя',
+			password: 'Пароль',
+			signingIn: 'Вход...',
+			byContinuing:
+				'Продолжая, вы подтверждаете, что в этой сессии будут обрабатываться чувствительные архивные материалы.'
+		},
+		ingestionOverview: {
+			title: 'Загрузка',
+			newIngestion: 'Новая загрузка',
+			emptyKicker: 'Загрузок пока нет',
+			emptyTitle: 'Начните первую загрузку',
+			emptyBody: 'Загрузка выполняется партиями. Создайте первую партию, чтобы начать.',
+			stats: {
+				totalBatches: 'Всего партий',
+				totalBatchesHint: 'Все партии отслеживаются.',
+				objectsCreated: 'Создано объектов',
+				objectsCreatedHint: 'Элементы из загрузок.',
+				inProgress: 'В процессе',
+				inProgressHint: 'Конвейеры выполняются.',
+				needsAttention: 'Сбой / внимание',
+				needsAttentionHint: 'Требуется действие.'
+			},
+			sections: {
+				activeRecent: 'Активные и недавние партии',
+				activeRecentHint: 'Отслеживайте текущие и завершенные загрузки.',
+				drafts: 'Черновые и ожидающие партии',
+				draftsHint: 'Управляйте черновиками, загрузками и отмененными партиями.'
+			},
+			table: {
+				batch: 'Партия',
+				created: 'Создано',
+				progress: 'Прогресс',
+				action: 'Действие',
+				objects: '{completed} / {total} объектов'
+			},
+			actions: {
+				view: 'Открыть',
+				resume: 'Продолжить',
+				retry: 'Повторить',
+				cancel: 'Отменить',
+				restore: 'Восстановить',
+				delete: 'Удалить',
+				working: 'Выполняется...',
+				menu: 'Действия'
+			},
+			statuses: {
+				draft: 'Черновик',
+				uploading: 'Загрузка',
+				queued: 'В очереди',
+				ingesting: 'Обработка',
+				completed: 'Завершено',
+				failed: 'Ошибка',
+				canceled: 'Отменено'
+			},
+			errors: {
+				deleteConflict: 'Удалять можно только черновые, загружаемые или отмененные загрузки.',
+				failedNamed: 'Не удалось выполнить действие {action} для загрузки {name}.',
+				failed: 'Не удалось выполнить действие {action} для загрузки.'
+			}
+		},
+		ingestionDetail: {
+			title: 'Детали загрузки',
+			back: 'Назад к загрузкам',
+			metrics: {
+				status: 'Статус',
+				created: 'Создано',
+				updated: 'Обновлено',
+				progress: 'Прогресс'
+			},
+			files: {
+				title: 'Файлы',
+				subtitle: 'Файлы, зарегистрированные в этой партии.',
+				empty: 'Для этой загрузки файлы не найдены.',
+				headers: {
+					file: 'Файл',
+					status: 'Статус',
+					type: 'Тип',
+					size: 'Размер',
+					created: 'Создано'
+				}
+			},
+			logs: {
+				title: 'Журнал активности',
+				subtitle: 'События только для этой загрузки',
+				empty: 'Для этой загрузки пока нет событий активности.',
+				eventType: 'Тип события',
+				objectId: 'Объект',
+				actor: 'Пользователь',
+				payload: 'Показать payload'
+			},
+			actions: {
+				resume: 'Продолжить',
+				retry: 'Повторить',
+				cancel: 'Отменить',
+				restore: 'Восстановить',
+				delete: 'Удалить',
+				working: 'Выполняется...',
+				menu: 'Действия',
+				confirmTitle: 'Подтвердите действие'
+			},
+			messages: {
+				unknown: 'Неизвестно',
+				actionFailed: 'Действие не выполнено.',
+				delete: 'Удалить эту загрузку? Это действие нельзя отменить.',
+				cancel: 'Отменить эту загрузку? Вы сможете восстановить ее позже, пока обработка не началась.',
+				retry: 'Повторить эту загрузку сейчас?',
+				restore: 'Восстановить эту отмененную загрузку?'
+			},
+			errors: {
+				failed: 'Не удалось выполнить действие {action} для загрузки.'
+			}
+		},
+		ingestionNew: {
+			title: 'Создать новую загрузку',
+			description:
+				'Начните с архивных значений по умолчанию, затем уточните параметры на этапе настройки. Если оставить основные поля без изменений, будут использованы рекомендованные значения.',
+			defaults: 'По умолчанию: Язык `en` · Конвейер `auto` · Доступ `private`',
+			fields: {
+				batchLabel: 'Метка партии',
+				batchLabelPlaceholder: 'Необязательно - по умолчанию Untitled ingestion <timestamp>',
+				itemKind: 'Вид элемента',
+				classificationType: 'Тип классификации',
+				classificationHintDocument: 'Обязательно для партий document и scanned_document.',
+				classificationHintAuto: 'Подставляется по виду элемента; можно уточнить позже в настройке.',
+				languageCode: 'Код языка',
+				pipelinePreset: 'Набор конвейеров',
+				accessLevel: 'Уровень доступа',
+				embargoUntil: 'Эмбарго до',
+				rightsNote: 'Примечание о правах',
+				sensitivityNote: 'Примечание о чувствительности'
+			},
+			policyNotes: 'Политика и примечания',
+			summary: {
+				title: 'Сводные метаданные',
+				subtitle: 'Эти поля заполняют контекст сводки загрузки и могут быть уточнены на этапе настройки.',
+				tags: 'Теги',
+				tagsPlaceholder: 'Введите тег и нажмите Добавить',
+				add: 'Добавить',
+				summaryText: 'Текст сводки',
+				summaryPlaceholder: 'Краткая контекстная сводка для классификационных метаданных'
+			},
+			continue: 'Перейти к настройке'
+		},
+		objects: {
+			header: {
+				title: 'Объекты',
+				subtitle: 'Каталог архивных объектов с состояниями доступа и доступности.',
+				matching: '{filtered} совпадений · всего {total}',
+				bulkActions: 'Массовые действия',
+				selectVisible: 'Выбрать видимые',
+				clearSelection: 'Снять выбор',
+				copySelectionIds: 'Копировать выбранные ID',
+				copiedSelection: 'ID скопированы',
+				selectionState: 'Выбрано {selected} из {visible} видимых'
+			},
+			filters: {
+				searchPlaceholder: 'Поиск по заголовку, id объекта, OCR...',
+				search: 'Поиск',
+				hint: 'Нажмите Enter для поиска. Доступность, доступ и сортировка применяются сразу.',
+				availability: 'Доступность',
+				access: 'Доступ',
+				sort: 'Сортировка',
+				all: 'Все',
+				moreFilters: 'Больше фильтров',
+				clearFilters: 'Очистить фильтры',
+				noActiveFilters: 'Нет активных фильтров',
+				closeFilters: 'Закрыть фильтры',
+				drawerTitle: 'Фильтры',
+				drawerSubtitle: 'Уточнить объекты ({count} активно)',
+				drawerHint:
+					'Используйте эту панель для детальных фильтров. Быстрые фильтры выше применяются сразу; эта форма применяется пакетом.',
+				type: 'Тип',
+				anyType: 'Любой тип',
+				typeHint: 'Используются enum-значения backend.',
+				language: 'Язык',
+				anyLanguage: 'Любой язык',
+				languageHint: 'Выберите распространенный код языка из метаданных объекта.',
+				batchLabel: 'Метка партии',
+				tag: 'Тег',
+				datePresets: 'Пресеты дат',
+				last24h: 'Последние 24ч',
+				last7d: 'Последние 7д',
+				last30d: 'Последние 30д',
+				thisMonth: 'Этот месяц',
+				from: 'От',
+				to: 'До',
+				invalidRange: 'Неверный диапазон: дата начала должна быть раньше даты конца.',
+				limit: 'Лимит',
+				reset: 'Сбросить',
+				applyFilters: 'Применить фильтры',
+				batchPlaceholder: 'batch-2026',
+				tagPlaceholder: 'tag',
+				moreSelected: 'ещё'
+			},
+			recent: {
+				title: 'Недавно загруженные',
+				subtitle: 'Быстрый доступ к недавним работам',
+				lastCount: 'Последние {count} объектов',
+				restricted: 'Ограничено',
+				untitled: 'Без названия - {suffix}'
+			},
+			table: {
+				headers: {
+					preview: 'Превью',
+					title: 'Название',
+					type: 'Тип',
+					processing: 'Обработка',
+					indicators: 'Индикаторы',
+					access: 'Доступ',
+					updated: 'Обновлено',
+					batch: 'Партия',
+					actions: 'Действия'
+				},
+				emptyFiltered: 'Нет объектов, соответствующих текущим фильтрам.',
+				empty: 'Для этого клиента пока нет объектов.',
+				rowActions: 'Действия строки',
+				open: 'Открыть',
+				copyId: 'Копировать ID',
+				copied: 'Скопировано',
+				batchLink: 'Партия',
+				showing: 'Показано {rows} из {filtered} (всего {total})',
+				firstPage: 'Первая страница',
+				next: 'Далее',
+				noMore: 'Больше нет',
+				untitled: 'Без названия - {suffix}',
+				reasons: {
+					OK: 'Доступно для скачивания',
+					FORBIDDEN_POLICY: 'Доступ ограничен политикой',
+					EMBARGO_ACTIVE: 'Эмбарго активно',
+					RESTORE_REQUIRED: 'Для скачивания требуется восстановление',
+					RESTORE_IN_PROGRESS: 'Восстановление выполняется',
+					TEMP_UNAVAILABLE: 'Временно недоступно'
+				},
+				reasonActions: {
+					RESTORE_REQUIRED: 'Запросить восстановление',
+					FORBIDDEN_POLICY: 'Запросить доступ',
+					RESTORE_IN_PROGRESS: 'Ожидает восстановления'
+				},
+				menuHints: {
+					RESTORE_REQUIRED: 'Для скачивания требуется восстановление до состояния доступности.',
+					FORBIDDEN_POLICY: 'Политика доступа блокирует скачивание для вашей роли.',
+					RESTORE_IN_PROGRESS: 'Идет восстановление. Повторите попытку, когда состояние станет AVAILABLE.'
+				}
+			},
+			sorts: {
+				created_at_desc: 'Создано (сначала новые)',
+				created_at_asc: 'Создано (сначала старые)',
+				updated_at_desc: 'Обновлено (сначала новые)',
+				updated_at_asc: 'Обновлено (сначала старые)',
+				title_asc: 'Название (А-Я)',
+				title_desc: 'Название (Я-А)'
+			},
+			languages: {
+				en: 'Английский (en)',
+				fa: 'Персидский (fa)',
+				tg: 'Таджикский (tg)',
+				ru: 'Русский (ru)'
+			},
+			detail: {
+				title: 'Детали объекта',
+				back: 'Назад к объектам',
+				untitled: 'Без названия - {suffix}',
+				metrics: {
+					processing: 'Обработка',
+					curation: 'Курация',
+					availability: 'Доступность',
+					access: 'Доступ'
+				},
+				common: {
+					yes: 'Да',
+					no: 'Нет'
+				},
+				access: {
+					title: 'Доступ и доставляемость',
+					canDownload: 'Скачивание разрешено',
+					restricted: 'Ограничено',
+					authorized: 'Авторизован',
+					deliverable: 'Доставляемо',
+					embargoUntil: 'Эмбарго до',
+					language: 'Язык',
+					rightsNote: 'Примечание о правах',
+					sensitivityNote: 'Примечание о чувствительности'
+				},
+				provenance: {
+					title: 'Происхождение',
+					created: 'Создано',
+					updated: 'Обновлено',
+					type: 'Тип объекта',
+					batch: 'Исходная партия',
+					ingestion: 'Исходная загрузка'
+				},
+				artifacts: {
+					title: 'Артефакты',
+					count: '{count} файлов',
+					empty: 'Для этого объекта артефакты не найдены.',
+					kind: 'Тип',
+					variant: 'Вариант',
+					contentType: 'Контент-тип',
+					size: 'Размер',
+					created: 'Создано',
+					actions: 'Действия',
+					download: 'Скачать'
+				},
+				availableFiles: {
+					title: 'Доступные архивные файлы',
+					count: '{count} файлов',
+					empty: 'Для этого объекта нет доступных архивных файлов.',
+					displayName: 'Файл',
+					kind: 'Тип артефакта',
+					variant: 'Вариант',
+					contentType: 'Контент-тип',
+					size: 'Размер',
+					syncedAt: 'Синхронизация',
+					actions: 'Действия',
+					requestDownload: 'Запросить скачивание'
+				},
+				downloadRequests: {
+					title: 'Запросы на скачивание',
+					count: '{count} запросов',
+					empty: 'Запросов на скачивание пока нет.',
+					kind: 'Тип артефакта',
+					variant: 'Вариант',
+					status: 'Статус',
+					created: 'Создано',
+					updated: 'Обновлено',
+					completed: 'Завершено'
+				},
+				manifest: {
+					title: 'Ingest manifest',
+					subtitle: 'Исходные метаданные загрузки, прикрепленные к объекту.'
+				}
+			}
+		},
 		ingestionSetup: {
 			header: {
 				kicker: 'Новая загрузка',
@@ -275,6 +1075,9 @@ export const translations = {
 				selectedCount: 'Выбрано {count}',
 				empty: 'Файлы не добавлены. Загрузите файлы, чтобы начать настройку.',
 				batchType: 'Тип партии: {mediaType}',
+				createOverride: 'Создать переопределение',
+				editOverride: 'Изменить переопределение',
+				removeOverride: 'Удалить переопределение',
 				retryUpload: 'Повторить загрузку',
 				cancelUpload: 'Отменить загрузку',
 				removing: 'Удаление...',
@@ -295,10 +1098,53 @@ export const translations = {
 			batchIntent: {
 				title: 'Замысел партии',
 				description: 'Параметры партии применяются ко всем файлам, если нет переопределений.',
+				sections: {
+					coreMetadata: 'Основные метаданные',
+					summaryContext: 'Контекст сводки',
+					dates: 'Даты',
+					accessPolicy: 'Доступ и политика'
+				},
+				titleLabel: 'Название',
 				language: 'Язык по умолчанию',
-				classificationType: 'Тип документа',
+				itemKind: 'Вид элемента',
+				classificationType: 'Тип классификации',
+				classificationHintDocument: 'Для document/scanned_document выберите наиболее близкий тип классификации.',
+				classificationHintAuto: 'Тип подставляется по виду элемента; меняйте только при необходимости.',
 				tags: 'Теги',
+				addTag: 'Добавить',
+				summary: 'Краткое описание',
+				datesTitle: 'Ключевые даты',
+				dateHint: 'Выберите точность, затем укажите дату.',
+				publishedDate: 'Дата публикации',
+				createdDate: 'Дата создания',
+				precisionNone: 'Не указано',
+				precisionYear: 'Год',
+				precisionMonth: 'Месяц',
+				precisionDay: 'День',
+				noDateSelected: 'Для этого поля дата не выбрана.',
+				yearPlaceholder: 'ГГГГ',
+				approximateDate: 'Приблизительно',
+				confidenceLow: 'Низкая достоверность',
+				confidenceMedium: 'Средняя достоверность',
+				confidenceHigh: 'Высокая достоверность',
+				dateNotePlaceholder: 'Необязательная заметка',
+				invalidYear: '{label}: введите корректный год (ГГГГ).',
+				invalidMonth: '{label}: введите корректный месяц (ГГГГ-ММ).',
+				invalidDay: '{label}: введите корректную дату (ГГГГ-ММ-ДД).',
 				pipelinePreset: 'Набор конвейеров',
+				accessLevel: 'Уровень доступа',
+				embargoUntil: 'Эмбарго до',
+				rightsNote: 'Примечание о правах',
+				sensitivityNote: 'Примечание о чувствительности',
+				saveStateIdle: 'Изменения сохраняются автоматически',
+				saveStateSaving: 'Сохранение изменений',
+				saveStateSaved: 'Все изменения сохранены',
+				saveStateError: 'Ошибка сохранения',
+				accessLevels: {
+					private: 'Приватный',
+					family: 'Семейный',
+					public: 'Публичный'
+				},
 				selectLanguage: 'Выберите язык',
 				selectType: 'Выберите тип',
 				tagsPlaceholder: 'Люди, места, темы'
@@ -318,10 +1164,20 @@ export const translations = {
 				magazine_article: 'Журнальная статья',
 				book_chapter: 'Глава книги',
 				book: 'Книга',
-				photo: 'Фотография',
 				letter: 'Письмо',
 				speech: 'Выступление',
 				interview: 'Интервью',
+				report: 'Отчет',
+				manuscript: 'Рукопись',
+				image: 'Изображение',
+				other: 'Другое'
+			},
+			itemKinds: {
+				document: 'Документ',
+				scanned_document: 'Сканированный документ',
+				photo: 'Фото',
+				audio: 'Аудио',
+				video: 'Видео',
 				other: 'Другое'
 			},
 			pipelinePresets: {
@@ -339,6 +1195,7 @@ export const translations = {
 			overrides: {
 				title: 'Переопределения файла',
 				subtitle: 'Переопределения выбранного файла важнее параметров партии.',
+				editorTitle: 'Переопределение · {fileName}',
 				language: 'Язык',
 				classificationType: 'Тип документа',
 				tags: 'Теги',
@@ -352,7 +1209,7 @@ export const translations = {
 			readiness: {
 				title: 'Готовность',
 				ready: 'Все обязательные поля заполнены. Можно переходить к подтверждению.',
-				missing: 'Для каждого файла требуются язык и тип документа.',
+				missing: 'Для каждого файла требуются язык и тип классификации.',
 				missingCount: 'Не заполнены поля у {count} файлов.',
 				uploading: 'Загрузка файлов еще выполняется.',
 				uploadFailed: 'Часть файлов не загрузилась. Повторите загрузку для продолжения.'
@@ -364,7 +1221,16 @@ export const translations = {
 				files: 'Файлы',
 				objects: 'Объекты',
 				languages: 'Языки',
-				pipeline: 'Конвейер'
+				pipeline: 'Конвейер',
+				submitting: 'Отправка...'
+			},
+			mismatch: {
+				title: 'Несовпадение вида элемента',
+				subtitle: 'Загруженные файлы не совпадают с выбранным видом элемента',
+				details: 'Выбранный вид: {expected}. Похоже, загружаются файлы типа: {incoming}.',
+				rejected: 'Отклонено файлов: {count}. Пример: {sample}.',
+				keep: 'Оставить текущий вид',
+				switchAndContinue: 'Сменить вид и продолжить'
 			}
 		},
 		footer: {

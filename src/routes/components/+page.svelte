@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+
 	const componentLinks = [
 		{ name: 'PageHeader', path: '/components/page-header' },
 		{ name: 'FooterActions', path: '/components/footer-actions' },
@@ -10,7 +12,7 @@
 		{ name: 'FileListPanel', path: '/components/file-list-panel' },
 		{ name: 'BatchIntentPanel', path: '/components/batch-intent-panel' },
 		{ name: 'FileOverridePanel', path: '/components/file-override-panel' }
-	];
+	] as const;
 </script>
 
 <section class="mx-auto flex min-h-[70vh] max-w-4xl flex-col gap-6 px-6 py-16">
@@ -25,7 +27,7 @@
 	<div class="grid gap-3 md:grid-cols-2">
 		{#each componentLinks as item (item.path)}
 			<a
-				href={item.path}
+				href={resolve(item.path)}
 				class="flex items-center justify-between rounded-2xl border border-border-soft bg-surface-white px-5 py-4 text-sm text-blue-slate transition hover:bg-pale-sky/35"
 			>
 				<span>{item.name}</span>

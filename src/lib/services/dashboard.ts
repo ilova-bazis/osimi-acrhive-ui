@@ -5,6 +5,11 @@ export type DashboardActivity = {
 	title: string;
 	description: string;
 	timestamp: string;
+	type: string;
+	ingestionId: string | null;
+	objectId: string | null;
+	actorUserId: string | null;
+	payload: unknown;
 };
 
 export type DashboardSummary = {
@@ -25,6 +30,15 @@ export type DashboardSummaryRequest = {
 	token: string;
 };
 
+export type DashboardActivityRequest = {
+	fetchFn: typeof fetch;
+	token: string;
+	limit?: number;
+	cursor?: string;
+	ingestionId?: string;
+};
+
 export type DashboardService = {
 	getSummary: (request: DashboardSummaryRequest) => Promise<DashboardSummary>;
+	getActivity: (request: DashboardActivityRequest) => Promise<DashboardActivity[]>;
 };

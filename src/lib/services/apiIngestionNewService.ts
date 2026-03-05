@@ -17,7 +17,8 @@ export const apiIngestionNewService: IngestionNewService = {
 			body: {
 				batch_label: payload.name,
 				schema_version: '1.0',
-				document_type: payload.documentType,
+				classification_type: payload.classificationType,
+				item_kind: payload.itemKind,
 				language_code: payload.languageCode,
 				pipeline_preset: payload.pipelinePreset,
 				access_level: payload.accessLevel,

@@ -5,6 +5,9 @@
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import { session, setSession } from '$lib/auth/session';
 	import type { Session } from '$lib/auth/types';
+	import { locale } from '$lib/i18n/locale';
+	import { translations, type LocaleKey } from '$lib/i18n/translations';
+	import { onMount } from 'svelte';
 
 	type AppNavItem = {
 		label: string;
@@ -17,21 +20,44 @@
 	const isPublicRoute = (pathname: string) =>
 		pathname === '/login' || pathname.startsWith('/login/') || pathname === '/prototype' || pathname.startsWith('/prototype/');
 
-	const navItems: AppNavItem[] = [
-		{ label: 'Dashboard', href: '/' },
-		{ label: 'Ingestion', href: '/ingestion', matchPrefix: '/ingestion' },
-		{ label: 'Objects', href: '/objects', matchPrefix: '/objects' }
-	];
+	const dictionary = $derived(translations[$locale]);
+
+	const t = (key: string) => {
+		const segments = key.split('.');
+		let current: Record<string, unknown> = dictionary as Record<string, unknown>;
+		for (const segment of segments) {
+			if (typeof current[segment] === 'undefined') {
+				return key;
+			}
+			current = current[segment] as Record<string, unknown>;
+		}
+		return current as unknown as string;
+	};
+
+	const navItems = $derived<AppNavItem[]>([
+		{ label: t('header.nav.dashboard'), href: '/' },
+		{ label: t('header.nav.ingestion'), href: '/ingestion', matchPrefix: '/ingestion' },
+		{ label: t('header.nav.objects'), href: '/objects', matchPrefix: '/objects' }
+	]);
 
 	const currentTitle = () => {
 		const path = $page.url.pathname;
-		if (path.startsWith('/ingestion')) return 'Ingestion';
-		if (path.startsWith('/objects')) return 'Objects';
-		return 'Dashboard';
+		if (path.startsWith('/ingestion')) return t('header.nav.ingestion');
+		if (path.startsWith('/objects')) return t('header.nav.objects');
+		return t('header.nav.dashboard');
 	};
+
+	const localeOptions = [
+		{ key: 'en', label: 'EN' },
+		{ key: 'ru', label: 'RU' }
+	] as const;
 
 	$effect(() => {
 		setSession(data.session);
+	});
+
+	onMount(() => {
+		locale.init();
 	});
 
 	const handleLogout = async () => {
@@ -45,13 +71,17 @@
 
 {#if $session && !isPublicRoute($page.url.pathname)}
 	<AppHeader
-		library="Osimi Digital Library"
+		library={t('header.library')}
 		title={currentTitle()}
 		username={$session.username}
 		role={$session.role}
 		navItems={navItems}
 		currentPath={$page.url.pathname}
-		logoutLabel="Sign out"
+		logoutLabel={t('header.signOut')}
+		locale={$locale}
+		locales={localeOptions}
+		localeLabel={t('header.locale')}
+		onLocaleChange={(value: string) => locale.setLocale(value as LocaleKey)}
 		onLogout={handleLogout}
 	/>
 {/if}

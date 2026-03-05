@@ -1,18 +1,17 @@
-import type { IngestionSummaryDto } from '$lib/api/schemas/ingestions';
+import type {
+	IngestionSummaryDto,
+	classificationTypeSchema,
+	itemKindSchema
+} from '$lib/api/schemas/ingestions';
+import type { z } from 'zod';
+
+type ClassificationType = z.infer<typeof classificationTypeSchema>;
+type ItemKind = z.infer<typeof itemKindSchema>;
 
 export type CreateIngestionRequest = {
 	name: string;
-	documentType:
-		| 'newspaper_article'
-		| 'magazine_article'
-		| 'book_chapter'
-		| 'book'
-		| 'photo'
-		| 'letter'
-		| 'speech'
-		| 'interview'
-		| 'document'
-		| 'other';
+	classificationType: ClassificationType;
+	itemKind: ItemKind;
 	languageCode: string;
 	pipelinePreset:
 		| 'auto'

@@ -9,19 +9,24 @@ import type { RequestHandler } from './$types';
 const metadataUpdateSchema = z
 	.object({
 		batchLabel: z.string().min(1).optional(),
-		documentType: z
+		classificationType: z
 			.enum([
 				'newspaper_article',
 				'magazine_article',
 				'book_chapter',
 				'book',
-				'photo',
 				'letter',
 				'speech',
 				'interview',
+				'report',
+				'manuscript',
+				'image',
 				'document',
 				'other'
 			])
+			.optional(),
+		itemKind: z
+			.enum(['photo', 'audio', 'video', 'scanned_document', 'document', 'other'])
 			.optional(),
 		languageCode: z.string().min(1).optional(),
 		pipelinePreset: z

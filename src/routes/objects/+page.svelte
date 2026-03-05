@@ -3,6 +3,9 @@
 	import ObjectsPageHeader from '$lib/components/ObjectsPageHeader.svelte';
 	import ObjectsRecentStrip from '$lib/components/ObjectsRecentStrip.svelte';
 	import ObjectsTable from '$lib/components/ObjectsTable.svelte';
+	import { locale } from '$lib/i18n/locale';
+	import { translations } from '$lib/i18n/translations';
+	import { translate } from '$lib/i18n/translate';
 	import type {
 		AccessLevel,
 		AvailabilityState,
@@ -21,6 +24,9 @@
 	} = $props<{ data: { recent: ObjectRow[]; list: { rows: ObjectRow[]; filteredCount: number; totalCount: number; nextCursor?: string | null }; filters: ObjectsFilters } }>();
 
 	let selectedIds = $state<string[]>([]);
+	let selectionCopied = $state(false);
+	const dictionary = $derived(translations[$locale]);
+	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
 
 	const availabilityOptions: AvailabilityState[] = [
 		'AVAILABLE',
@@ -46,6 +52,43 @@
 		else next.push(id);
 		selectedIds = next;
 	};
+
+	const clearSelection = () => {
+		selectedIds = [];
+	};
+
+	const selectVisible = () => {
+		selectedIds = data.list.rows.map((row: ObjectRow) => row.id);
+	};
+
+	const copySelectionIds = async () => {
+		if (!navigator?.clipboard?.writeText || selectedIds.length === 0) {
+			return;
+		}
+
+		const selectedObjectIds = data.list.rows
+			.filter((row: ObjectRow) => selectedIds.includes(row.id))
+			.map((row: ObjectRow) => row.objectId)
+			.join('\n');
+
+		if (!selectedObjectIds) {
+			return;
+		}
+
+		await navigator.clipboard.writeText(selectedObjectIds);
+		selectionCopied = true;
+		setTimeout(() => {
+			selectionCopied = false;
+		}, 1200);
+	};
+
+	$effect(() => {
+		const visibleIds = new Set(data.list.rows.map((row: ObjectRow) => row.id));
+		const next = selectedIds.filter((id) => visibleIds.has(id));
+		if (next.length !== selectedIds.length) {
+			selectedIds = next;
+		}
+	});
 
 	const availabilityLabel = (value: AvailabilityState): string => value.replace(/_/g, ' ');
 	const accessLabel = (value: AccessLevel): string => value.charAt(0).toUpperCase() + value.slice(1);
@@ -85,61 +128,61 @@
 		const chips: ActiveFilterChip[] = [];
 		if (data.filters.q) {
 			chips.push({
-				label: `Search: ${data.filters.q}`,
+				label: `${t('objects.filters.search')}: ${data.filters.q}`,
 				href: toHref(withoutCursor({ ...data.filters, q: undefined }))
 			});
 		}
 		if (data.filters.availabilityState) {
 			chips.push({
-				label: `Availability: ${availabilityLabel(data.filters.availabilityState)}`,
+				label: `${t('objects.filters.availability')}: ${availabilityLabel(data.filters.availabilityState)}`,
 				href: toHref(withoutCursor({ ...data.filters, availabilityState: undefined }))
 			});
 		}
 		if (data.filters.accessLevel) {
 			chips.push({
-				label: `Access: ${accessLabel(data.filters.accessLevel)}`,
+				label: `${t('objects.filters.access')}: ${accessLabel(data.filters.accessLevel)}`,
 				href: toHref(withoutCursor({ ...data.filters, accessLevel: undefined }))
 			});
 		}
 		if (data.filters.language) {
 			chips.push({
-				label: `Language: ${data.filters.language}`,
+				label: `${t('objects.filters.language')}: ${data.filters.language}`,
 				href: toHref(withoutCursor({ ...data.filters, language: undefined }))
 			});
 		}
 		if (data.filters.batchLabel) {
 			chips.push({
-				label: `Batch: ${data.filters.batchLabel}`,
+				label: `${t('objects.filters.batchLabel')}: ${data.filters.batchLabel}`,
 				href: toHref(withoutCursor({ ...data.filters, batchLabel: undefined }))
 			});
 		}
 		if (data.filters.type) {
 			chips.push({
-				label: `Type: ${data.filters.type}`,
+				label: `${t('objects.filters.type')}: ${data.filters.type}`,
 				href: toHref(withoutCursor({ ...data.filters, type: undefined }))
 			});
 		}
 		if (data.filters.from) {
 			chips.push({
-				label: `From: ${compactDate(data.filters.from)}`,
+				label: `${t('objects.filters.from')}: ${compactDate(data.filters.from)}`,
 				href: toHref(withoutCursor({ ...data.filters, from: undefined }))
 			});
 		}
 		if (data.filters.to) {
 			chips.push({
-				label: `To: ${compactDate(data.filters.to)}`,
+				label: `${t('objects.filters.to')}: ${compactDate(data.filters.to)}`,
 				href: toHref(withoutCursor({ ...data.filters, to: undefined }))
 			});
 		}
 		if (data.filters.tag) {
 			chips.push({
-				label: `Tag: ${data.filters.tag}`,
+				label: `${t('objects.filters.tag')}: ${data.filters.tag}`,
 				href: toHref(withoutCursor({ ...data.filters, tag: undefined }))
 			});
 		}
 		if (data.filters.limit && data.filters.limit !== 25) {
 			chips.push({
-				label: `Limit: ${data.filters.limit}`,
+				label: `${t('objects.filters.limit')}: ${data.filters.limit}`,
 				href: toHref(withoutCursor({ ...data.filters, limit: 25 }))
 			});
 		}
@@ -155,6 +198,11 @@
 			selectionCount={selectedIds.length}
 			filteredCount={data.list.filteredCount}
 			totalCount={data.list.totalCount}
+			visibleCount={data.list.rows.length}
+			onSelectVisible={selectVisible}
+			onClearSelection={clearSelection}
+			onCopySelection={copySelectionIds}
+			selectionCopied={selectionCopied}
 		/>
 	</div>
 

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { mapObjectsList } from './objectsMapper';
+import {
+	mapCreateObjectDownloadRequestResponse,
+	mapObjectArtifacts,
+	mapObjectAvailableFiles,
+	mapObjectDetail,
+	mapObjectDownloadRequests,
+	mapObjectsList
+} from './objectsMapper';
 
 describe('mapObjectsList', () => {
 	it('maps backend object projection fields to UI rows', () => {
@@ -10,6 +17,7 @@ describe('mapObjectsList', () => {
 					{
 						id: 'OBJ-1',
 						object_id: 'OBJ-1',
+						thumbnail_artifact_id: '60000000-0000-4000-8000-000000000777',
 						title: 'Sample object',
 						processing_state: 'index_done',
 						curation_state: 'reviewed',
@@ -44,6 +52,7 @@ describe('mapObjectsList', () => {
 		expect(mapped.rows).toHaveLength(1);
 		expect(mapped.rows[0]?.availabilityState).toBe('AVAILABLE');
 		expect(mapped.rows[0]?.accessLevel).toBe('family');
+		expect(mapped.rows[0]?.thumbnailArtifactId).toBe('60000000-0000-4000-8000-000000000777');
 		expect(mapped.rows[0]?.indicators).toEqual({
 			accessPdf: true,
 			ocr: true,
@@ -62,6 +71,7 @@ describe('mapObjectsList', () => {
 					{
 						id: 'OBJ-2',
 						object_id: 'OBJ-2',
+						thumbnail_artifact_id: null,
 						title: null,
 						processing_state: 'queued',
 						curation_state: 'needs_review',
@@ -95,5 +105,160 @@ describe('mapObjectsList', () => {
 			ocr: false,
 			index: false
 		});
+		expect(mapped.rows[0]?.thumbnailArtifactId).toBeNull();
+	});
+
+	it('maps object detail ingest and access projection fields', () => {
+		const mapped = mapObjectDetail({
+			object: {
+				id: 'OBJ-9',
+				object_id: 'OBJ-9',
+				thumbnail_artifact_id: '60000000-0000-4000-8000-000000000999',
+				title: 'Detail object',
+				processing_state: 'index_done',
+				curation_state: 'reviewed',
+				availability_state: 'AVAILABLE',
+				access_level: 'public',
+				type: 'DOCUMENT',
+				tenant_id: 'tenant-1',
+				source_ingestion_id: 'ing-1',
+				source_batch_label: 'batch-1',
+				metadata: {},
+				created_at: '2026-02-17T00:00:00.000Z',
+				updated_at: '2026-02-17T01:00:00.000Z',
+				embargo_until: null,
+				embargo_kind: 'none',
+				embargo_curation_state: null,
+				rights_note: null,
+				sensitivity_note: null,
+				can_download: true,
+				access_reason_code: 'OK',
+				has_access_pdf: 1,
+				has_ocr: 1,
+				has_index: 1,
+				ingest_manifest: {
+					schema_version: '1.0',
+					object_id: 'OBJ-9'
+				},
+				is_authorized: true,
+				is_deliverable: true
+			}
+		});
+
+		expect(mapped.objectId).toBe('OBJ-9');
+		expect(mapped.thumbnailArtifactId).toBe('60000000-0000-4000-8000-000000000999');
+		expect(mapped.ingestManifest).toEqual({
+			schema_version: '1.0',
+			object_id: 'OBJ-9'
+		});
+		expect(mapped.isAuthorized).toBe(true);
+		expect(mapped.isDeliverable).toBe(true);
+	});
+
+	it('maps artifact list fields', () => {
+		const mapped = mapObjectArtifacts({
+			object_id: 'OBJ-9',
+			artifacts: [
+				{
+					id: 'artifact-1',
+					kind: 'ocr_text',
+					variant: null,
+					storage_key: 'objects/OBJ-9/ocr.txt',
+					content_type: 'text/plain',
+					size_bytes: 1234,
+					created_at: '2026-02-17T01:00:00.000Z'
+				}
+			]
+		});
+
+		expect(mapped).toEqual([
+			{
+				id: 'artifact-1',
+				kind: 'ocr_text',
+				variant: null,
+				storageKey: 'objects/OBJ-9/ocr.txt',
+				contentType: 'text/plain',
+				sizeBytes: 1234,
+				createdAt: '2026-02-17T01:00:00.000Z'
+			}
+		]);
+	});
+
+	it('maps available files fields', () => {
+		const mapped = mapObjectAvailableFiles({
+			object_id: 'OBJ-9',
+			available_files: [
+				{
+					id: '11111111-1111-4111-8111-111111111111',
+					archive_file_key: 'archive/key.pdf',
+					artifact_kind: 'original',
+					variant: null,
+					display_name: 'Original file',
+					content_type: 'application/pdf',
+					size_bytes: 999,
+					checksum_sha256: null,
+					metadata: {},
+					is_available: true,
+					synced_at: '2026-03-02T10:00:00.000Z'
+				}
+			]
+		});
+
+		expect(mapped[0]).toEqual({
+			id: '11111111-1111-4111-8111-111111111111',
+			archiveFileKey: 'archive/key.pdf',
+			artifactKind: 'original',
+			variant: null,
+			displayName: 'Original file',
+			contentType: 'application/pdf',
+			sizeBytes: 999,
+			checksumSha256: null,
+			metadata: {},
+			isAvailable: true,
+			syncedAt: '2026-03-02T10:00:00.000Z'
+		});
+	});
+
+	it('maps download requests fields', () => {
+		const mapped = mapObjectDownloadRequests({
+			object_id: 'OBJ-9',
+			requests: [
+				{
+					id: '33333333-3333-4333-8333-333333333333',
+					available_file_id: '11111111-1111-4111-8111-111111111111',
+					requested_by: 'user-1',
+					artifact_kind: 'original',
+					variant: null,
+					status: 'COMPLETED',
+					failure_reason: null,
+					created_at: '2026-03-02T09:00:00.000Z',
+					updated_at: '2026-03-02T10:00:00.000Z',
+					completed_at: '2026-03-02T10:00:00.000Z'
+				}
+			]
+		});
+
+		expect(mapped[0]?.status).toBe('COMPLETED');
+		expect(mapped[0]?.availableFileId).toBe('11111111-1111-4111-8111-111111111111');
+	});
+
+	it('maps create download request response for available shortcut', () => {
+		const mapped = mapCreateObjectDownloadRequestResponse({
+			status: 'available',
+			object_id: 'OBJ-9',
+			artifact: {
+				id: 'artifact-1',
+				kind: 'original',
+				variant: null,
+				storage_key: 'objects/OBJ-9/original.pdf',
+				content_type: 'application/pdf',
+				size_bytes: 1024,
+				created_at: '2026-03-02T10:00:00.000Z'
+			}
+		});
+
+		expect(mapped.status).toBe('available');
+		expect(mapped.artifact?.kind).toBe('original');
+		expect(mapped.request).toBeNull();
 	});
 });

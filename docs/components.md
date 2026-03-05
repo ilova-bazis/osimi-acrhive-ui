@@ -159,6 +159,28 @@ Props:
 <StatusBadge status="needs-review" label="Needs Review" />
 ```
 
+### ObjectThumbnail
+
+Purpose: Reusable object preview tile that renders backend thumbnail artifacts when present and falls back to a file placeholder when preview is unavailable.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| objectId | string | yes | Object identifier used in download proxy route |
+| thumbnailArtifactId | string \| null | yes | Thumbnail artifact id from backend projection |
+| objectType | string | yes | Used for compact placeholder label (`DOC`, `IMG`, `AUD`, `VID`, `FILE`) |
+| class | string | no | Additional size/layout classes |
+
+```svelte
+<ObjectThumbnail
+  objectId={row.objectId}
+  thumbnailArtifactId={row.thumbnailArtifactId}
+  objectType={row.type}
+  class="h-12 w-12"
+/>
+```
+
 ## Domain Panels
 
 ### ObjectsPageHeader
@@ -169,10 +191,26 @@ Props:
 
 | Name | Type | Required | Notes |
 | --- | --- | --- | --- |
-| selectionCount | number | no | Defaults to `0`; disables bulk action when zero |
+| selectionCount | number | no | Defaults to `0`; controls selection action visibility |
+| filteredCount | number | no | Filtered row count label |
+| totalCount | number | no | Tenant total count label |
+| visibleCount | number | no | Count of rows visible on current page |
+| onSelectVisible | () => void | no | Select all currently visible rows |
+| onClearSelection | () => void | no | Clear current selection |
+| onCopySelection | () => void | no | Copy selected object IDs |
+| selectionCopied | boolean | no | Temporary copied feedback state |
 
 ```svelte
-<ObjectsPageHeader selectionCount={selectedIds.length} />
+<ObjectsPageHeader
+  selectionCount={selectedIds.length}
+  filteredCount={data.list.filteredCount}
+  totalCount={data.list.totalCount}
+  visibleCount={data.list.rows.length}
+  onSelectVisible={selectVisible}
+  onClearSelection={clearSelection}
+  onCopySelection={copySelectionIds}
+  selectionCopied={selectionCopied}
+/>
 ```
 
 ### ObjectsFilterPanel
@@ -187,7 +225,7 @@ Props:
 | availabilityOptions | AvailabilityState[] | yes | Availability filter options |
 | accessOptions | AccessLevel[] | yes | Access-level options |
 | sortOptions | ObjectsSort[] | yes | Sort options |
-| activeChips | string[] | no | Active filter labels; defaults to `[]` |
+| activeChips | { label: string; href: string }[] | no | Active filter chips with remove links; defaults to `[]` |
 
 ```svelte
 <ObjectsFilterPanel
@@ -215,7 +253,7 @@ Props:
 
 ### ObjectsTable
 
-Purpose: Primary objects table with selection, processing badge, access reason messaging, and cursor pagination controls.
+Purpose: Primary objects table with selection, compact row action menu, processing badge, access reason messaging, and cursor pagination controls.
 
 Props:
 

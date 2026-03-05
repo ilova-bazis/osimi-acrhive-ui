@@ -45,6 +45,7 @@ export type ObjectIndicators = {
 export type ObjectRow = {
 	id: string;
 	objectId: string;
+	thumbnailArtifactId: string | null;
 	title: string | null;
 	type: string;
 	processingState: ProcessingState;
@@ -66,6 +67,64 @@ export type ObjectRow = {
 	createdAt: string;
 	updatedAt: string;
 	indicators: ObjectIndicators;
+};
+
+export type ObjectDetail = ObjectRow & {
+	ingestManifest: Record<string, unknown> | null;
+	isAuthorized: boolean;
+	isDeliverable: boolean;
+};
+
+export type ObjectArtifact = {
+	id: string;
+	kind: string;
+	variant: string | null;
+	storageKey: string;
+	contentType: string;
+	sizeBytes: number;
+	createdAt: string;
+};
+
+export type ObjectAvailableFile = {
+	id: string;
+	archiveFileKey: string;
+	artifactKind: string;
+	variant: string | null;
+	displayName: string;
+	contentType: string | null;
+	sizeBytes: number | null;
+	checksumSha256: string | null;
+	metadata: Record<string, unknown>;
+	isAvailable: boolean;
+	syncedAt: string;
+};
+
+export type ObjectDownloadRequestStatus =
+	| 'QUEUED'
+	| 'IN_PROGRESS'
+	| 'COMPLETED'
+	| 'FAILED'
+	| 'CANCELED'
+	| string;
+
+export type ObjectDownloadRequest = {
+	id: string;
+	availableFileId: string;
+	requestedBy: string;
+	artifactKind: string;
+	variant: string | null;
+	status: ObjectDownloadRequestStatus;
+	failureReason: string | null;
+	createdAt: string;
+	updatedAt: string;
+	completedAt: string | null;
+};
+
+export type CreateObjectDownloadRequestResult = {
+	status: 'available' | 'queued';
+	objectId: string;
+	artifact: ObjectArtifact | null;
+	request: ObjectDownloadRequest | null;
 };
 
 export type ObjectsListResponse = {
@@ -114,7 +173,42 @@ export type ObjectsRecentRequest = {
 	limit?: number;
 };
 
+export type ObjectDetailRequest = {
+	context: ObjectsRequestContext;
+	objectId: string;
+};
+
+export type ObjectArtifactsRequest = {
+	context: ObjectsRequestContext;
+	objectId: string;
+};
+
+export type ObjectAvailableFilesRequest = {
+	context: ObjectsRequestContext;
+	objectId: string;
+};
+
+export type ObjectDownloadRequestsRequest = {
+	context: ObjectsRequestContext;
+	objectId: string;
+};
+
+export type CreateObjectDownloadRequest = {
+	context: ObjectsRequestContext;
+	objectId: string;
+	availableFileId: string;
+};
+
 export type ObjectsService = {
 	listObjects: (request: ObjectsListRequest) => Promise<ObjectsListResponse>;
 	listRecent: (request: ObjectsRecentRequest) => Promise<ObjectRow[]>;
+	getObjectDetail: (request: ObjectDetailRequest) => Promise<ObjectDetail>;
+	listObjectArtifacts: (request: ObjectArtifactsRequest) => Promise<ObjectArtifact[]>;
+	listObjectAvailableFiles: (request: ObjectAvailableFilesRequest) => Promise<ObjectAvailableFile[]>;
+	listObjectDownloadRequests: (
+		request: ObjectDownloadRequestsRequest
+	) => Promise<ObjectDownloadRequest[]>;
+	createObjectDownloadRequest: (
+		request: CreateObjectDownloadRequest
+	) => Promise<CreateObjectDownloadRequestResult>;
 };
