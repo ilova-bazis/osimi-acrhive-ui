@@ -144,6 +144,18 @@
 		].filter(Boolean).length;
 
 	const hiddenChipCount = () => (activeChips.length > 2 ? activeChips.length - 2 : 0);
+
+	const appliedDrawerCount = $derived(
+		[
+			filters.type,
+			filters.language,
+			filters.batchLabel,
+			filters.tag,
+			filters.from,
+			filters.to,
+			filters.limit !== 25 ? String(filters.limit) : ''
+		].filter(Boolean).length
+	);
 </script>
 
 <section class="sticky top-0 z-10 rounded-2xl border border-blue-slate/30 bg-pearl-beige/55 px-4 py-3 shadow-[0_0_0_2px_rgba(79,109,122,0.08)] backdrop-blur-sm">
@@ -207,8 +219,13 @@
 					{/each}
 				</select>
 			</label>
-			<BaseButton variant="secondary" type="button" class="h-10" onclick={openDrawer}>
+			<BaseButton variant="secondary" type="button" class="h-10 gap-1.5" onclick={openDrawer}>
 				{t('objects.filters.moreFilters')}
+				{#if appliedDrawerCount > 0}
+					<span class="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-slate px-1 text-[9px] font-semibold text-surface-white">
+						{appliedDrawerCount}
+					</span>
+				{/if}
 			</BaseButton>
 			{#if activeChips.length > 0}
 				<a href={resolve('/objects')} class="ml-auto text-xs text-text-muted hover:text-blue-slate">

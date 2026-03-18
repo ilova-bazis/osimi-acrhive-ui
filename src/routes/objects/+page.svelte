@@ -1,11 +1,10 @@
 <script lang="ts">
 	import ObjectsFilterPanel from '$lib/components/ObjectsFilterPanel.svelte';
-	import ObjectsPageHeader from '$lib/components/ObjectsPageHeader.svelte';
 	import ObjectsRecentStrip from '$lib/components/ObjectsRecentStrip.svelte';
 	import ObjectsTable from '$lib/components/ObjectsTable.svelte';
 	import { locale } from '$lib/i18n/locale';
 	import { translations } from '$lib/i18n/translations';
-	import { translate } from '$lib/i18n/translate';
+	import { formatTemplate, translate } from '$lib/i18n/translate';
 	import type {
 		AccessLevel,
 		AvailabilityState,
@@ -25,6 +24,9 @@
 
 	let selectedIds = $state<string[]>([]);
 	let selectionCopied = $state(false);
+	let showResyncConfirm = $state(false);
+	let resyncRunning = $state(false);
+	let resyncMessage = $state<{ type: 'success' | 'error'; text: string } | null>(null);
 	const dictionary = $derived(translations[$locale]);
 	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
 
@@ -89,6 +91,42 @@
 			selectedIds = next;
 		}
 	});
+
+	const requestBulkResync = async () => {
+		showResyncConfirm = false;
+		resyncRunning = true;
+		resyncMessage = null;
+		const objectIds = data.list.rows
+			.filter((row: ObjectRow) => selectedIds.includes(row.id))
+			.map((row: ObjectRow) => row.objectId);
+		try {
+			const response = await fetch('/objects/resync', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ objectIds })
+			});
+			if (response.status === 401) {
+				window.location.href = '/login';
+				return;
+			}
+			const payload = await response.json().catch(() => null);
+			if (!response.ok || !payload?.results) {
+				resyncMessage = { type: 'error', text: t('objects.resync.failed') };
+			} else {
+				const succeeded = (payload.results as { ok: boolean }[]).filter((r) => r.ok).length;
+				const total = objectIds.length;
+				resyncMessage = {
+					type: succeeded === total ? 'success' : 'error',
+					text: formatTemplate(t('objects.resync.resyncDone'), { succeeded, total })
+				};
+				selectedIds = [];
+			}
+		} catch {
+			resyncMessage = { type: 'error', text: t('objects.resync.failed') };
+		} finally {
+			resyncRunning = false;
+		}
+	};
 
 	const availabilityLabel = (value: AvailabilityState): string => value.replace(/_/g, ' ');
 	const accessLabel = (value: AccessLevel): string => value.charAt(0).toUpperCase() + value.slice(1);
@@ -193,19 +231,6 @@
 </script>
 
 <main class="mx-auto flex min-h-[80vh] max-w-6xl flex-col gap-6 px-6 py-10">
-	<div class="rounded-3xl bg-gradient-to-b from-pearl-beige/35 to-transparent p-4 sm:p-6">
-		<ObjectsPageHeader
-			selectionCount={selectedIds.length}
-			filteredCount={data.list.filteredCount}
-			totalCount={data.list.totalCount}
-			visibleCount={data.list.rows.length}
-			onSelectVisible={selectVisible}
-			onClearSelection={clearSelection}
-			onCopySelection={copySelectionIds}
-			selectionCopied={selectionCopied}
-		/>
-	</div>
-
 	<ObjectsFilterPanel
 		filters={data.filters}
 		availabilityOptions={availabilityOptions}
@@ -215,6 +240,61 @@
 	/>
 
 	<ObjectsRecentStrip recent={data.recent} />
+
+	<div class="flex items-center justify-between gap-3 rounded-2xl border border-border-soft bg-surface-white px-4 py-2.5">
+		<div class="flex items-center gap-3">
+			{#if selectedIds.length > 0}
+				<span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-slate text-[10px] font-semibold text-surface-white">
+					{selectedIds.length}
+				</span>
+				<p class="text-xs text-blue-slate">
+					{formatTemplate(t('objects.header.selectionState'), { selected: selectedIds.length, visible: data.list.rows.length })}
+				</p>
+			{:else}
+				<p class="text-xs text-text-muted">{t('objects.header.subtitle')}</p>
+			{/if}
+		</div>
+		<div class="flex flex-wrap items-center gap-2">
+			<button
+				type="button"
+				onclick={selectVisible}
+				disabled={data.list.rows.length === 0 || selectedIds.length === data.list.rows.length}
+				class="rounded-full border border-blue-slate px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition-colors hover:bg-pale-sky/20 disabled:cursor-not-allowed disabled:opacity-40"
+			>
+				{t('objects.header.selectVisible')}
+			</button>
+			{#if selectedIds.length > 0}
+				<button
+					type="button"
+					onclick={clearSelection}
+					class="rounded-full border border-border-soft px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-text-muted transition-colors hover:border-blue-slate/35 hover:text-blue-slate"
+				>
+					{t('objects.header.clearSelection')}
+				</button>
+				<button
+					type="button"
+					onclick={copySelectionIds}
+					class="rounded-full border border-border-soft px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-text-muted transition-colors hover:border-blue-slate/35 hover:text-blue-slate"
+				>
+					{selectionCopied ? t('objects.header.copiedSelection') : t('objects.header.copySelectionIds')}
+				</button>
+				<button
+					type="button"
+					onclick={() => (showResyncConfirm = true)}
+					disabled={resyncRunning}
+					class="rounded-full bg-blue-slate px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-surface-white transition-colors hover:bg-blue-slate-mid-dark disabled:cursor-not-allowed disabled:opacity-50"
+				>
+					{resyncRunning ? '…' : t('objects.resync.resyncSelected')}
+				</button>
+			{/if}
+		</div>
+	</div>
+
+	{#if resyncMessage}
+		<p class={`-mt-3 text-xs ${resyncMessage.type === 'success' ? 'text-blue-slate' : 'text-burnt-peach'}`}>
+			{resyncMessage.text}
+		</p>
+	{/if}
 
 	<ObjectsTable
 		rows={data.list.rows}
@@ -228,3 +308,34 @@
 		totalCount={data.list.totalCount}
 	/>
 </main>
+
+{#if showResyncConfirm}
+	<button
+		type="button"
+		aria-label="Close"
+		class="fixed inset-0 z-40 bg-blue-slate/35"
+		onclick={() => (showResyncConfirm = false)}
+	></button>
+	<div class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border-soft bg-surface-white p-6 shadow-[0_30px_80px_rgba(31,47,56,0.35)]">
+		<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.resync.confirmTitle')}</p>
+		<p class="mt-3 text-sm text-text-muted">
+			{formatTemplate(t('objects.resync.confirmBodyBulk'), { count: selectedIds.length })}
+		</p>
+		<div class="mt-5 flex justify-end gap-3">
+			<button
+				type="button"
+				onclick={() => (showResyncConfirm = false)}
+				class="rounded-full border border-border-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:border-blue-slate/35 hover:text-blue-slate"
+			>
+				{t('common.cancel')}
+			</button>
+			<button
+				type="button"
+				onclick={requestBulkResync}
+				class="rounded-full bg-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-surface-white hover:bg-blue-slate-mid-dark"
+			>
+				{t('common.confirm')}
+			</button>
+		</div>
+	</div>
+{/if}

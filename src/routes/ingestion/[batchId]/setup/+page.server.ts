@@ -3,6 +3,7 @@ import { ingestionCapabilitiesService, ingestionDetailService } from '$lib/servi
 import { DEFAULT_INGESTION_CAPABILITIES } from '$lib/services/ingestionCapabilities';
 import { isUnauthorizedError } from '$lib/server/apiClient';
 import { redirect } from '@sveltejs/kit';
+import type { IngestionDetailItem } from '$lib/services/ingestionDetail';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) => {
@@ -20,6 +21,7 @@ export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) =
 		sizeBytes: number | null;
 		createdAt: string | null;
 	}> = [];
+	let items: IngestionDetailItem[] = [];
 	let metadata = {
 		classificationType: 'document',
 		itemKind: 'document' as
@@ -76,6 +78,7 @@ export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) =
 			sensitivityNote: detail.sensitivityNote,
 			summary: detail.summary
 		};
+		items = detail.items;
 	} catch (cause) {
 		if (isUnauthorizedError(cause)) {
 			throw redirect(303, '/login');
@@ -86,6 +89,7 @@ export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) =
 		batchId: params.batchId,
 		capabilities,
 		existingFiles,
+		items,
 		metadata
 	};
 };

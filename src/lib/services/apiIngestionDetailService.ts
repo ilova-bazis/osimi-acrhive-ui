@@ -2,17 +2,31 @@ import {
 	cancelIngestionResponseSchema,
 	deleteIngestionResponseSchema,
 	ingestionDetailResponseSchema,
+	listItemFilesResponseSchema,
+	listItemsResponseSchema,
 	retryIngestionResponseSchema,
 	restoreIngestionResponseSchema,
 	updateIngestionRequestSchema,
 	type IngestionDto,
-	type IngestionFileDto
+	type IngestionFileDto,
+	type IngestionItemDto,
+	type IngestionItemFileDto
 } from '$lib/api/schemas/ingestions';
 import { backendRequest } from '$lib/server/apiClient';
-import type { IngestionDetail, IngestionDetailFile, IngestionDetailService } from './ingestionDetail';
+import type {
+	IngestionDetail,
+	IngestionDetailFile,
+	IngestionDetailItem,
+	IngestionDetailItemFile,
+	IngestionDetailService,
+	ListItemsRequest
+} from './ingestionDetail';
 import type { IngestionStatus } from './ingestionOverview';
 
 const toIngestionPath = (batchId: string): string => `/api/ingestions/${encodeURIComponent(batchId)}`;
+const toItemsPath = (batchId: string): string => `/api/ingestions/${encodeURIComponent(batchId)}/items`;
+const toItemFilesPath = (batchId: string, itemId: string): string =>
+	`/api/ingestions/${encodeURIComponent(batchId)}/items/${encodeURIComponent(itemId)}/files`;
 const toRetryPath = (batchId: string): string => `/api/ingestions/${encodeURIComponent(batchId)}/retry`;
 const toCancelPath = (batchId: string): string => `/api/ingestions/${encodeURIComponent(batchId)}/cancel`;
 const toRestorePath = (batchId: string): string => `/api/ingestions/${encodeURIComponent(batchId)}/restore`;
@@ -127,7 +141,29 @@ const mapFile = (dto: IngestionFileDto, index: number): IngestionDetailFile => (
 	createdAt: dto.created_at ?? null
 });
 
-const mapDetail = (ingestion: IngestionDto, files: IngestionFileDto[]): IngestionDetail => {
+const mapItemFile = (dto: IngestionItemFileDto): IngestionDetailItemFile => ({
+	id: dto.id,
+	ingestionFileId: dto.ingestion_file_id,
+	sortOrder: dto.sort_order,
+	...(dto.role ? { role: dto.role } : {})
+});
+
+const mapItem = (dto: IngestionItemDto, files: IngestionDetailItemFile[]): IngestionDetailItem => {
+	const title = typeof dto.title === 'string' && dto.title.length > 0 ? dto.title : undefined;
+	return {
+		id: dto.id,
+		itemIndex: dto.item_index,
+		...(title ? { label: title } : {}),
+		status: dto.status,
+		files
+	};
+};
+
+const mapDetail = (
+	ingestion: IngestionDto,
+	files: IngestionFileDto[],
+	items: IngestionDetailItem[]
+): IngestionDetail => {
 	const id = ingestion.id ?? ingestion.ingestion_id ?? ingestion.batch_id ?? ingestion.batch_label ?? 'unknown';
 	const processedObjects =
 		ingestion.processed_objects ?? ingestion.objects_processed ?? ingestion.completed_count ?? 0;
@@ -152,22 +188,69 @@ const mapDetail = (ingestion: IngestionDto, files: IngestionFileDto[]): Ingestio
 		updatedAt: ingestion.updated_at ?? ingestion.created_at ?? new Date(0).toISOString(),
 		processedObjects,
 		totalObjects,
-		files: files.map(mapFile)
+		files: files.map(mapFile),
+		items
 	};
+};
+
+const fetchItemsWithFiles = async (
+	fetchFn: typeof fetch,
+	token: string,
+	batchId: string
+): Promise<IngestionDetailItem[]> => {
+	const itemsResponse = await backendRequest({
+		fetchFn,
+		path: toItemsPath(batchId),
+		context: 'ingestions.items.list',
+		method: 'GET',
+		token,
+		responseSchema: listItemsResponseSchema
+	});
+
+	const items = itemsResponse.items;
+	if (items.length === 0) return [];
+
+	const itemFilesResults = await Promise.allSettled(
+		items.map((item) =>
+			backendRequest({
+				fetchFn,
+				path: toItemFilesPath(batchId, item.id),
+				context: 'ingestions.items.files.list',
+				method: 'GET',
+				token,
+				responseSchema: listItemFilesResponseSchema
+			})
+		)
+	);
+
+	return items.map((item, index) => {
+		const filesResult = itemFilesResults[index];
+		const files =
+			filesResult.status === 'fulfilled'
+				? filesResult.value.files.map(mapItemFile)
+				: [];
+		return mapItem(item, files);
+	});
 };
 
 export const apiIngestionDetailService: IngestionDetailService = {
 	getDetail: async ({ fetchFn, token, batchId }) => {
-		const response = await backendRequest({
-			fetchFn,
-			path: toIngestionPath(batchId),
-			context: 'ingestions.detail',
-			method: 'GET',
-			token,
-			responseSchema: ingestionDetailResponseSchema
-		});
+		const [detailResponse, items] = await Promise.all([
+			backendRequest({
+				fetchFn,
+				path: toIngestionPath(batchId),
+				context: 'ingestions.detail',
+				method: 'GET',
+				token,
+				responseSchema: ingestionDetailResponseSchema
+			}),
+			fetchItemsWithFiles(fetchFn, token, batchId).catch(() => [] as IngestionDetailItem[])
+		]);
 
-		return mapDetail(response.ingestion, response.files ?? []);
+		return mapDetail(detailResponse.ingestion, detailResponse.files ?? [], items);
+	},
+	listItems: async ({ fetchFn, token, batchId }: ListItemsRequest): Promise<IngestionDetailItem[]> => {
+		return fetchItemsWithFiles(fetchFn, token, batchId);
 	},
 	retry: async ({ fetchFn, token, batchId }) => {
 		await backendRequest({

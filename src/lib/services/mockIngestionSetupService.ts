@@ -13,5 +13,10 @@ export const mockIngestionSetupService: IngestionSetupService = {
 	}),
 	commitFile: async () => undefined,
 	submit: async () => undefined,
-	deleteFile: async () => undefined
+	deleteFile: async () => undefined,
+	createItem: async ({ itemIndex }) => ({ id: `mock-item-${itemIndex}`, itemIndex }),
+	updateItem: async () => undefined,
+	reorderItems: async () => undefined,
+	attachFileToItem: async () => undefined,
+	reorderItemFiles: async () => undefined
 };

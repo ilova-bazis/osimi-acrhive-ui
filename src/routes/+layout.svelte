@@ -18,7 +18,9 @@
 	let { children, data } = $props<{ children: () => unknown; data: { session: Session | null } }>();
 
 	const isPublicRoute = (pathname: string) =>
-		pathname === '/login' || pathname.startsWith('/login/') || pathname === '/prototype' || pathname.startsWith('/prototype/');
+		pathname === '/login' || pathname.startsWith('/login/') ||
+		pathname === '/prototype' || pathname.startsWith('/prototype/') ||
+		pathname === '/ingestion-proto' || pathname.startsWith('/ingestion-proto/');
 
 	const dictionary = $derived(translations[$locale]);
 
@@ -69,12 +71,12 @@
 
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>
 
-{#if $session && !isPublicRoute($page.url.pathname)}
+{#if data.session && !isPublicRoute($page.url.pathname)}
 	<AppHeader
 		library={t('header.library')}
 		title={currentTitle()}
-		username={$session.username}
-		role={$session.role}
+		username={data.session.username}
+		role={data.session.role}
 		navItems={navItems}
 		currentPath={$page.url.pathname}
 		logoutLabel={t('header.signOut')}

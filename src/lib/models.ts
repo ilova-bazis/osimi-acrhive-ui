@@ -49,6 +49,24 @@ export type ItemOverrides = {
 	pipelines?: PipelineFlags;
 };
 
+export type ObjectGroup = {
+	id: string;
+	label?: string;
+	fileIds: number[]; // ordered local file IDs — index = source_order
+	serverId?: string; // backend ingestion_item ID once created
+};
+
+export type ObjectItemMetadata = {
+	title?: string;
+	date?: {
+		value: string | null; // YYYY | YYYY-MM | YYYY-MM-DD | null
+		approximate: boolean;
+	};
+	tags?: string[];
+	description?: string;
+	people?: string[];
+};
+
 export type BatchItem = {
 	fileId: string;
 	originalFilename: string;

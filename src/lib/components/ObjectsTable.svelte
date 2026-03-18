@@ -35,7 +35,7 @@
 	const dictionary = $derived(translations[$locale]);
 	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
 
-	const formatDate = (value: string) => new Date(value).toLocaleString();
+	const formatDate = (value: string) => new Date(value).toLocaleDateString();
 	const titleFallback = (row: ObjectRow) =>
 		formatTemplate(t('objects.table.untitled'), { suffix: row.objectId.slice(-6) });
 	const processingLabel = (state: ObjectRow['processingState']) => state.replace(/_/g, ' ');
@@ -128,12 +128,22 @@
 				<span>{t('objects.table.headers.actions')}</span>
 			</div>
 	{#if rows.length === 0}
-		<div class="px-6 py-12 text-center text-sm text-text-muted">
+		<div class="flex flex-col items-center justify-center px-6 py-16 text-center">
+			<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-alabaster-grey/70 text-text-muted">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="h-6 w-6" aria-hidden="true">
+					<path d="M20 7H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1Z" />
+					<path d="M16 7V5a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v2" />
+				</svg>
+			</div>
+			<p class="text-sm font-medium text-text-ink">
+				{#if hasActiveFilters}
+					{t('objects.table.emptyFiltered')}
+				{:else}
+					{t('objects.table.empty')}
+				{/if}
+			</p>
 			{#if hasActiveFilters}
-				<p>{t('objects.table.emptyFiltered')}</p>
-				<a href={resolve('/objects')} class="mt-3 inline-flex rounded-full border border-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.filters.clearFilters')}</a>
-			{:else}
-				<p>{t('objects.table.empty')}</p>
+				<a href={resolve('/objects')} class="mt-4 inline-flex rounded-full border border-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate transition-colors hover:bg-pale-sky/20">{t('objects.filters.clearFilters')}</a>
 			{/if}
 		</div>
 	{:else}
@@ -141,7 +151,7 @@
 			{#each rows as row (row.id)}
 				{@const reasonCode = row.accessReasonCode as AccessReasonCode}
 				{@const menuHint = menuHintLabel(reasonCode)}
-				<div class="grid grid-cols-[36px_64px_2fr_1fr_1.2fr_0.9fr_1fr_1fr_1fr_84px] items-center gap-3 px-6 py-4">
+				<div class="group grid grid-cols-[36px_64px_2fr_1fr_1.2fr_0.9fr_1fr_1fr_1fr_84px] items-center gap-3 px-6 py-4 transition-colors hover:bg-alabaster-grey/35">
 					<input
 						type="checkbox"
 						class="h-4 w-4 rounded border-border-soft text-blue-slate"
@@ -198,11 +208,16 @@
 							<button
 								type="button"
 								onclick={() => toggleMenu(row.id)}
-								class="rounded-full border border-border-soft px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-text-muted hover:border-blue-slate/35 hover:text-blue-slate"
+								class={`flex h-7 w-7 items-center justify-center rounded-full border transition-all hover:border-blue-slate/35 hover:text-blue-slate focus:opacity-100 ${openMenuRowId === row.id ? 'border-blue-slate/35 text-blue-slate opacity-100' : 'border-transparent text-text-muted opacity-0 group-hover:opacity-100'}`}
+								aria-label={t('objects.table.rowActions')}
 								aria-expanded={openMenuRowId === row.id}
 								aria-controls={`row-actions-${row.id}`}
 							>
-								{t('objects.table.rowActions')}
+								<svg viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4" aria-hidden="true">
+									<circle cx="4" cy="10" r="1.5" />
+									<circle cx="10" cy="10" r="1.5" />
+									<circle cx="16" cy="10" r="1.5" />
+								</svg>
 							</button>
 							{#if openMenuRowId === row.id}
 								<div

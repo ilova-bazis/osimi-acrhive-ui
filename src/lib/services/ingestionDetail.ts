@@ -18,6 +18,21 @@ export type IngestionDetailFile = {
 	createdAt: string | null;
 };
 
+export type IngestionDetailItemFile = {
+	id: string;
+	ingestionFileId: string;
+	sortOrder: number;
+	role?: string;
+};
+
+export type IngestionDetailItem = {
+	id: string;
+	itemIndex: number;
+	label?: string;
+	status: string;
+	files: IngestionDetailItemFile[];
+};
+
 export type IngestionDetail = {
 	id: string;
 	batchLabel: string;
@@ -36,6 +51,7 @@ export type IngestionDetail = {
 	processedObjects: number;
 	totalObjects: number;
 	files: IngestionDetailFile[];
+	items: IngestionDetailItem[];
 };
 
 export type IngestionDetailRequest = {
@@ -93,8 +109,15 @@ export type UpdateIngestionRequest = {
 	};
 };
 
+export type ListItemsRequest = {
+	fetchFn: typeof fetch;
+	token: string;
+	batchId: string;
+};
+
 export type IngestionDetailService = {
 	getDetail: (request: IngestionDetailRequest) => Promise<IngestionDetail>;
+	listItems: (request: ListItemsRequest) => Promise<IngestionDetailItem[]>;
 	retry: (request: RetryIngestionRequest) => Promise<void>;
 	cancel: (request: CancelIngestionRequest) => Promise<void>;
 	restore: (request: RestoreIngestionRequest) => Promise<void>;

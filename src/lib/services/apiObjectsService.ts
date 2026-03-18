@@ -1,18 +1,18 @@
 import {
     mapCreateObjectDownloadRequestResponse,
+    mapCreateObjectResyncResponse,
     mapObjectArtifacts,
     mapObjectAvailableFiles,
     mapObjectDetail,
-    mapObjectDownloadRequests,
     mapObjectsList,
 } from "$lib/api/mappers/objectsMapper";
 import {
     objectArtifactsResponseSchema,
     objectAvailableFilesResponseSchema,
-    objectDownloadRequestsResponseSchema,
     objectDetailResponseSchema,
     objectsListResponseSchema,
     createObjectDownloadRequestResponseSchema,
+    createObjectResyncResponseSchema,
 } from "$lib/api/schemas/objects";
 import { backendRequest } from "$lib/server/apiClient";
 import type {
@@ -96,6 +96,9 @@ const toAvailableFilesPath = (objectId: string): string =>
 const toDownloadRequestsPath = (objectId: string): string =>
     `/api/objects/${encodeURIComponent(objectId)}/download-requests`;
 
+const toResyncPath = (objectId: string): string =>
+    `/api/objects/${encodeURIComponent(objectId)}/resync`;
+
 const fetchObjectsList = async (params: {
     filters: ObjectsFilters;
     fetchFn: typeof fetch;
@@ -172,18 +175,6 @@ export const apiObjectsService: ObjectsService = {
         });
         return mapObjectAvailableFiles(response);
     },
-    listObjectDownloadRequests: async ({ context, objectId }) => {
-        const response = await backendRequest({
-            fetchFn: context.fetchFn,
-            path: toDownloadRequestsPath(objectId),
-            context: "objects.downloadRequests",
-            method: "GET",
-            token: context.token,
-            responseSchema: objectDownloadRequestsResponseSchema,
-        });
-
-        return mapObjectDownloadRequests(response);
-    },
     createObjectDownloadRequest: async ({
         context,
         objectId,
@@ -202,5 +193,17 @@ export const apiObjectsService: ObjectsService = {
         });
 
         return mapCreateObjectDownloadRequestResponse(response);
+    },
+    requestResync: async ({ context, objectId }) => {
+        const response = await backendRequest({
+            fetchFn: context.fetchFn,
+            path: toResyncPath(objectId),
+            context: "objects.requestResync",
+            method: "POST",
+            token: context.token,
+            responseSchema: createObjectResyncResponseSchema,
+        });
+
+        return mapCreateObjectResyncResponse(response);
     },
 };

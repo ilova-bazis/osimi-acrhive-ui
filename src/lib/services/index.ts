@@ -1,3 +1,4 @@
+import type { ArchiveRequestsService } from './archiveRequests';
 import type { DashboardService } from './dashboard';
 import type { IngestionCapabilitiesService } from './ingestionCapabilities';
 import type { IngestionDetailService } from './ingestionDetail';
@@ -5,6 +6,7 @@ import type { IngestionOverviewService } from './ingestionOverview';
 import type { IngestionNewService } from './ingestionNew';
 import type { IngestionSetupService } from './ingestionSetup';
 import type { ObjectsService } from './objects';
+import { apiArchiveRequestsService } from './apiArchiveRequestsService';
 import { apiIngestionCapabilitiesService } from './apiIngestionCapabilitiesService';
 import { apiIngestionDetailService } from './apiIngestionDetailService';
 import { apiDashboardService } from './apiDashboardService';
@@ -13,6 +15,7 @@ import { apiIngestionOverviewService } from './apiIngestionOverviewService';
 import { apiIngestionSetupService } from './apiIngestionSetupService';
 import { apiObjectsService } from './apiObjectsService';
 
+export const archiveRequestsService: ArchiveRequestsService = apiArchiveRequestsService;
 export const dashboardService: DashboardService = apiDashboardService;
 export const ingestionCapabilitiesService: IngestionCapabilitiesService = apiIngestionCapabilitiesService;
 export const ingestionDetailService: IngestionDetailService = apiIngestionDetailService;

@@ -5,13 +5,13 @@ const {
 	getObjectDetailMock,
 	listObjectArtifactsMock,
 	listObjectAvailableFilesMock,
-	listObjectDownloadRequestsMock,
+	listArchiveRequestsMock,
 	createObjectDownloadRequestMock
 } = vi.hoisted(() => ({
 	getObjectDetailMock: vi.fn(),
 	listObjectArtifactsMock: vi.fn(),
 	listObjectAvailableFilesMock: vi.fn(),
-	listObjectDownloadRequestsMock: vi.fn(),
+	listArchiveRequestsMock: vi.fn(),
 	createObjectDownloadRequestMock: vi.fn()
 }));
 
@@ -20,8 +20,10 @@ vi.mock('$lib/services', () => ({
 		getObjectDetail: getObjectDetailMock,
 		listObjectArtifacts: listObjectArtifactsMock,
 		listObjectAvailableFiles: listObjectAvailableFilesMock,
-		listObjectDownloadRequests: listObjectDownloadRequestsMock,
 		createObjectDownloadRequest: createObjectDownloadRequestMock
+	},
+	archiveRequestsService: {
+		listArchiveRequests: listArchiveRequestsMock
 	}
 }));
 
@@ -32,11 +34,11 @@ describe('/objects/[objectId] +page.server', () => {
 		getObjectDetailMock.mockReset();
 		listObjectArtifactsMock.mockReset();
 		listObjectAvailableFilesMock.mockReset();
-		listObjectDownloadRequestsMock.mockReset();
+		listArchiveRequestsMock.mockReset();
 		createObjectDownloadRequestMock.mockReset();
 		listObjectArtifactsMock.mockResolvedValue([]);
 		listObjectAvailableFilesMock.mockResolvedValue([]);
-		listObjectDownloadRequestsMock.mockResolvedValue([]);
+		listArchiveRequestsMock.mockResolvedValue({ requests: [], nextCursor: null, filteredCount: 0 });
 	});
 
 	it('redirects to login when auth is missing', async () => {
@@ -65,6 +67,7 @@ describe('/objects/[objectId] +page.server', () => {
 			availabilityState: 'AVAILABLE',
 			accessLevel: 'public',
 			language: 'en',
+			tags: ['source:family_archive'],
 			tenantId: 'tenant-1',
 			sourceIngestionId: 'ing-1',
 			sourceBatchLabel: 'batch-1',
@@ -99,12 +102,17 @@ describe('/objects/[objectId] +page.server', () => {
 			artifactsError: null,
 			availableFiles: [],
 			availableFilesError: null,
-			downloadRequests: [],
-			downloadRequestsError: null
+			pendingRequests: [],
+			pendingRequestsError: null
 		});
 
 		expect(listObjectArtifactsMock).toHaveBeenCalledWith(
 			expect.objectContaining({ objectId: 'OBJ-1' })
+		);
+		expect(listArchiveRequestsMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				filters: { targetType: 'object', targetId: 'OBJ-1', activeOnly: true }
+			})
 		);
 	});
 
@@ -139,6 +147,7 @@ describe('/objects/[objectId] +page.server', () => {
 			availabilityState: 'AVAILABLE',
 			accessLevel: 'public',
 			language: 'en',
+			tags: [],
 			tenantId: 'tenant-1',
 			sourceIngestionId: 'ing-1',
 			sourceBatchLabel: 'batch-1',
@@ -181,8 +190,8 @@ describe('/objects/[objectId] +page.server', () => {
 			artifactsError: 'Failed to load object artifacts (request: req-123).',
 			availableFiles: [],
 			availableFilesError: null,
-			downloadRequests: [],
-			downloadRequestsError: null
+			pendingRequests: [],
+			pendingRequestsError: null
 		});
 	});
 
@@ -204,7 +213,7 @@ describe('/objects/[objectId] +page.server', () => {
 				requestedBy: 'user-1',
 				artifactKind: 'original',
 				variant: null,
-				status: 'QUEUED',
+				status: 'PENDING',
 				failureReason: null,
 				createdAt: '2026-03-02T10:00:00.000Z',
 				updatedAt: '2026-03-02T10:00:00.000Z',

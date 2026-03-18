@@ -209,7 +209,6 @@ export const backendRequest = async <
         });
     }
 
-    console.log(response);
     const payload = await parseResponseBody(response);
 
     if (!response.ok) {

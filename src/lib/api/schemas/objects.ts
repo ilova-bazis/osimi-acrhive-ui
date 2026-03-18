@@ -66,6 +66,7 @@ export const objectListItemSchema = z.object({
     can_download: z.boolean(),
     access_reason_code: accessReasonCodeSchema,
     language: z.string().nullable().optional(),
+    tags: z.array(z.string()).optional().default([]),
     has_access_pdf: z.union([z.literal(0), z.literal(1)]).optional(),
     has_ocr: z.union([z.literal(0), z.literal(1)]).optional(),
     has_index: z.union([z.literal(0), z.literal(1)]).optional(),
@@ -128,16 +129,11 @@ export const objectDownloadRequestSchema = z.object({
     requested_by: z.string().min(1),
     artifact_kind: z.string().min(1),
     variant: z.string().nullable(),
-    status: z.string().min(1),
+    status: z.enum(["PENDING", "PROCESSING", "COMPLETED", "FAILED", "CANCELED"]),
     failure_reason: z.string().nullable(),
     created_at: z.string().min(1),
     updated_at: z.string().min(1),
     completed_at: z.string().nullable(),
-});
-
-export const objectDownloadRequestsResponseSchema = z.object({
-    object_id: z.string().min(1),
-    requests: z.array(objectDownloadRequestSchema),
 });
 
 export const createObjectDownloadRequestResponseSchema = z.object({
@@ -164,9 +160,32 @@ export type ObjectAvailableFilesResponseDto = z.infer<
 export type ObjectDownloadRequestDto = z.infer<
     typeof objectDownloadRequestSchema
 >;
-export type ObjectDownloadRequestsResponseDto = z.infer<
-    typeof objectDownloadRequestsResponseSchema
->;
 export type CreateObjectDownloadRequestResponseDto = z.infer<
     typeof createObjectDownloadRequestResponseSchema
 >;
+
+export const objectResyncRequestSchema = z.object({
+    id: z.string().min(1),
+    tenant_id: z.string().min(1),
+    target_type: z.string().min(1),
+    target_id: z.string().min(1),
+    action_type: z.string().min(1),
+    action_payload: z.record(z.string(), z.unknown()).default({}),
+    requested_by: z.string().min(1),
+    dedupe_key: z.string().min(1),
+    status: z.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELED']),
+    failure_reason: z.string().nullable(),
+    failure_details: z.unknown().nullable().optional(),
+    created_at: z.string().min(1),
+    updated_at: z.string().min(1),
+    completed_at: z.string().nullable(),
+});
+
+export const createObjectResyncResponseSchema = z.object({
+    status: z.literal('queued'),
+    object_id: z.string().min(1),
+    request: objectResyncRequestSchema,
+});
+
+export type ObjectResyncRequestDto = z.infer<typeof objectResyncRequestSchema>;
+export type CreateObjectResyncResponseDto = z.infer<typeof createObjectResyncResponseSchema>;

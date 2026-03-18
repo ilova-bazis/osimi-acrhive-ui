@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
 import { loginWithBackend, setSessionCookie } from '$lib/server/auth';
+import { isApiClientError } from '$lib/server/apiClient';
 import { isTrustedOrigin } from '$lib/server/csrf';
 
 export const actions: Actions = {
@@ -32,6 +33,14 @@ export const actions: Actions = {
 			);
 			setSessionCookie(cookies, token);
 		} catch (error) {
+			if (isApiClientError(error)) {
+				const status = error.status === 400 || error.status === 401 ? error.status : 401;
+				return fail(status, {
+					error: error.message,
+					username
+				});
+			}
+
 			return fail(401, {
 				error: error instanceof Error ? error.message : 'Login failed',
 				username

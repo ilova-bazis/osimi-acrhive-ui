@@ -53,6 +53,7 @@ export type ObjectRow = {
 	availabilityState: AvailabilityState;
 	accessLevel: AccessLevel;
 	language: string | null;
+	tags: string[];
 	tenantId: string;
 	sourceIngestionId: string | null;
 	sourceBatchLabel: string | null;
@@ -100,12 +101,11 @@ export type ObjectAvailableFile = {
 };
 
 export type ObjectDownloadRequestStatus =
-	| 'QUEUED'
-	| 'IN_PROGRESS'
+	| 'PENDING'
+	| 'PROCESSING'
 	| 'COMPLETED'
 	| 'FAILED'
-	| 'CANCELED'
-	| string;
+	| 'CANCELED';
 
 export type ObjectDownloadRequest = {
 	id: string;
@@ -188,15 +188,40 @@ export type ObjectAvailableFilesRequest = {
 	objectId: string;
 };
 
-export type ObjectDownloadRequestsRequest = {
-	context: ObjectsRequestContext;
-	objectId: string;
-};
-
 export type CreateObjectDownloadRequest = {
 	context: ObjectsRequestContext;
 	objectId: string;
 	availableFileId: string;
+};
+
+export type ObjectResyncRequestStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
+
+export type ObjectResyncRequest = {
+	id: string;
+	tenantId: string;
+	targetType: string;
+	targetId: string;
+	actionType: string;
+	actionPayload: Record<string, unknown>;
+	requestedBy: string;
+	dedupeKey: string;
+	status: ObjectResyncRequestStatus;
+	failureReason: string | null;
+	failureDetails: unknown | null;
+	createdAt: string;
+	updatedAt: string;
+	completedAt: string | null;
+};
+
+export type CreateObjectResyncResult = {
+	status: 'queued';
+	objectId: string;
+	request: ObjectResyncRequest;
+};
+
+export type RequestResyncRequest = {
+	context: ObjectsRequestContext;
+	objectId: string;
 };
 
 export type ObjectsService = {
@@ -205,10 +230,8 @@ export type ObjectsService = {
 	getObjectDetail: (request: ObjectDetailRequest) => Promise<ObjectDetail>;
 	listObjectArtifacts: (request: ObjectArtifactsRequest) => Promise<ObjectArtifact[]>;
 	listObjectAvailableFiles: (request: ObjectAvailableFilesRequest) => Promise<ObjectAvailableFile[]>;
-	listObjectDownloadRequests: (
-		request: ObjectDownloadRequestsRequest
-	) => Promise<ObjectDownloadRequest[]>;
 	createObjectDownloadRequest: (
 		request: CreateObjectDownloadRequest
 	) => Promise<CreateObjectDownloadRequestResult>;
+	requestResync: (request: RequestResyncRequest) => Promise<CreateObjectResyncResult>;
 };

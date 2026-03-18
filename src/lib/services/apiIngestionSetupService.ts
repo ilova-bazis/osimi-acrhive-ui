@@ -1,19 +1,29 @@
 import {
+	attachItemFileResponseSchema,
 	commitIngestionFileRequestSchema,
 	commitIngestionFileResponseSchema,
+	createItemResponseSchema,
 	deleteIngestionFileResponseSchema,
 	presignIngestionFileRequestSchema,
 	presignIngestionFileResponseSchema,
-	submitIngestionResponseSchema
+	reorderItemFilesResponseSchema,
+	reorderItemsResponseSchema,
+	submitIngestionResponseSchema,
+	updateItemResponseSchema
 } from '$lib/api/schemas/ingestions';
 import { env } from '$env/dynamic/private';
 import { ApiClientError, backendRequest } from '$lib/server/apiClient';
 import type {
+	AttachFileToItemRequest,
 	CommitIngestionFileRequest,
+	CreateItemRequest,
 	DeleteIngestionFileRequest,
 	IngestionSetupService,
 	PresignIngestionFileRequest,
-	SubmitIngestionRequest
+	ReorderItemFilesRequest,
+	ReorderItemsRequest,
+	SubmitIngestionRequest,
+	UpdateItemRequest
 } from './ingestionSetup';
 
 const toPresignPath = (batchId: string): string => `/api/ingestions/${encodeURIComponent(batchId)}/files/presign`;
@@ -21,6 +31,14 @@ const toCommitPath = (batchId: string): string => `/api/ingestions/${encodeURICo
 const toDeletePath = (batchId: string, fileId: string): string =>
 	`/api/ingestions/${encodeURIComponent(batchId)}/files/${encodeURIComponent(fileId)}`;
 const toSubmitPath = (batchId: string): string => `/api/ingestions/${encodeURIComponent(batchId)}/submit`;
+const toItemsPath = (batchId: string): string => `/api/ingestions/${encodeURIComponent(batchId)}/items`;
+const toItemPath = (batchId: string, itemId: string): string =>
+	`/api/ingestions/${encodeURIComponent(batchId)}/items/${encodeURIComponent(itemId)}`;
+const toItemsOrderPath = (batchId: string): string => `/api/ingestions/${encodeURIComponent(batchId)}/items/order`;
+const toItemFilesPath = (batchId: string, itemId: string): string =>
+	`/api/ingestions/${encodeURIComponent(batchId)}/items/${encodeURIComponent(itemId)}/files`;
+const toItemFilesOrderPath = (batchId: string, itemId: string): string =>
+	`/api/ingestions/${encodeURIComponent(batchId)}/items/${encodeURIComponent(itemId)}/files/order`;
 
 const getApiBase = (): string => env.PRIVATE_API_BASE || env.PUBLIC_API_BASE || 'http://localhost:3000';
 
@@ -119,9 +137,116 @@ const deleteFile = async (request: DeleteIngestionFileRequest): Promise<void> =>
 	});
 };
 
+const createItem = async (request: CreateItemRequest): Promise<{ id: string; itemIndex: number }> => {
+	const response = await backendRequest({
+		fetchFn: request.context.fetchFn,
+		path: toItemsPath(request.batchId),
+		context: 'ingestions.items.create',
+		method: 'POST',
+		token: request.context.token,
+		body: {
+			item_index: request.itemIndex,
+			...(request.label ? { title: request.label } : {})
+		},
+		responseSchema: createItemResponseSchema
+	});
+
+	return { id: response.item.id, itemIndex: response.item.item_index };
+};
+
+const updateItem = async (request: UpdateItemRequest): Promise<void> => {
+	const { metadata } = request;
+	const body: Record<string, unknown> = {};
+
+	if (request.label !== undefined) {
+		body.title = request.label || null;
+	}
+
+	if (metadata) {
+		if (metadata.title !== undefined) body.title = metadata.title || null;
+		if (metadata.description !== undefined) body.description = metadata.description || null;
+		if (metadata.tags !== undefined) body.tags = metadata.tags;
+		if (metadata.date !== undefined) {
+			body.dates = {
+				published: {
+					value: metadata.date.value,
+					approximate: metadata.date.approximate,
+					confidence: 'medium',
+					note: null
+				}
+			};
+		}
+	}
+
+	await backendRequest({
+		fetchFn: request.context.fetchFn,
+		path: toItemPath(request.batchId, request.itemId),
+		context: 'ingestions.items.update',
+		method: 'PATCH',
+		token: request.context.token,
+		body,
+		responseSchema: updateItemResponseSchema
+	});
+};
+
+const reorderItems = async (request: ReorderItemsRequest): Promise<void> => {
+	await backendRequest({
+		fetchFn: request.context.fetchFn,
+		path: toItemsOrderPath(request.batchId),
+		context: 'ingestions.items.reorder',
+		method: 'PATCH',
+		token: request.context.token,
+		body: {
+			items: request.items.map((item) => ({
+				ingestion_item_id: item.itemId,
+				item_index: item.itemIndex
+			}))
+		},
+		responseSchema: reorderItemsResponseSchema
+	});
+};
+
+const attachFileToItem = async (request: AttachFileToItemRequest): Promise<void> => {
+	await backendRequest({
+		fetchFn: request.context.fetchFn,
+		path: toItemFilesPath(request.batchId, request.itemId),
+		context: 'ingestions.items.files.attach',
+		method: 'POST',
+		token: request.context.token,
+		body: {
+			ingestion_file_id: request.fileId,
+			sort_order: request.sortOrder,
+			...(request.role ? { role: request.role } : {})
+		},
+		responseSchema: attachItemFileResponseSchema
+	});
+};
+
+const reorderItemFiles = async (request: ReorderItemFilesRequest): Promise<void> => {
+	await backendRequest({
+		fetchFn: request.context.fetchFn,
+		path: toItemFilesOrderPath(request.batchId, request.itemId),
+		context: 'ingestions.items.files.reorder',
+		method: 'PATCH',
+		token: request.context.token,
+		body: {
+			files: request.files.map((f) => ({
+				ingestion_file_id: f.fileId,
+				sort_order: f.sortOrder
+			}))
+		},
+		responseSchema: reorderItemFilesResponseSchema
+	});
+};
+
 export const apiIngestionSetupService: IngestionSetupService = {
 	presignFile,
 	commitFile,
 	submit,
-	deleteFile
+	deleteFile,
+	createItem,
+	updateItem,
+	reorderItems,
+	attachFileToItem,
+	reorderItemFiles
 };

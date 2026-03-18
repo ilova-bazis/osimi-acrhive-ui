@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import type { ObjectsListResponseDto } from '$lib/api/schemas/objects';
 import {
 	mapCreateObjectDownloadRequestResponse,
 	mapObjectArtifacts,
 	mapObjectAvailableFiles,
 	mapObjectDetail,
-	mapObjectDownloadRequests,
 	mapObjectsList
 } from './objectsMapper';
 
@@ -25,6 +25,7 @@ describe('mapObjectsList', () => {
 						access_level: 'family',
 						type: 'DOCUMENT',
 						language: 'fa',
+						tags: ['source:family_archive', 'subject:history'],
 						tenant_id: 'tenant-1',
 						source_ingestion_id: 'ing-1',
 						source_batch_label: 'batch-1',
@@ -52,6 +53,7 @@ describe('mapObjectsList', () => {
 		expect(mapped.rows).toHaveLength(1);
 		expect(mapped.rows[0]?.availabilityState).toBe('AVAILABLE');
 		expect(mapped.rows[0]?.accessLevel).toBe('family');
+		expect(mapped.rows[0]?.tags).toEqual(['source:family_archive', 'subject:history']);
 		expect(mapped.rows[0]?.thumbnailArtifactId).toBe('60000000-0000-4000-8000-000000000777');
 		expect(mapped.rows[0]?.indicators).toEqual({
 			accessPdf: true,
@@ -79,6 +81,7 @@ describe('mapObjectsList', () => {
 						access_level: 'private',
 						type: 'IMAGE',
 						language: null,
+						tags: [],
 						tenant_id: 'tenant-1',
 						source_ingestion_id: null,
 						source_batch_label: null,
@@ -108,6 +111,46 @@ describe('mapObjectsList', () => {
 		expect(mapped.rows[0]?.thumbnailArtifactId).toBeNull();
 	});
 
+	it('falls back to empty tags array when API omits tags', () => {
+		const mapped = mapObjectsList({
+			limit: 25,
+			response: {
+				objects: [
+					{
+						id: 'OBJ-3',
+						object_id: 'OBJ-3',
+						thumbnail_artifact_id: null,
+						title: 'Legacy object',
+						processing_state: 'queued',
+						curation_state: 'needs_review',
+						availability_state: 'UNAVAILABLE',
+						access_level: 'private',
+						type: 'DOCUMENT',
+						language: null,
+						tenant_id: 'tenant-1',
+						source_ingestion_id: null,
+						source_batch_label: null,
+						metadata: {},
+						created_at: '2026-02-17T00:00:00.000Z',
+						updated_at: '2026-02-17T01:00:00.000Z',
+						embargo_until: null,
+						embargo_kind: 'none',
+						embargo_curation_state: null,
+						rights_note: null,
+						sensitivity_note: null,
+						can_download: false,
+						access_reason_code: 'TEMP_UNAVAILABLE'
+					}
+				],
+				next_cursor: null,
+				total_count: 1,
+				filtered_count: 1
+			} as unknown as ObjectsListResponseDto
+		});
+
+		expect(mapped.rows[0]?.tags).toEqual([]);
+	});
+
 	it('maps object detail ingest and access projection fields', () => {
 		const mapped = mapObjectDetail({
 			object: {
@@ -120,6 +163,7 @@ describe('mapObjectsList', () => {
 				availability_state: 'AVAILABLE',
 				access_level: 'public',
 				type: 'DOCUMENT',
+				tags: ['source:family_archive'],
 				tenant_id: 'tenant-1',
 				source_ingestion_id: 'ing-1',
 				source_batch_label: 'batch-1',
@@ -147,6 +191,7 @@ describe('mapObjectsList', () => {
 
 		expect(mapped.objectId).toBe('OBJ-9');
 		expect(mapped.thumbnailArtifactId).toBe('60000000-0000-4000-8000-000000000999');
+		expect(mapped.tags).toEqual(['source:family_archive']);
 		expect(mapped.ingestManifest).toEqual({
 			schema_version: '1.0',
 			object_id: 'OBJ-9'
@@ -217,29 +262,6 @@ describe('mapObjectsList', () => {
 			isAvailable: true,
 			syncedAt: '2026-03-02T10:00:00.000Z'
 		});
-	});
-
-	it('maps download requests fields', () => {
-		const mapped = mapObjectDownloadRequests({
-			object_id: 'OBJ-9',
-			requests: [
-				{
-					id: '33333333-3333-4333-8333-333333333333',
-					available_file_id: '11111111-1111-4111-8111-111111111111',
-					requested_by: 'user-1',
-					artifact_kind: 'original',
-					variant: null,
-					status: 'COMPLETED',
-					failure_reason: null,
-					created_at: '2026-03-02T09:00:00.000Z',
-					updated_at: '2026-03-02T10:00:00.000Z',
-					completed_at: '2026-03-02T10:00:00.000Z'
-				}
-			]
-		});
-
-		expect(mapped[0]?.status).toBe('COMPLETED');
-		expect(mapped[0]?.availableFileId).toBe('11111111-1111-4111-8111-111111111111');
 	});
 
 	it('maps create download request response for available shortcut', () => {

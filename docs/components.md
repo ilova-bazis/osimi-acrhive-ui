@@ -159,6 +159,47 @@ Props:
 <StatusBadge status="needs-review" label="Needs Review" />
 ```
 
+### ObjectGroupRow
+
+Purpose: Collapsible group card for the ingestion setup file list. Represents a set of files that will be ingested as a single archive object. Supports inline label editing, expand/collapse, drag-over highlight, and an ungroup action.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| groupId | string | yes | Local UUID for the group |
+| label | string? | no | Editable human label; auto-set from first file name |
+| fileCount | number | yes | Number of files in the group |
+| collapsed | boolean | no | Defaults to false |
+| dragOver | boolean | no | Highlights the card when a file is dragged over |
+| onToggleCollapse | () => void | yes | |
+| onUngroup | () => void | yes | Dissolves the group back to standalone files |
+| onLabelChange | (label: string) => void | yes | Called when label is committed |
+| onDragOver | (e: DragEvent) => void | yes | Forward to parent's group drag handler |
+| onDragLeave | (e: DragEvent) => void | yes | |
+| onDrop | (e: DragEvent) => void | yes | |
+| children | snippet | no | File rows rendered inside the group when expanded |
+
+```svelte
+<ObjectGroupRow
+  groupId={group.id}
+  label={group.label}
+  fileCount={group.fileIds.length}
+  collapsed={collapsedGroups.has(group.id)}
+  dragOver={listDragTargetGroupId === group.id}
+  onToggleCollapse={() => toggleGroupCollapse(group.id)}
+  onUngroup={() => ungroupFiles(group.id)}
+  onLabelChange={(label) => renameGroup(group.id, label)}
+  onDragOver={(e) => onGroupRowDragOver(e, group.id)}
+  onDragLeave={onGroupRowDragLeave}
+  onDrop={(e) => onGroupRowDrop(e, group.id)}
+>
+  {#each group.fileIds as fileId}
+    {@render fileRow(files.find(f => f.id === fileId))}
+  {/each}
+</ObjectGroupRow>
+```
+
 ### ObjectThumbnail
 
 Purpose: Reusable object preview tile that renders backend thumbnail artifacts when present and falls back to a file placeholder when preview is unavailable.
@@ -404,5 +445,35 @@ Props:
     { label: 'Needs human review', tone: 'attention' }
   ]}
   note="Note: Page 1 has hand annotations. Preserve margins during OCR."
+/>
+```
+
+## ObjectMetadataPanel
+
+Per-object metadata editor shown in the right panel of the ingestion setup screen. Displays an empty state when nothing is selected, or a form with title, date, tags, description, and people fields when a file or group is active.
+
+**Props:**
+
+| Prop | Type | Required | Description |
+| --- | --- | --- | --- |
+| objectKey | string \| null | yes | Key for the active object (`group.id` or `` `file:${localId}` ``); null = empty state |
+| objectLabel | string | yes | Display name shown as context header |
+| metadata | ObjectItemMetadata | yes | Current metadata values for the active object |
+| batchTitle | string | yes | Placeholder for the title field |
+| batchTags | string[] | yes | Batch tags shown as read-only hint chips |
+| batchDate | `{ value: string \| null; approximate: boolean } \| null` | yes | Placeholder for the date field |
+| batchDescription | string | yes | Placeholder for the description field |
+| onMetadataChange | `(patch: Partial<ObjectItemMetadata>) => void` | yes | Called with a partial patch whenever a field changes |
+
+```svelte
+<ObjectMetadataPanel
+  objectKey={activeObjectKey}
+  objectLabel={activeObjectLabel}
+  metadata={activeObjectMeta}
+  batchTitle={batchDefaults.title}
+  batchTags={summaryTags}
+  batchDate={null}
+  batchDescription={batchDefaults.summaryText}
+  onMetadataChange={(patch) => setObjectMeta(activeObjectKey, patch)}
 />
 ```

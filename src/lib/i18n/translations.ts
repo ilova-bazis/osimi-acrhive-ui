@@ -345,10 +345,35 @@ export const translations = {
 				tg: 'Tajik (tg)',
 				ru: 'Russian (ru)'
 			},
-			detail: {
+			resync: {
+				button: 'Request resync',
+				confirmTitle: 'Confirm resync',
+				confirmBody: 'Request a sync of this object\'s state from the archive system. If a resync is already active, the existing request will be reused.',
+				confirmBodyBulk: 'Request resync for {count} selected objects? Active requests will be reused.',
+				success: 'Resync requested. The object state will update once the sync completes.',
+				failed: 'Failed to request resync.',
+				resyncSelected: 'Resync selected',
+				resyncDone: 'Resync requested for {succeeded} of {total} objects.'
+			},
+		detail: {
 				title: 'Object detail',
 				back: 'Back to objects',
 				untitled: 'Untitled - {suffix}',
+				preview: {
+					title: 'Preview',
+					subtitle: 'Thumbnail preview of this object'
+				},
+				description: {
+					title: 'Description',
+					empty: 'No description provided yet.',
+					tags: 'Tags'
+				},
+				tabs: {
+					files: 'Files',
+					access: 'Access',
+					requests: 'Requests',
+					raw: 'Raw ingest'
+				},
 				metrics: {
 					processing: 'Processing',
 					curation: 'Curation',
@@ -403,20 +428,19 @@ export const translations = {
 					actions: 'Actions',
 					requestDownload: 'Request download'
 				},
-				downloadRequests: {
-					title: 'Download requests',
+				pendingRequests: {
+					title: 'Archive requests',
 					count: '{count} requests',
-					empty: 'No download requests yet.',
-					kind: 'Artifact kind',
-					variant: 'Variant',
+					empty: 'No active requests.',
+					action: 'Action',
 					status: 'Status',
-					created: 'Created',
-					updated: 'Updated',
-					completed: 'Completed'
+					requested: 'Requested'
 				},
 				manifest: {
 					title: 'Ingest manifest',
-					subtitle: 'Raw ingestion metadata attached to this object.'
+					subtitle: 'Raw ingestion metadata attached to this object.',
+					show: 'Show raw metadata',
+					hide: 'Hide raw metadata'
 				}
 			}
 		},
@@ -579,6 +603,8 @@ export const translations = {
 				ready: 'All required fields are filled. You can proceed to confirmation.',
 				missing: 'Language and classification type are required for each file.',
 				missingCount: 'Missing fields on {count} files.',
+				missingItemMetadata: 'Title, date, and at least one tag are required for each object.',
+				missingItemMetadataCount: 'Missing required metadata on {count} objects.',
 				uploading: 'Uploads are still in progress.',
 				uploadFailed: 'Some files failed to upload. Retry failed files to continue.'
 			},
@@ -599,6 +625,39 @@ export const translations = {
 				rejected: '{count} file(s) were rejected: {sample}.',
 				keep: 'Keep current kind',
 				switchAndContinue: 'Switch kind and continue'
+			},
+			objectMetadata: {
+				title: 'Object Details',
+				empty: 'Select a file or group on the left to add its metadata.',
+				fields: {
+					title: 'Title',
+					titlePlaceholder: 'Title (inherits batch title)',
+					date: 'Date',
+					precisionNone: 'No date',
+					precisionYear: 'Year',
+					precisionMonth: 'Year + Month',
+					precisionDay: 'Full date',
+					approximateDate: 'Approximate date',
+					tags: 'Tags',
+					tagsPlaceholder: 'Add tag…',
+					addTag: 'Add',
+					batchTagHint: 'Batch tag (inherited)',
+					description: 'Description',
+					descriptionPlaceholder: 'Description (inherits batch summary)',
+					people: 'People Mentioned',
+					peoplePlaceholder: 'Add person…',
+					addPerson: 'Add'
+				}
+			},
+			objectGroup: {
+				typeLabel: 'Object',
+				fileCount: '{count} files',
+				fileCountOne: '{count} file',
+				ungroup: 'Ungroup',
+				ungroupDisabledTooltip: 'Cannot ungroup: this item has already been saved to the server.',
+				expandAriaLabel: 'Expand group',
+				collapseAriaLabel: 'Collapse group',
+				defaultLabel: 'Group {id}'
 			}
 		},
 		footer: {
@@ -977,10 +1036,35 @@ export const translations = {
 				tg: 'Таджикский (tg)',
 				ru: 'Русский (ru)'
 			},
-			detail: {
+			resync: {
+				button: 'Запросить синхронизацию',
+				confirmTitle: 'Подтвердите синхронизацию',
+				confirmBody: 'Запросить синхронизацию состояния объекта из архивной системы. Если синхронизация уже активна, существующий запрос будет использован повторно.',
+				confirmBodyBulk: 'Запросить синхронизацию для {count} выбранных объектов? Активные запросы будут использованы повторно.',
+				success: 'Синхронизация запрошена. Состояние объекта обновится по завершении.',
+				failed: 'Не удалось запросить синхронизацию.',
+				resyncSelected: 'Синхронизировать выбранные',
+				resyncDone: 'Синхронизация запрошена для {succeeded} из {total} объектов.'
+			},
+		detail: {
 				title: 'Детали объекта',
 				back: 'Назад к объектам',
 				untitled: 'Без названия - {suffix}',
+				preview: {
+					title: 'Превью',
+					subtitle: 'Миниатюра объекта'
+				},
+				description: {
+					title: 'Описание',
+					empty: 'Описание пока не добавлено.',
+					tags: 'Теги'
+				},
+				tabs: {
+					files: 'Файлы',
+					access: 'Доступ',
+					requests: 'Запросы',
+					raw: 'Сырой ingest'
+				},
 				metrics: {
 					processing: 'Обработка',
 					curation: 'Курация',
@@ -1035,20 +1119,19 @@ export const translations = {
 					actions: 'Действия',
 					requestDownload: 'Запросить скачивание'
 				},
-				downloadRequests: {
-					title: 'Запросы на скачивание',
+				pendingRequests: {
+					title: 'Архивные запросы',
 					count: '{count} запросов',
-					empty: 'Запросов на скачивание пока нет.',
-					kind: 'Тип артефакта',
-					variant: 'Вариант',
+					empty: 'Активных запросов нет.',
+					action: 'Действие',
 					status: 'Статус',
-					created: 'Создано',
-					updated: 'Обновлено',
-					completed: 'Завершено'
+					requested: 'Запрошено'
 				},
 				manifest: {
 					title: 'Ingest manifest',
-					subtitle: 'Исходные метаданные загрузки, прикрепленные к объекту.'
+					subtitle: 'Исходные метаданные загрузки, прикрепленные к объекту.',
+					show: 'Показать исходные метаданные',
+					hide: 'Скрыть исходные метаданные'
 				}
 			}
 		},
@@ -1211,6 +1294,8 @@ export const translations = {
 				ready: 'Все обязательные поля заполнены. Можно переходить к подтверждению.',
 				missing: 'Для каждого файла требуются язык и тип классификации.',
 				missingCount: 'Не заполнены поля у {count} файлов.',
+				missingItemMetadata: 'Для каждого объекта необходимо указать название, дату и хотя бы один тег.',
+				missingItemMetadataCount: 'Неполные метаданные у {count} объектов.',
 				uploading: 'Загрузка файлов еще выполняется.',
 				uploadFailed: 'Часть файлов не загрузилась. Повторите загрузку для продолжения.'
 			},
@@ -1231,6 +1316,39 @@ export const translations = {
 				rejected: 'Отклонено файлов: {count}. Пример: {sample}.',
 				keep: 'Оставить текущий вид',
 				switchAndContinue: 'Сменить вид и продолжить'
+			},
+			objectMetadata: {
+				title: 'Сведения об объекте',
+				empty: 'Выберите файл или группу слева, чтобы добавить метаданные.',
+				fields: {
+					title: 'Название',
+					titlePlaceholder: 'Название (наследуется от партии)',
+					date: 'Дата',
+					precisionNone: 'Без даты',
+					precisionYear: 'Год',
+					precisionMonth: 'Год и месяц',
+					precisionDay: 'Полная дата',
+					approximateDate: 'Приблизительно',
+					tags: 'Теги',
+					tagsPlaceholder: 'Добавить тег…',
+					addTag: 'Добавить',
+					batchTagHint: 'Тег партии (наследуется)',
+					description: 'Описание',
+					descriptionPlaceholder: 'Описание (наследуется от партии)',
+					people: 'Упомянутые люди',
+					peoplePlaceholder: 'Добавить человека…',
+					addPerson: 'Добавить'
+				}
+			},
+			objectGroup: {
+				typeLabel: 'Объект',
+				fileCount: '{count} файлов',
+				fileCountOne: '{count} файл',
+				ungroup: 'Разгруппировать',
+				ungroupDisabledTooltip: 'Нельзя разгруппировать: этот элемент уже сохранён на сервере.',
+				expandAriaLabel: 'Развернуть группу',
+				collapseAriaLabel: 'Свернуть группу',
+				defaultLabel: 'Группа {id}'
 			}
 		},
 		footer: {

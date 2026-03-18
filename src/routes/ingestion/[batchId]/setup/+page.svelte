@@ -9,6 +9,10 @@
 	import { SvelteMap } from 'svelte/reactivity';
 	import { onDestroy } from 'svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import ObjectGroupRow from '$lib/components/ObjectGroupRow.svelte';
+	import ObjectMetadataPanel from '$lib/components/ObjectMetadataPanel.svelte';
+	import type { ObjectGroup, ObjectItemMetadata } from '$lib/models';
+	import type { IngestionDetailItem } from '$lib/services/ingestionDetail';
 
 	let {
 		data
@@ -17,6 +21,7 @@
 			batchId: string;
 			capabilities: IngestionCapabilities;
 			existingFiles: IngestionDetailFile[];
+			items: IngestionDetailItem[];
 			metadata: {
 				classificationType: string;
 				itemKind: 'photo' | 'audio' | 'video' | 'scanned_document' | 'document' | 'other';
@@ -70,6 +75,7 @@
 	type BatchMediaType = IngestionMediaKind;
 
 	let files = $state<LocalIngestionFile[]>([]);
+	const filesById = $derived(new Map(files.map((file) => [file.id, file])));
 	let nextFileId = 1;
 	let dragDepth = $state(0);
 	let isDragging = $state(false);
@@ -105,7 +111,69 @@
 
 	let selectedIds = $state<number[]>([]);
 	let activeFileId = $state(0);
-	let overrideEditorFileId = $state(0);
+	let activeGroupId = $state<string | null>(null);
+
+	// Object grouping state
+	let objectGroups = $state<ObjectGroup[]>([]);
+	let collapsedGroups = $state<string[]>([]);
+	const groupedFileIds = $derived(new Set(objectGroups.flatMap((g) => g.fileIds)));
+	const standaloneFiles = $derived(files.filter((f) => !groupedFileIds.has(f.id)));
+
+	// Per-object metadata (keyed by group.id or `file:${localId}`)
+	let objectMetadata = $state<Record<string, ObjectItemMetadata>>({});
+
+	const activeObjectGroup = $derived(
+		activeFileId ? objectGroups.find((g) => g.fileIds.includes(activeFileId)) : undefined
+	);
+	const activeFile = $derived(files.find((f) => f.id === activeFileId));
+	const activeObjectKey = $derived<string | null>(
+		activeGroupId !== null
+			? activeGroupId
+			: (activeFileId
+				? (activeObjectGroup?.id ?? `file:${activeFileId}`)
+				: null)
+	);
+	const activeObjectLabel = $derived<string>(
+		activeGroupId !== null
+			? (objectGroups.find((g) => g.id === activeGroupId)?.label ?? '')
+			: (activeObjectGroup
+				? (activeObjectGroup.label ?? activeFile?.name ?? '')
+				: (activeFile?.name ?? ''))
+	);
+	const activeObjectMeta = $derived<ObjectItemMetadata>(
+		activeObjectKey ? (objectMetadata[activeObjectKey] ?? {}) : {}
+	);
+
+	// Debounce timers for per-group metadata updates (keyed by group local id)
+	const itemUpdateTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+
+	const setObjectMeta = (key: string | null, patch: Partial<ObjectItemMetadata>) => {
+		if (!key) return;
+		objectMetadata = {
+			...objectMetadata,
+			[key]: { ...objectMetadata[key], ...patch }
+		};
+
+		// If the key is a group id (not file:N) and the group has a serverId, debounce update_item
+		if (!key.startsWith('file:')) {
+			const group = objectGroups.find((g) => g.id === key);
+			if (group?.serverId) {
+				const serverId = group.serverId;
+				if (itemUpdateTimers[key]) clearTimeout(itemUpdateTimers[key]);
+				itemUpdateTimers[key] = setTimeout(() => {
+					delete itemUpdateTimers[key];
+					const meta = objectMetadata[key];
+					void postSetupAction({ action: 'update_item', itemId: serverId, metadata: meta })
+						.catch(() => undefined);
+				}, 300);
+			}
+		}
+	};
+
+	// List drag-and-drop state (distinct from the file-upload DnD)
+	let listDragSourceId = $state<number | null>(null);
+	let listDragTargetFileId = $state<number | null>(null);
+	let listDragTargetGroupId = $state<string | null>(null);
 	const toInputDateTime = (value: string | null): string => {
 		if (!value) return '';
 		const date = new Date(value);
@@ -364,13 +432,14 @@
 	let summaryTags = $state<string[]>([]);
 	let summaryTagInput = $state('');
 
-	let fileOverrides =
-		$state<Record<number, { language?: string; classificationType?: string; tags?: string; notes?: string }>>({});
 	let isSubmitting = $state(false);
 	let submitError = $state('');
 	let addFilesError = $state('');
 	let removingIds = $state<number[]>([]);
 	let hydratedFromServer = $state(false);
+	let groupingWarningDismissed = $state(false);
+	let autoGroupToast = $state(false);
+	let autoGroupToastTimer: ReturnType<typeof setTimeout> | null = null;
 	let metadataHydrated = $state(false);
 	let mismatchDialog = $state<{
 		open: boolean;
@@ -384,6 +453,8 @@
 
 	const batchMediaType = $derived<BatchMediaType | null>(files[0]?.mediaType ?? null);
 	const uploadControllers = new SvelteMap<number, AbortController>();
+	const maxConcurrentUploads = 2;
+	let uploadQueue = $state<number[]>([]);
 
 	$effect(() => {
 		if (metadataHydrated) return;
@@ -413,13 +484,53 @@
 		summaryTags = summaryClassification.tags;
 	});
 
+	const pumpUploadQueue = () => {
+		const availableSlots = maxConcurrentUploads - uploadControllers.size;
+		if (availableSlots <= 0 || uploadQueue.length === 0) return;
+
+		let nextQueue = [...uploadQueue];
+		let started = 0;
+
+		while (started < availableSlots && nextQueue.length > 0) {
+			const nextFileId = nextQueue.shift();
+			if (nextFileId === undefined) break;
+			if (uploadControllers.has(nextFileId)) continue;
+
+			const file = findFile(nextFileId);
+			if (!file || file.source !== 'local' || file.status !== 'queued') continue;
+
+			started += 1;
+			void uploadAndCommitFile(nextFileId).finally(() => {
+				pumpUploadQueue();
+			});
+		}
+
+		uploadQueue = nextQueue;
+	};
+
+	const enqueueUploads = (fileIds: number[]) => {
+		if (!fileIds.length) return;
+		const queued = [...uploadQueue];
+		for (const fileId of fileIds) {
+			if (uploadControllers.has(fileId)) continue;
+			const file = findFile(fileId);
+			if (!file || file.source !== 'local' || file.status !== 'queued') continue;
+			if (!queued.includes(fileId)) {
+				queued.push(fileId);
+			}
+		}
+		uploadQueue = queued;
+		pumpUploadQueue();
+	};
+
 	const itemKindToMediaType = (
 		itemKind: 'photo' | 'audio' | 'video' | 'scanned_document' | 'document' | 'other'
 	): BatchMediaType | null => {
 		if (itemKind === 'photo') return 'image';
 		if (itemKind === 'audio') return 'audio';
 		if (itemKind === 'video') return 'video';
-		if (itemKind === 'scanned_document' || itemKind === 'document') return 'document';
+		if (itemKind === 'scanned_document') return 'image';
+		if (itemKind === 'document') return 'document';
 		return null;
 	};
 
@@ -434,15 +545,321 @@
 	const toggleSelection = (id: number) => {
 		if (selectedIds.includes(id)) {
 			selectedIds = selectedIds.filter((selected) => selected !== id);
+			if (activeFileId === id) {
+				const fallbackId = selectedIds[selectedIds.length - 1] ?? 0;
+				activeFileId = fallbackId;
+				activeGroupId = null;
+			}
 		} else {
 			selectedIds = [...selectedIds, id];
+			activeFileId = id;
+			activeGroupId = null;
+		}
+	};
+
+	const setActiveGroup = (groupId: string) => {
+		activeGroupId = groupId;
+		activeFileId = 0;
+		const group = objectGroups.find((entry) => entry.id === groupId);
+		if (group) {
+			selectedIds = [...group.fileIds];
 		}
 	};
 
 	const setActiveFile = (id: number) => {
 		activeFileId = id;
-		selectedIds = [id];
+		activeGroupId = null;
+		if (!selectedIds.includes(id) || selectedIds.length !== 1) {
+			selectedIds = [id];
+		}
 	};
+
+	// --- Grouping helpers ---
+
+	const dissolveSmallGroups = (groups: ObjectGroup[]): ObjectGroup[] =>
+		groups.filter((g) => g.fileIds.length >= 2);
+
+	const groupSelectedFiles = () => {
+		if (selectedIds.length < 2) return;
+		const idsToGroup = [...selectedIds];
+		// Remove selected files from any existing groups; dissolve groups left with < 2 files
+		const updatedGroups = dissolveSmallGroups(
+			objectGroups.map((g) => ({ ...g, fileIds: g.fileIds.filter((fid) => !idsToGroup.includes(fid)) }))
+		);
+		const firstFile = files.find((f) => f.id === idsToGroup[0]);
+		const label = firstFile ? firstFile.name.replace(/\.[^.]+$/, '') : undefined;
+		const localId = crypto.randomUUID();
+		const newGroup: ObjectGroup = {
+			id: localId,
+			label,
+			fileIds: idsToGroup
+		};
+		objectGroups = [...updatedGroups, newGroup];
+		activeGroupId = localId;
+		activeFileId = idsToGroup[0] ?? 0;
+		selectedIds = idsToGroup;
+	};
+
+	const splitSelectedFiles = () => {
+		if (selectedIds.length === 0) return;
+		const splitIds = [...selectedIds];
+		objectGroups = dissolveSmallGroups(
+			objectGroups.map((g) => ({ ...g, fileIds: g.fileIds.filter((fid) => !splitIds.includes(fid)) }))
+		);
+		activeGroupId = null;
+		activeFileId = splitIds[0] ?? 0;
+		selectedIds = splitIds.length > 0 ? [splitIds[0]] : [];
+	};
+
+	// Groups files by numeric filename suffix (e.g. scan_001, scan_002 → one group).
+	// Creates local-only groups (no server calls); startIngestion handles server sync.
+	const autoGroupByFilename = (targetFiles: LocalIngestionFile[]) => {
+		if (targetFiles.length < 2) return;
+		const NUMERIC_SUFFIX_RE = /^(.*?)[\s_-]?(\d+)$/i;
+		const prefixMap: Record<string, LocalIngestionFile[]> = {};
+
+		for (const file of targetFiles) {
+			const base = file.name.replace(/\.[^.]+$/, '');
+			const match = base.match(NUMERIC_SUFFIX_RE);
+			if (!match) continue;
+			const prefix = match[1].toLowerCase().replace(/[\s_-]+$/, '');
+			if (!prefix) continue;
+			prefixMap[prefix] ??= [];
+			prefixMap[prefix].push(file);
+		}
+
+		let grouped = false;
+		let updatedGroups = [...objectGroups];
+
+		for (const [prefix, groupFiles] of Object.entries(prefixMap)) {
+			if (groupFiles.length < 2) continue;
+			grouped = true;
+			const sorted = [...groupFiles].sort((a, b) => a.name.localeCompare(b.name));
+			const ids = sorted.map((f) => f.id);
+			updatedGroups = dissolveSmallGroups(
+				updatedGroups.map((g) => ({ ...g, fileIds: g.fileIds.filter((fid) => !ids.includes(fid)) }))
+			);
+			const label = prefix.trim() || undefined;
+			const localId = crypto.randomUUID();
+			updatedGroups = [...updatedGroups, { id: localId, label, fileIds: ids }];
+		}
+
+		if (grouped) {
+			objectGroups = updatedGroups;
+			autoGroupToast = true;
+			if (autoGroupToastTimer) clearTimeout(autoGroupToastTimer);
+			autoGroupToastTimer = setTimeout(() => { autoGroupToast = false; }, 5000);
+		}
+	};
+
+	const ungroupFiles = (groupId: string) => {
+		const group = objectGroups.find((g) => g.id === groupId);
+		if (group?.serverId) return; // cannot ungroup synced items
+		const ungroupedFileIds = group?.fileIds ?? [];
+		objectGroups = objectGroups.filter((g) => g.id !== groupId);
+		collapsedGroups = collapsedGroups.filter((id) => id !== groupId);
+		activeGroupId = null;
+		if (ungroupedFileIds.length > 0) {
+			activeFileId = ungroupedFileIds[0];
+			selectedIds = [...ungroupedFileIds];
+		}
+	};
+
+	const toggleGroupCollapse = (groupId: string) => {
+		if (collapsedGroups.includes(groupId)) {
+			collapsedGroups = collapsedGroups.filter((id) => id !== groupId);
+		} else {
+			collapsedGroups = [...collapsedGroups, groupId];
+		}
+	};
+
+	const renameGroup = (groupId: string, label: string) => {
+		objectGroups = objectGroups.map((g) => (g.id === groupId ? { ...g, label: label || undefined } : g));
+		const group = objectGroups.find((g) => g.id === groupId);
+		if (group?.serverId) {
+			void postSetupAction({ action: 'update_item', itemId: group.serverId, label: label || '' })
+				.catch(() => undefined);
+		}
+	};
+
+	const addFileToGroup = (fileId: number, targetGroupId: string) => {
+		// Remove from any existing group first
+		const cleaned = dissolveSmallGroups(
+			objectGroups.map((g) => ({ ...g, fileIds: g.fileIds.filter((fid) => fid !== fileId) }))
+		);
+		objectGroups = cleaned.map((g) =>
+			g.id === targetGroupId ? { ...g, fileIds: [...g.fileIds, fileId] } : g
+		);
+
+		const targetGroup = objectGroups.find((g) => g.id === targetGroupId);
+		const backendFileId = files.find((f) => f.id === fileId)?.backendFileId;
+		if (targetGroup?.serverId && backendFileId) {
+			const sortOrder = targetGroup.fileIds.length; // position after push
+			void postSetupAction({
+				action: 'attach_file',
+				itemId: targetGroup.serverId,
+				fileId: backendFileId,
+				sortOrder
+			}).catch(() => undefined);
+		}
+	};
+
+	const mergeFilesIntoGroup = (sourceFileId: number, targetFileId: number) => {
+		// Find if target is already in a group
+		const targetGroup = objectGroups.find((g) => g.fileIds.includes(targetFileId));
+		if (targetGroup) {
+			addFileToGroup(sourceFileId, targetGroup.id);
+		} else {
+			// Create new group with both files
+			const cleaned = dissolveSmallGroups(
+				objectGroups.map((g) => ({ ...g, fileIds: g.fileIds.filter((fid) => fid !== sourceFileId) }))
+			);
+			const sourceFile = files.find((f) => f.id === sourceFileId);
+			const targetFile = files.find((f) => f.id === targetFileId);
+			const label = targetFile?.name.replace(/\.[^.]+$/, '') ?? sourceFile?.name.replace(/\.[^.]+$/, '');
+			// Preserve target's position by finding target's index in files array
+			const sourceIndex = files.findIndex((f) => f.id === sourceFileId);
+			const targetIndex = files.findIndex((f) => f.id === targetFileId);
+			const orderedIds = sourceIndex < targetIndex ? [sourceFileId, targetFileId] : [targetFileId, sourceFileId];
+			const newGroup: ObjectGroup = { id: crypto.randomUUID(), label, fileIds: orderedIds };
+			objectGroups = [...cleaned, newGroup];
+		}
+	};
+
+	const reorderWithinGroup = (groupId: string, sourceFileId: number, targetFileId: number) => {
+		objectGroups = objectGroups.map((g) => {
+			if (g.id !== groupId) return g;
+			const sourceIdx = g.fileIds.indexOf(sourceFileId);
+			const targetIdx = g.fileIds.indexOf(targetFileId);
+			if (sourceIdx === -1 || targetIdx === -1 || sourceIdx === targetIdx) return g;
+			const newFileIds = [...g.fileIds];
+			newFileIds.splice(sourceIdx, 1);
+			newFileIds.splice(targetIdx, 0, sourceFileId);
+			return { ...g, fileIds: newFileIds };
+		});
+
+		const group = objectGroups.find((g) => g.id === groupId);
+		if (group?.serverId) {
+			const fileEntries = group.fileIds
+				.map((localId, i) => {
+					const backendFileId = files.find((f) => f.id === localId)?.backendFileId;
+					return backendFileId ? { fileId: backendFileId, sortOrder: i + 1 } : null;
+				})
+				.filter((e): e is { fileId: string; sortOrder: number } => e !== null);
+			if (fileEntries.length > 0) {
+				void postSetupAction({
+					action: 'reorder_item_files',
+					itemId: group.serverId,
+					files: fileEntries
+				}).catch(() => undefined);
+			}
+		}
+	};
+
+	// --- List DnD handlers ---
+
+	const onFileRowDragStart = (event: DragEvent, fileId: number) => {
+		if (!event.dataTransfer) return;
+		event.dataTransfer.setData('application/x-list-file-id', String(fileId));
+		event.dataTransfer.effectAllowed = 'move';
+		listDragSourceId = fileId;
+	};
+
+	const hasListDragType = (event: DragEvent): boolean => {
+		const transfer = event.dataTransfer;
+		if (!transfer) return false;
+		const types = transfer.types as unknown;
+		if (!types) return false;
+		if (typeof (types as { includes?: (value: string) => boolean }).includes === 'function') {
+			return (types as { includes: (value: string) => boolean }).includes('application/x-list-file-id');
+		}
+		if (typeof (types as { contains?: (value: string) => boolean }).contains === 'function') {
+			return (types as { contains: (value: string) => boolean }).contains('application/x-list-file-id');
+		}
+		return Array.from(types as Iterable<string>).includes('application/x-list-file-id');
+	};
+
+	const onFileRowDragEnd = () => {
+		listDragSourceId = null;
+		listDragTargetFileId = null;
+		listDragTargetGroupId = null;
+	};
+
+	const onFileRowDragOver = (event: DragEvent, fileId: number) => {
+		if (!hasListDragType(event)) return;
+		const transfer = event.dataTransfer;
+		if (!transfer) return;
+		event.preventDefault();
+		event.stopPropagation();
+		transfer.dropEffect = 'move';
+		if (listDragTargetFileId !== fileId) {
+			listDragTargetFileId = fileId;
+		}
+		if (listDragTargetGroupId !== null) {
+			listDragTargetGroupId = null;
+		}
+	};
+
+	const onFileRowDragLeave = (event: DragEvent) => {
+		// Only clear if leaving to outside the row
+		const related = event.relatedTarget as Node | null;
+		if (!related || !(event.currentTarget as HTMLElement).contains(related)) {
+			listDragTargetFileId = null;
+		}
+	};
+
+	const onFileRowDrop = (event: DragEvent, targetFileId: number) => {
+		event.preventDefault();
+		event.stopPropagation();
+		const sourceId = listDragSourceId;
+		listDragTargetFileId = null;
+		listDragTargetGroupId = null;
+		listDragSourceId = null;
+		if (sourceId === null || sourceId === targetFileId) return;
+		// Check if both are in the same group → reorder
+		const sourceGroup = objectGroups.find((g) => g.fileIds.includes(sourceId));
+		const targetGroup = objectGroups.find((g) => g.fileIds.includes(targetFileId));
+		if (sourceGroup && targetGroup && sourceGroup.id === targetGroup.id) {
+			reorderWithinGroup(sourceGroup.id, sourceId, targetFileId);
+		} else {
+			mergeFilesIntoGroup(sourceId, targetFileId);
+		}
+	};
+
+	const onGroupRowDragOver = (event: DragEvent, groupId: string) => {
+		if (!hasListDragType(event)) return;
+		const transfer = event.dataTransfer;
+		if (!transfer) return;
+		event.preventDefault();
+		event.stopPropagation();
+		transfer.dropEffect = 'move';
+		if (listDragTargetGroupId !== groupId) {
+			listDragTargetGroupId = groupId;
+		}
+		if (listDragTargetFileId !== null) {
+			listDragTargetFileId = null;
+		}
+	};
+
+	const onGroupRowDragLeave = (event: DragEvent) => {
+		const related = event.relatedTarget as Node | null;
+		if (!related || !(event.currentTarget as HTMLElement).contains(related)) {
+			listDragTargetGroupId = null;
+		}
+	};
+
+	const onGroupRowDrop = (event: DragEvent, groupId: string) => {
+		event.preventDefault();
+		event.stopPropagation();
+		const sourceId = listDragSourceId;
+		listDragTargetGroupId = null;
+		listDragTargetFileId = null;
+		listDragSourceId = null;
+		if (sourceId === null) return;
+		addFileToGroup(sourceId, groupId);
+	};
+
+	// --- end grouping helpers ---
 
 	const toReadableSize = (bytes: number) => {
 		if (bytes < 1024) return `${bytes} B`;
@@ -687,6 +1104,37 @@
 		nextFileId = mappedFiles.length + 1;
 		activeFileId = mappedFiles[0]?.id ?? 0;
 		selectedIds = mappedFiles[0] ? [mappedFiles[0].id] : [];
+
+		// Hydrate object groups from server items
+		if (data.items && data.items.length > 0) {
+			const backendToLocal = new Map(existingFiles.map((f: IngestionDetailFile, i: number) => [f.id, i + 1]));
+			const hydratedGroups: ObjectGroup[] = [];
+
+			// Sort items by item_index
+			const sortedItems = [...data.items].sort((a, b) => a.itemIndex - b.itemIndex);
+
+			for (const item of sortedItems) {
+				// Sort item files by sort_order to get ordered local file IDs
+				const sortedItemFiles = [...item.files].sort((a, b) => a.sortOrder - b.sortOrder);
+				const localFileIds = sortedItemFiles
+					.map((f) => backendToLocal.get(f.ingestionFileId))
+					.filter((id): id is number => id !== undefined);
+
+				if (localFileIds.length === 0) continue;
+
+				if (localFileIds.length >= 2) {
+					hydratedGroups.push({
+						id: crypto.randomUUID(),
+						...(item.label ? { label: item.label } : {}),
+						fileIds: localFileIds,
+						serverId: item.id
+					});
+				}
+				// Single-file items are standalone files — no group needed
+			}
+
+			objectGroups = hydratedGroups;
+		}
 	});
 
 	const addFiles = (incoming: FileList | File[]) => {
@@ -742,6 +1190,7 @@
 
 		if (!activeFileId && accepted.length) {
 			setActiveFile(accepted[0].id);
+			selectedIds = [accepted[0].id];
 		}
 
 		if (
@@ -765,9 +1214,7 @@
 			return;
 		}
 
-		for (const file of accepted) {
-			void uploadAndCommitFile(file.id);
-		}
+		enqueueUploads(accepted.map((file) => file.id));
 
 		const errorMessages: string[] = [];
 
@@ -884,7 +1331,12 @@
 		const removed = files[index];
 		const nextFiles = files.filter((file) => file.id !== id);
 		files = nextFiles;
+		uploadQueue = uploadQueue.filter((queuedId) => queuedId !== id);
 		selectedIds = selectedIds.filter((selected) => selected !== id);
+		// Remove file from any group; dissolve groups that drop below 2 files
+		objectGroups = dissolveSmallGroups(
+			objectGroups.map((g) => ({ ...g, fileIds: g.fileIds.filter((fid) => fid !== id) }))
+		);
 
 		if (activeFileId === id) {
 			activeFileId = nextFiles[0]?.id ?? 0;
@@ -912,57 +1364,10 @@
 		files = next;
 	};
 
-	const hasFileOverride = (fileId: number): boolean => typeof fileOverrides[fileId] !== 'undefined';
-
-	const clearFileOverride = (fileId: number) => {
-		if (!hasFileOverride(fileId)) return;
-		const rest = { ...fileOverrides };
-		delete rest[fileId];
-		fileOverrides = rest;
-	};
-
-	const createFileOverride = (fileId: number) => {
-		if (!hasFileOverride(fileId)) {
-			fileOverrides = {
-				...fileOverrides,
-				[fileId]: {}
-			};
-		}
-		overrideEditorFileId = fileId;
-		setActiveFile(fileId);
-	};
-
-	const openFileOverrideEditor = (fileId: number) => {
-		if (!hasFileOverride(fileId)) {
-			createFileOverride(fileId);
-			return;
-		}
-		overrideEditorFileId = fileId;
-		setActiveFile(fileId);
-	};
-
-	const updateFileOverrides = (fileId: number, patch: Record<string, string>) => {
-		if (!hasFileOverride(fileId)) {
-			createFileOverride(fileId);
-		}
-
-		fileOverrides = {
-			...fileOverrides,
-			[fileId]: {
-				...fileOverrides[fileId],
-				...patch
-			}
-		};
-	};
-
 	const getEffectiveValue = (
-		fileId: number,
+		_fileId: number,
 		key: 'language' | 'classificationType'
 	): string | undefined => {
-		const override = fileOverrides[fileId]?.[key];
-		if (override && override.trim().length > 0) {
-			return override;
-		}
 		const batchValue = batchDefaults[key];
 		if (batchValue && batchValue.trim().length > 0) {
 			return batchValue;
@@ -970,13 +1375,14 @@
 		return undefined;
 	};
 
-	const isReady = () =>
+	const isReady = $derived(
 		files.length > 0 &&
 		files.every(
 			(file) =>
 				Boolean(getEffectiveValue(file.id, 'language')) &&
 				Boolean(getEffectiveValue(file.id, 'classificationType'))
-		);
+		)
+	);
 
 
 	const statusKey = (status: FileStatus) => (status === 'needs-review' ? 'needsReview' : status);
@@ -999,13 +1405,55 @@
 		return missing;
 	};
 
-	const missingSummaries = () =>
+	const missingSummaries = $derived(
 		files
 			.map((file) => ({ file, missing: getMissingFields(file.id) }))
-			.filter((entry) => entry.missing.length > 0);
+			.filter((entry) => entry.missing.length > 0)
+	);
 
-	const missingCount = () => missingSummaries().length;
-	const objectCount = () => files.length;
+	const missingCount = $derived(missingSummaries.length);
+	const objectCount = $derived(objectGroups.length + standaloneFiles.length);
+
+	const isItemMetadataComplete = (key: string): boolean => {
+		const meta = objectMetadata[key] ?? {};
+		return (
+			(meta.title ?? '').trim().length > 0 &&
+			(meta.date?.value ?? null) !== null &&
+			(meta.tags ?? []).length > 0
+		);
+	};
+
+	const allObjectKeys = $derived<string[]>([
+		...objectGroups.map((g) => g.id),
+		...standaloneFiles.map((f) => `file:${f.id}`)
+	]);
+
+	const hasRequiredItemMetadata = $derived(
+		allObjectKeys.length === 0 || allObjectKeys.every(isItemMetadataComplete)
+	);
+
+	const incompleteItemSummaries = $derived(
+		allObjectKeys
+			.filter((key) => !isItemMetadataComplete(key))
+			.map((key) => {
+				const isGroup = !key.startsWith('file:');
+				const label = isGroup
+					? (objectGroups.find((g) => g.id === key)?.label ?? `Object ${key.slice(0, 6)}`)
+					: (files.find((f) => f.id === parseInt(key.slice(5)))?.name ?? key);
+				const meta = objectMetadata[key] ?? {};
+				const missing: string[] = [];
+				if (!(meta.title ?? '').trim()) missing.push('title');
+				if (meta.date?.value == null) missing.push('date');
+				if (!(meta.tags ?? []).length) missing.push('tags');
+				return { label, missing };
+			})
+	);
+
+	const incompleteItemCount = $derived(incompleteItemSummaries.length);
+	const largestGroupSize = $derived(
+		objectGroups.reduce((largest, group) => Math.max(largest, group.fileIds.length), 0)
+	);
+	const hasOversizedGroup = $derived(largestGroupSize >= 50);
 
 	const setFileStatus = (id: number, status: FileStatus, backendFileId?: string) => {
 		files = files.map((file) =>
@@ -1069,6 +1517,12 @@
 		}
 		if (metadataSavedTimer) {
 			clearTimeout(metadataSavedTimer);
+		}
+		if (autoGroupToastTimer) {
+			clearTimeout(autoGroupToastTimer);
+		}
+		for (const timer of Object.values(itemUpdateTimers)) {
+			clearTimeout(timer);
 		}
 	});
 
@@ -1165,6 +1619,7 @@
 		}, 300);
 	};
 
+
 	const addSummaryTag = () => {
 		const normalized = summaryTagInput.trim().replace(/^#/, '');
 		if (!normalized) return;
@@ -1237,10 +1692,6 @@
 				}
 			}
 
-			clearFileOverride(id);
-			if (overrideEditorFileId === id) {
-				overrideEditorFileId = 0;
-			}
 		} catch {
 			restoreLocalFile(snapshot);
 			setFileUploadError(id, t('ingestionSetup.files.removeFailed'));
@@ -1250,6 +1701,8 @@
 	};
 
 	const uploadAndCommitFile = async (fileId: number): Promise<void> => {
+		if (uploadControllers.has(fileId)) return;
+
 		const file = findFile(fileId);
 		if (
 			!file ||
@@ -1340,6 +1793,7 @@
 			setFileUploadError(file.id, message);
 		} finally {
 			uploadControllers.delete(file.id);
+			pumpUploadQueue();
 		}
 	};
 
@@ -1349,23 +1803,87 @@
 		if (!file || file.source !== 'local') {
 			return;
 		}
-		void uploadAndCommitFile(fileId);
+		setFileStatus(fileId, 'queued');
+		enqueueUploads([fileId]);
 	};
 
-	const hasPendingUploads = () =>
-		files.some((file) => file.status === 'queued' || file.status === 'processing');
-	const hasUploadFailures = () => files.some((file) => file.status === 'failed');
-	const hasCommittedFiles = () => files.some((file) => file.status === 'approved');
-	const canStartIngestion = () =>
-		isReady() && hasCommittedFiles() && !hasPendingUploads() && !hasUploadFailures() && !isSubmitting;
+	const hasPendingUploads = $derived(
+		files.some((file) => file.status === 'queued' || file.status === 'processing') ||
+		uploadQueue.length > 0 ||
+		uploadControllers.size > 0
+	);
+	const hasUploadFailures = $derived(files.some((file) => file.status === 'failed'));
+	const hasCommittedFiles = $derived(files.some((file) => file.status === 'approved'));
+	const canStartIngestion = $derived(
+		isReady &&
+		hasCommittedFiles &&
+		!hasPendingUploads &&
+		!hasUploadFailures &&
+		hasRequiredItemMetadata &&
+		!isSubmitting
+	);
 
 	const startIngestion = async () => {
-		if (!canStartIngestion()) return;
+		if (!canStartIngestion) return;
 
 		isSubmitting = true;
 		submitError = '';
 
 		try {
+			// Create server items for groups that were auto-grouped (no serverId yet)
+			const unsyncedGroups = objectGroups.filter((g) => !g.serverId);
+			let nextItemIndex = objectGroups.filter((g) => g.serverId).length + 1;
+
+			for (const group of unsyncedGroups) {
+				const groupFilesWithBackendId = group.fileIds
+					.map((localFileId) => files.find((f) => f.id === localFileId))
+					.filter((f): f is LocalIngestionFile => !!f?.backendFileId);
+				if (groupFilesWithBackendId.length === 0) continue;
+				const createResponse = await postSetupAction({
+					action: 'create_item',
+					itemIndex: nextItemIndex++,
+					...(group.label ? { label: group.label } : {})
+				});
+				if (createResponse.status === 401) { await goto(resolve('/login')); return; }
+				if (!createResponse.ok) {
+					throw new Error(await readErrorMessage(createResponse, 'Failed to create item for grouped files.'));
+				}
+				const result: { id: string; itemIndex: number } = await createResponse.json();
+				for (let i = 0; i < groupFilesWithBackendId.length; i++) {
+					const attachResponse = await postSetupAction({
+						action: 'attach_file',
+						itemId: result.id,
+						fileId: groupFilesWithBackendId[i].backendFileId!,
+						sortOrder: i + 1
+					});
+					if (!attachResponse.ok) break;
+				}
+			}
+
+			// Auto-create items for standalone files (files not in any group)
+			const standalonesToCreate = standaloneFiles.filter((f) => f.backendFileId);
+
+			for (const standaloneFile of standalonesToCreate) {
+				const createResponse = await postSetupAction({
+					action: 'create_item',
+					itemIndex: nextItemIndex++
+				});
+				if (createResponse.status === 401) { await goto(resolve('/login')); return; }
+				if (!createResponse.ok) {
+					throw new Error(await readErrorMessage(createResponse, 'Failed to create item for standalone file.'));
+				}
+				const result: { id: string; itemIndex: number } = await createResponse.json();
+				const attachResponse = await postSetupAction({
+					action: 'attach_file',
+					itemId: result.id,
+					fileId: standaloneFile.backendFileId!,
+					sortOrder: 1
+				});
+				if (!attachResponse.ok) {
+					throw new Error(await readErrorMessage(attachResponse, 'Failed to attach file to item.'));
+				}
+			}
+
 			const submitResponse = await postSetupAction({ action: 'submit' });
 
 			if (submitResponse.status === 401) {
@@ -1484,185 +2002,182 @@
 						{t('ingestionSetup.files.empty')}
 					</div>
 				{:else}
-					<div class="divide-y divide-border-soft">
-						{#each files as file (file.id)}
-							<div>
-								<div
-									class={`flex flex-wrap items-center justify-between gap-4 px-6 py-4 ${
-										file.id === activeFileId ? 'bg-pale-sky/12' : ''
-									}`}
-									onclick={() => setActiveFile(file.id)}
-								>
-									<label class="flex items-start gap-3">
-										<input
-											type="checkbox"
-											class="mt-1 h-4 w-4 rounded border-border-soft text-blue-slate"
-											checked={selectedIds.includes(file.id)}
-											onclick={(event) => event.stopPropagation()}
-											onchange={() => toggleSelection(file.id)}
-										/>
-										<div>
-											<p class="text-sm font-medium text-text-ink">{file.name}</p>
-											<p class="mt-1 text-xs text-text-muted">
-												{t(`ingestionSetup.fileTypes.${file.type}`)} · {file.size}
-											</p>
-											{#if file.uploadError}
-												<p class="mt-1 text-xs text-burnt-peach">{file.uploadError}</p>
-											{/if}
-										</div>
-									</label>
-									<div class="flex flex-wrap items-center justify-end gap-2">
-										{#if file.status === 'failed' && file.source === 'local'}
-											<button
-												class="text-xs uppercase tracking-[0.2em] text-burnt-peach"
-												disabled={removingIds.includes(file.id)}
-												onclick={(event) => {
-													event.stopPropagation();
-													retryUpload(file.id);
-												}}
-											>
-												{t('ingestionSetup.files.retryUpload')}
-											</button>
-										{/if}
-										{#if hasFileOverride(file.id)}
-											<button
-												type="button"
-												class="text-xs uppercase tracking-[0.2em] text-blue-slate"
-												onclick={(event) => {
-													event.stopPropagation();
-													openFileOverrideEditor(file.id);
-												}}
-											>
-												{t('ingestionSetup.files.editOverride')}
-											</button>
-											<button
-												type="button"
-												class="text-xs uppercase tracking-[0.2em] text-blue-slate"
-												onclick={(event) => {
-													event.stopPropagation();
-													clearFileOverride(file.id);
-													if (overrideEditorFileId === file.id) {
-														overrideEditorFileId = 0;
-													}
-												}}
-											>
-												{t('ingestionSetup.files.removeOverride')}
-											</button>
-										{:else}
-											<button
-												type="button"
-												class="text-xs uppercase tracking-[0.2em] text-blue-slate"
-												onclick={(event) => {
-													event.stopPropagation();
-													createFileOverride(file.id);
-												}}
-											>
-												{t('ingestionSetup.files.createOverride')}
-											</button>
-										{/if}
-										<button
-											class="text-xs uppercase tracking-[0.2em] text-blue-slate"
-											disabled={removingIds.includes(file.id)}
-											onclick={(event) => {
-												event.stopPropagation();
-												void removeFile(file.id);
-											}}
-										>
-											{#if removingIds.includes(file.id)}
-												{t('ingestionSetup.files.removing')}
-											{:else if file.status === 'processing' && file.source === 'local'}
-												{t('ingestionSetup.files.cancelUpload')}
-											{:else}
-												{t('common.remove')}
-											{/if}
-										</button>
-										<StatusBadge status={file.status} label={statusLabel(file.status)} />
-									</div>
+				{#snippet fileRow(file: LocalIngestionFile)}
+					<div
+						class={`transition ${listDragTargetFileId === file.id ? 'ring-1 ring-inset ring-blue-slate/40' : ''}`}
+						role="listitem"
+						draggable="true"
+						ondragstart={(e) => onFileRowDragStart(e, file.id)}
+						ondragend={onFileRowDragEnd}
+						ondragover={(e) => onFileRowDragOver(e, file.id)}
+						ondragleave={onFileRowDragLeave}
+						ondrop={(e) => onFileRowDrop(e, file.id)}
+					>
+						<div
+							class={`flex flex-wrap items-center justify-between gap-4 px-6 py-4 ${
+								file.id === activeFileId ? 'bg-pale-sky/12' : ''
+							}`}
+							onclick={() => setActiveFile(file.id)}
+						>
+							<label class="flex items-start gap-3">
+								<span
+									class="mt-0.5 cursor-grab select-none text-base leading-none text-text-muted"
+									title="Drag to group"
+								>⠿</span>
+								<input
+									type="checkbox"
+									class="mt-1 h-4 w-4 rounded border-border-soft text-blue-slate"
+									checked={selectedIds.includes(file.id)}
+									onclick={(event) => event.stopPropagation()}
+									onchange={() => toggleSelection(file.id)}
+								/>
+								<div>
+									<p class="text-sm font-medium text-text-ink">{file.name}</p>
+									<p class="mt-1 text-xs text-text-muted">
+										{t(`ingestionSetup.fileTypes.${file.type}`)} · {file.size}
+									</p>
+									{#if file.uploadError}
+										<p class="mt-1 text-xs text-burnt-peach">{file.uploadError}</p>
+									{/if}
 								</div>
-								{#if hasFileOverride(file.id) && overrideEditorFileId === file.id}
-									<div class="border-t border-border-soft bg-pale-sky/10 px-6 py-4">
-										<div class="flex items-center justify-between gap-3">
-											<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">
-												{format(t('ingestionSetup.overrides.editorTitle'), { fileName: file.name })}
-											</p>
-											<button
-												type="button"
-												class="text-xs uppercase tracking-[0.2em] text-blue-slate"
-												onclick={(event) => {
-													event.stopPropagation();
-													overrideEditorFileId = 0;
-												}}
-											>
-												{t('common.close')}
-											</button>
-										</div>
-										<div class="mt-3 grid gap-3 md:grid-cols-2">
-											<div>
-												<label class="text-xs uppercase tracking-[0.2em] text-blue-slate">
-													{t('ingestionSetup.overrides.language')}
-												</label>
-												<select
-													class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
-													value={fileOverrides[file.id]?.language ?? ''}
-													onchange={(event) => updateFileOverrides(file.id, { language: event.currentTarget.value })}
-												>
-													<option value="">{t('ingestionSetup.overrides.useBatchDefault')}</option>
-													{#each languages as language (language)}
-														<option value={language}>{t(`ingestionSetup.languages.${language}`)}</option>
-													{/each}
-												</select>
-											</div>
-											<div>
-												<label class="text-xs uppercase tracking-[0.2em] text-blue-slate">
-													{t('ingestionSetup.overrides.classificationType')}
-												</label>
-												<select
-													class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
-													value={fileOverrides[file.id]?.classificationType ?? ''}
-													onchange={(event) =>
-														updateFileOverrides(file.id, { classificationType: event.currentTarget.value })}
-												>
-													<option value="">{t('ingestionSetup.overrides.useBatchDefault')}</option>
-													{#each classificationTypes as type (type)}
-														<option value={type}>{t(`ingestionSetup.classificationTypes.${type}`)}</option>
-													{/each}
-												</select>
-											</div>
-											<div>
-												<label class="text-xs uppercase tracking-[0.2em] text-blue-slate">
-													{t('ingestionSetup.overrides.tags')}
-												</label>
-												<input
-													class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
-													placeholder={t('ingestionSetup.overrides.tagsPlaceholder')}
-													value={fileOverrides[file.id]?.tags ?? ''}
-													oninput={(event) => updateFileOverrides(file.id, { tags: event.currentTarget.value })}
-												/>
-											</div>
-											<div class="md:col-span-2">
-												<label class="text-xs uppercase tracking-[0.2em] text-blue-slate">
-													{t('ingestionSetup.overrides.notes')}
-												</label>
-												<textarea
-													rows="3"
-													class="mt-2 w-full resize-none rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
-													placeholder={t('ingestionSetup.overrides.notesPlaceholder')}
-													value={fileOverrides[file.id]?.notes ?? ''}
-													oninput={(event) => updateFileOverrides(file.id, { notes: event.currentTarget.value })}
-												></textarea>
-											</div>
-										</div>
-									</div>
+							</label>
+							<div class="flex flex-wrap items-center justify-end gap-2">
+								{#if file.status === 'failed' && file.source === 'local'}
+									<button
+										class="text-xs uppercase tracking-[0.2em] text-burnt-peach"
+										disabled={removingIds.includes(file.id)}
+										onclick={(event) => {
+											event.stopPropagation();
+											retryUpload(file.id);
+										}}
+									>
+										{t('ingestionSetup.files.retryUpload')}
+									</button>
 								{/if}
+								<button
+									class="text-xs uppercase tracking-[0.2em] text-blue-slate"
+									disabled={removingIds.includes(file.id)}
+									onclick={(event) => {
+										event.stopPropagation();
+										void removeFile(file.id);
+									}}
+								>
+									{#if removingIds.includes(file.id)}
+										{t('ingestionSetup.files.removing')}
+									{:else if file.status === 'processing' && file.source === 'local'}
+										{t('ingestionSetup.files.cancelUpload')}
+									{:else}
+										{t('common.remove')}
+									{/if}
+								</button>
+								<StatusBadge status={file.status} label={statusLabel(file.status)} />
 							</div>
-						{/each}
+						</div>
+					</div>
+				{/snippet}
+
+				{#if selectedIds.length > 0}
+					<div class="flex items-center justify-between gap-3 border-b border-border-soft bg-pale-sky/10 px-6 py-3">
+						<p class="text-xs text-text-muted">{selectedIds.length} files selected</p>
+						<div class="flex flex-wrap items-center gap-2">
+							<button
+								type="button"
+								class="rounded-full border border-blue-slate px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-blue-slate hover:bg-pale-sky/20 disabled:cursor-not-allowed disabled:border-blue-slate/30 disabled:text-blue-slate/45"
+								onclick={groupSelectedFiles}
+								disabled={selectedIds.length < 2}
+							>
+								Merge into one document
+							</button>
+							<button
+								type="button"
+								class="rounded-full border border-blue-slate/50 px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-blue-slate/75 hover:border-blue-slate hover:bg-pale-sky/20 hover:text-blue-slate"
+								onclick={splitSelectedFiles}
+							>
+								Split into separate items
+							</button>
+						</div>
+					</div>
+				{:else if standaloneFiles.length >= 2 && batchDefaults.itemKind === 'scanned_document'}
+					<div class="flex items-center justify-end gap-3 border-b border-border-soft px-6 py-2">
+						<button
+							type="button"
+							class="rounded-full border border-blue-slate/50 px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-blue-slate/70 hover:border-blue-slate hover:bg-pale-sky/20 hover:text-blue-slate"
+							onclick={() => autoGroupByFilename(standaloneFiles)}
+						>
+							Auto-group by filename
+						</button>
 					</div>
 				{/if}
+
+				{#if autoGroupToast}
+					<div class="flex items-center gap-2 border-b border-border-soft bg-pale-sky/20 px-6 py-2">
+						<span class="text-xs text-blue-slate">✓ Files were grouped automatically by filename. Please review the groups below.</span>
+						<button
+							type="button"
+							class="ml-auto text-xs text-blue-slate/50 hover:text-blue-slate"
+							onclick={() => { autoGroupToast = false; }}
+						>✕</button>
+					</div>
+				{/if}
+
+				{#if files.length > 0}
+					<div class="border-b border-border-soft px-6 py-2">
+						<p class="text-xs text-blue-slate/60">
+							Each group below will become <span class="font-medium text-blue-slate/80">one object</span> in your library.{#if files.length >= 2} · {objectCount} {objectCount === 1 ? 'object' : 'objects'} from {files.length} {files.length === 1 ? 'file' : 'files'}{/if}
+						</p>
+					</div>
+				{/if}
+
+				<div class="divide-y divide-border-soft">
+					{#each objectGroups as group (group.id)}
+						<ObjectGroupRow
+							groupId={group.id}
+							label={group.label}
+							fileCount={group.fileIds.length}
+							collapsed={collapsedGroups.includes(group.id)}
+							dragOver={listDragTargetGroupId === group.id}
+						active={activeObjectKey === group.id}
+						ungroupDisabled={Boolean(group.serverId)}
+						incomplete={!isItemMetadataComplete(group.id)}
+							onToggleCollapse={() => toggleGroupCollapse(group.id)}
+							onUngroup={() => ungroupFiles(group.id)}
+							onLabelChange={(label) => renameGroup(group.id, label)}
+							onSelect={() => setActiveGroup(group.id)}
+							onDragOver={(e) => onGroupRowDragOver(e, group.id)}
+							onDragLeave={onGroupRowDragLeave}
+							onDrop={(e) => onGroupRowDrop(e, group.id)}
+						>
+							{#each group.fileIds as fileId (fileId)}
+							{@const file = filesById.get(fileId)}
+								{#if file}
+									{@render fileRow(file)}
+								{/if}
+							{/each}
+						</ObjectGroupRow>
+					{/each}
+
+					{#each standaloneFiles as file (file.id)}
+						<div class={!isItemMetadataComplete(`file:${file.id}`) ? 'relative border-l-2 border-burnt-peach/50' : ''}>
+							{@render fileRow(file)}
+						</div>
+					{/each}
+				</div>
+			{/if}
 			</div>
 
 		</div>
 
 		<aside class="space-y-5">
+			<ObjectMetadataPanel
+				objectKey={activeObjectKey}
+				objectLabel={activeObjectLabel}
+				metadata={activeObjectMeta}
+				batchTitle={batchDefaults.title}
+				batchTags={summaryTags}
+				batchDate={summaryDateEditors.created.precision !== 'none' ? { value: summaryDateEditors.created.year || summaryDateEditors.created.month || summaryDateEditors.created.day || null, approximate: summaryDateEditors.created.approximate } : null}
+				batchDescription={batchDefaults.summaryText}
+				onMetadataChange={(patch) => setObjectMeta(activeObjectKey, patch)}
+			/>
 			<div class="rounded-2xl border border-border-strong bg-blue-slate-deep px-6 py-6 text-pale-sky">
 				<p class="text-xs uppercase tracking-[0.2em] text-burnt-peach">{t('ingestionSetup.batchIntent.title')}</p>
 				<p class="mt-2 text-sm text-pale-sky">{t('ingestionSetup.batchIntent.description')}</p>
@@ -1689,8 +2204,9 @@
 						</summary>
 						<div class="mt-3 grid gap-3 md:grid-cols-2">
 							<div class="md:col-span-2">
-								<label class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.titleLabel')}</label>
+								<label for="intent-title" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.titleLabel')}</label>
 								<input
+									id="intent-title"
 									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
 									value={batchDefaults.title}
 									oninput={(event) => {
@@ -1700,8 +2216,9 @@
 								/>
 							</div>
 							<div>
-								<label class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.language')}</label>
+								<label for="intent-language" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.language')}</label>
 								<select
+									id="intent-language"
 									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
 									value={batchDefaults.language}
 									onchange={(event) => {
@@ -1716,8 +2233,9 @@
 								</select>
 							</div>
 							<div>
-								<label class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.itemKind')}</label>
+								<label for="intent-item-kind" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.itemKind')}</label>
 								<select
+									id="intent-item-kind"
 									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
 									value={batchDefaults.itemKind}
 									onchange={(event) =>
@@ -1740,8 +2258,9 @@
 								</select>
 							</div>
 							<div>
-								<label class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.classificationType')}</label>
+								<label for="intent-classification-type" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.classificationType')}</label>
 								<select
+									id="intent-classification-type"
 									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
 									value={batchDefaults.classificationType}
 									onchange={(event) => {
@@ -1771,9 +2290,10 @@
 						</summary>
 						<div class="mt-3 space-y-3">
 							<div>
-								<label class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.tags')}</label>
+								<label for="intent-tags" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.tags')}</label>
 								<div class="mt-2 flex items-center gap-2">
 									<input
+										id="intent-tags"
 										class="w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
 										placeholder={t('ingestionSetup.batchIntent.tagsPlaceholder')}
 										value={summaryTagInput}
@@ -1808,8 +2328,9 @@
 								{/if}
 							</div>
 							<div>
-								<label class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.summary')}</label>
+								<label for="intent-summary" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.summary')}</label>
 								<textarea
+									id="intent-summary"
 									rows="2"
 									class="mt-2 w-full resize-none rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
 									value={batchDefaults.summaryText}
@@ -1911,8 +2432,9 @@
 						</summary>
 						<div class="mt-3 grid gap-3 md:grid-cols-2">
 							<div>
-								<label class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.pipelinePreset')}</label>
+								<label for="intent-pipeline-preset" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.pipelinePreset')}</label>
 								<select
+									id="intent-pipeline-preset"
 									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
 									value={batchDefaults.pipelinePreset}
 									onchange={(event) => {
@@ -1926,8 +2448,9 @@
 								</select>
 							</div>
 							<div>
-								<label class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.accessLevel')}</label>
+								<label for="intent-access-level" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.accessLevel')}</label>
 								<select
+									id="intent-access-level"
 									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
 									value={batchDefaults.accessLevel}
 									onchange={(event) => {
@@ -1941,8 +2464,9 @@
 								</select>
 							</div>
 							<div>
-								<label class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.embargoUntil')}</label>
+								<label for="intent-embargo-until" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.embargoUntil')}</label>
 								<input
+									id="intent-embargo-until"
 									type="datetime-local"
 									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
 									value={batchDefaults.embargoUntil}
@@ -1953,8 +2477,9 @@
 								/>
 							</div>
 							<div>
-								<label class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.rightsNote')}</label>
+								<label for="intent-rights-note" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.rightsNote')}</label>
 								<input
+									id="intent-rights-note"
 									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
 									value={batchDefaults.rightsNote}
 									oninput={(event) => {
@@ -1964,8 +2489,9 @@
 								/>
 							</div>
 							<div class="md:col-span-2">
-								<label class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.sensitivityNote')}</label>
+								<label for="intent-sensitivity-note" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.sensitivityNote')}</label>
 								<input
+									id="intent-sensitivity-note"
 									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
 									value={batchDefaults.sensitivityNote}
 									oninput={(event) => {
@@ -1985,26 +2511,61 @@
 		<div class="flex flex-wrap items-start justify-between gap-4">
 			<div class="space-y-2">
 				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionSetup.readiness.title')}</p>
-				<p class="text-sm text-text-muted">
-					{canStartIngestion()
+			<p class="text-sm text-text-muted">
+					{canStartIngestion
 						? t('ingestionSetup.readiness.ready')
-						: hasPendingUploads()
+						: hasPendingUploads
 							? t('ingestionSetup.readiness.uploading')
-							: hasUploadFailures()
+							: hasUploadFailures
 								? t('ingestionSetup.readiness.uploadFailed')
-								: t('ingestionSetup.readiness.missing')}
+								: !isReady
+									? t('ingestionSetup.readiness.missing')
+									: t('ingestionSetup.readiness.missingItemMetadata')}
 				</p>
-				{#if !isReady()}
+				{#if !isReady}
 					<div class="rounded-xl border border-border-soft bg-pale-sky/15 px-4 py-3 text-xs text-text-muted">
-						<p>{format(t('ingestionSetup.readiness.missingCount'), { count: missingCount() })}</p>
+						<p>{format(t('ingestionSetup.readiness.missingCount'), { count: missingCount })}</p>
 						<ul class="mt-2 space-y-1">
-							{#each missingSummaries() as entry (entry.file.id)}
+							{#each missingSummaries as entry (entry.file.id)}
 								<li>
 									<span class="text-text-ink">{entry.file.name}</span>
 									· {entry.missing.join(', ')}
 								</li>
 							{/each}
 						</ul>
+					</div>
+				{/if}
+				{#if isReady && incompleteItemCount > 0}
+					<div class="rounded-xl border border-border-soft bg-pale-sky/15 px-4 py-3 text-xs text-text-muted">
+						<p>{format(t('ingestionSetup.readiness.missingItemMetadataCount'), { count: incompleteItemCount })}</p>
+						<ul class="mt-2 space-y-1">
+							{#each incompleteItemSummaries as entry (entry.label)}
+								<li>
+									<span class="text-text-ink">{entry.label}</span>
+									· {entry.missing.join(', ')}
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+				{#if hasOversizedGroup}
+					<div class="rounded-xl border border-burnt-peach/35 bg-pearl-beige/60 px-4 py-3 text-xs text-text-muted">
+						This document has <strong>{largestGroupSize}</strong> pages. Please confirm this grouping before continuing.
+					</div>
+				{/if}
+				{#if batchDefaults.itemKind === 'scanned_document' && standaloneFiles.length >= 3 && !groupingWarningDismissed}
+					<div class="flex items-start gap-3 rounded-xl border border-burnt-peach/30 bg-pearl-beige/60 px-4 py-3 text-xs text-text-muted">
+						<span class="mt-0.5 shrink-0 text-burnt-peach">⚠</span>
+						<p class="flex-1">
+							You have <strong>{standaloneFiles.length}</strong> separate objects with 1 file each.
+							If these are pages of the same document, consider grouping them first.
+						</p>
+						<button
+							type="button"
+							class="shrink-0 text-text-muted/50 hover:text-text-muted"
+							onclick={() => { groupingWarningDismissed = true; }}
+							aria-label="Dismiss"
+						>✕</button>
 					</div>
 				{/if}
 			</div>
@@ -2014,10 +2575,10 @@
 				</p>
 			{/if}
 			<button
-				disabled={!canStartIngestion()}
+				disabled={!canStartIngestion}
 				onclick={() => (showConfirm = true)}
 				class={`rounded-full px-5 py-2 text-xs uppercase tracking-[0.2em] text-surface-white ${
-					canStartIngestion() ? 'bg-blue-slate' : 'bg-blue-slate/40 text-surface-white/70'
+					canStartIngestion ? 'bg-blue-slate' : 'bg-blue-slate/40 text-surface-white/70'
 				}`}
 			>
 				{t('common.startIngestion')}
@@ -2040,7 +2601,7 @@
 				<div class="mt-4 space-y-3 text-sm text-text-muted">
 					<p><span class="text-text-ink">{t('ingestionSetup.confirmation.batch')}</span> · {batchId}</p>
 					<p><span class="text-text-ink">{t('ingestionSetup.confirmation.files')}</span> · {files.length}</p>
-					<p><span class="text-text-ink">{t('ingestionSetup.confirmation.objects')}</span> · {objectCount()}</p>
+					<p><span class="text-text-ink">{t('ingestionSetup.confirmation.objects')}</span> · {objectCount}</p>
 					<p>
 						<span class="text-text-ink">{t('ingestionSetup.confirmation.languages')}</span> ·
 						{Array.from(new Set(files.map((file) => getEffectiveValue(file.id, 'language') ?? '')))
@@ -2063,7 +2624,7 @@
 					<button
 						class="rounded-full bg-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-surface-white"
 						onclick={startIngestion}
-						disabled={!canStartIngestion()}
+						disabled={!canStartIngestion}
 					>
 						{isSubmitting ? t('ingestionSetup.confirmation.submitting') : t('common.confirmStart')}
 					</button>

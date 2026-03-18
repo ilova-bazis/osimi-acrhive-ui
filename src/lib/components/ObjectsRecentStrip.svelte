@@ -17,6 +17,7 @@
 	const availabilityLabel = (value: ObjectRow['availabilityState']) => value.replace(/_/g, ' ');
 </script>
 
+{#if recent.length > 0}
 <section class="rounded-2xl border border-border-soft bg-surface-white px-6 py-5">
 	<div class="flex items-center justify-between gap-4">
 		<div>
@@ -29,7 +30,7 @@
 		{#each recent as item (item.id)}
 			<a
 				href={resolve('/objects/[objectId]', { objectId: item.objectId })}
-				class="min-w-[220px] rounded-xl border border-border-soft bg-alabaster-grey/60 p-3 shadow-[0_10px_20px_rgba(79,109,122,0.08)] transition hover:-translate-y-0.5 hover:border-blue-slate/45"
+				class="min-w-[220px] rounded-xl border border-border-soft bg-alabaster-grey/60 p-3 shadow-[0_10px_20px_rgba(79,109,122,0.08)] transition hover:-translate-y-0.5 hover:border-blue-slate/45 hover:shadow-[0_14px_28px_rgba(79,109,122,0.14)]"
 			>
 				<ObjectThumbnail
 					objectId={item.objectId}
@@ -37,7 +38,7 @@
 					objectType={item.type}
 					class="h-28 w-full"
 				/>
-				<p class="mt-3 text-sm font-medium text-text-ink">{item.title ?? titleFallback(item)}</p>
+				<p class="mt-3 line-clamp-2 text-sm font-medium text-text-ink">{item.title ?? titleFallback(item)}</p>
 				<p class="mt-1 text-xs text-text-muted">{item.type}</p>
 				<div class="mt-2 flex items-center gap-2">
 					<Chip class="border-blue-slate/30 bg-pale-sky/20 text-[10px] text-blue-slate">
@@ -51,3 +52,4 @@
 		{/each}
 	</div>
 </section>
+{/if}

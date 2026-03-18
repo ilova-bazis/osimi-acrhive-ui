@@ -1,10 +1,10 @@
-import { objectsService } from "$lib/services";
+import { archiveRequestsService, objectsService } from "$lib/services";
 import type {
     CreateObjectDownloadRequestResult,
     ObjectArtifact,
     ObjectAvailableFile,
-    ObjectDownloadRequest,
 } from "$lib/services/objects";
+import type { ArchiveRequest } from "$lib/services/archiveRequests";
 import { AUTH_COOKIE_NAME, clearSessionCookie } from "$lib/server/auth";
 import { isApiClientError, isUnauthorizedError } from "$lib/server/apiClient";
 import {
@@ -44,8 +44,9 @@ export const load = async ({
         let artifactsError: string | null = null;
         let availableFiles: ObjectAvailableFile[] = [];
         let availableFilesError: string | null = null;
-        let downloadRequests: ObjectDownloadRequest[] = [];
-        let downloadRequestsError: string | null = null;
+        let pendingRequests: ArchiveRequest[] = [];
+        let pendingRequestsError: string | null = null;
+
         try {
             artifacts = await objectsService.listObjectArtifacts({
                 context,
@@ -72,12 +73,10 @@ export const load = async ({
                 objectId: detail.objectId,
             });
         } catch (availableFilesCause) {
-            console.log("availableFilesCause", availableFilesCause);
             if (isUnauthorizedError(availableFilesCause)) {
                 clearSessionCookie(cookies);
                 throw redirect(303, "/login");
             }
-            console.log(JSON.stringify(availableFilesCause));
 
             if (isApiClientError(availableFilesCause)) {
                 availableFilesError = availableFilesCause.requestId
@@ -89,23 +88,27 @@ export const load = async ({
         }
 
         try {
-            downloadRequests = await objectsService.listObjectDownloadRequests({
+            const result = await archiveRequestsService.listArchiveRequests({
                 context,
-                objectId: detail.objectId,
+                filters: {
+                    targetType: 'object',
+                    targetId: detail.objectId,
+                    activeOnly: true,
+                },
             });
-        } catch (downloadRequestsCause) {
-            if (isUnauthorizedError(downloadRequestsCause)) {
+            pendingRequests = result.requests;
+        } catch (pendingRequestsCause) {
+            if (isUnauthorizedError(pendingRequestsCause)) {
                 clearSessionCookie(cookies);
                 throw redirect(303, "/login");
             }
 
-            console.log(JSON.stringify(downloadRequestsCause));
-            if (isApiClientError(downloadRequestsCause)) {
-                downloadRequestsError = downloadRequestsCause.requestId
-                    ? `Failed to load download requests (request: ${downloadRequestsCause.requestId}).`
-                    : "Failed to load download requests.";
+            if (isApiClientError(pendingRequestsCause)) {
+                pendingRequestsError = pendingRequestsCause.requestId
+                    ? `Failed to load pending requests (request: ${pendingRequestsCause.requestId}).`
+                    : "Failed to load pending requests.";
             } else {
-                downloadRequestsError = "Failed to load download requests.";
+                pendingRequestsError = "Failed to load pending requests.";
             }
         }
 
@@ -115,8 +118,8 @@ export const load = async ({
             artifactsError,
             availableFiles,
             availableFilesError,
-            downloadRequests,
-            downloadRequestsError,
+            pendingRequests,
+            pendingRequestsError,
         };
     } catch (cause) {
         if (isUnauthorizedError(cause)) {

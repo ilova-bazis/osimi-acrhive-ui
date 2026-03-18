@@ -6,10 +6,11 @@ import type {
 	ObjectDetailItemDto,
 	ObjectDetailResponseDto,
 	ObjectDownloadRequestDto,
-	ObjectDownloadRequestsResponseDto,
 	ObjectListItemDto,
 	ObjectsListResponseDto,
-	CreateObjectDownloadRequestResponseDto
+	CreateObjectDownloadRequestResponseDto,
+	ObjectResyncRequestDto,
+	CreateObjectResyncResponseDto
 } from '$lib/api/schemas/objects';
 import type {
 	CreateObjectDownloadRequestResult,
@@ -19,7 +20,9 @@ import type {
 	ObjectDownloadRequest,
 	ObjectIndicators,
 	ObjectRow,
-	ObjectsListResponse
+	ObjectsListResponse,
+	ObjectResyncRequest,
+	CreateObjectResyncResult
 } from '$lib/services/objects';
 
 const toBooleanFlag = (value: 0 | 1 | undefined): boolean => value === 1;
@@ -41,6 +44,7 @@ const toObjectRow = (item: ObjectListItemDto): ObjectRow => ({
 	accessLevel: item.access_level,
 	type: item.type,
 	language: item.language ?? null,
+	tags: item.tags ?? [],
 	tenantId: item.tenant_id,
 	sourceIngestionId: item.source_ingestion_id,
 	sourceBatchLabel: item.source_batch_label,
@@ -126,10 +130,6 @@ export const mapObjectAvailableFiles = (
 	response: ObjectAvailableFilesResponseDto
 ): ObjectAvailableFile[] => response.available_files.map(toObjectAvailableFile);
 
-export const mapObjectDownloadRequests = (
-	response: ObjectDownloadRequestsResponseDto
-): ObjectDownloadRequest[] => response.requests.map(toObjectDownloadRequest);
-
 export const mapCreateObjectDownloadRequestResponse = (
 	response: CreateObjectDownloadRequestResponseDto
 ): CreateObjectDownloadRequestResult => ({
@@ -137,4 +137,29 @@ export const mapCreateObjectDownloadRequestResponse = (
 	objectId: response.object_id,
 	artifact: response.artifact ? toObjectArtifact(response.artifact) : null,
 	request: response.request ? toObjectDownloadRequest(response.request) : null
+});
+
+const toObjectResyncRequest = (item: ObjectResyncRequestDto): ObjectResyncRequest => ({
+	id: item.id,
+	tenantId: item.tenant_id,
+	targetType: item.target_type,
+	targetId: item.target_id,
+	actionType: item.action_type,
+	actionPayload: item.action_payload,
+	requestedBy: item.requested_by,
+	dedupeKey: item.dedupe_key,
+	status: item.status,
+	failureReason: item.failure_reason,
+	failureDetails: item.failure_details ?? null,
+	createdAt: item.created_at,
+	updatedAt: item.updated_at,
+	completedAt: item.completed_at
+});
+
+export const mapCreateObjectResyncResponse = (
+	response: CreateObjectResyncResponseDto
+): CreateObjectResyncResult => ({
+	status: response.status,
+	objectId: response.object_id,
+	request: toObjectResyncRequest(response.request)
 });

@@ -146,18 +146,14 @@
 </script>
 
 <main class="mx-auto flex min-h-[80vh] max-w-6xl flex-col gap-6 px-6 py-10">
-	<section class="flex flex-wrap items-center justify-between gap-4">
-		<div>
-			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionOverview.title')}</p>
-			<h2 class="mt-2 font-display text-2xl text-text-ink">{t('ingestionOverview.title')}</h2>
-		</div>
+	<div class="flex justify-end">
 		<a
 			href={resolve('/ingestion/new')}
-			class="inline-flex items-center gap-2 rounded-full bg-blue-slate px-5 py-2 text-xs uppercase tracking-[0.2em] text-surface-white"
+			class="inline-flex items-center gap-2 rounded-full bg-blue-slate px-5 py-2 text-xs uppercase tracking-[0.2em] text-surface-white transition-colors hover:bg-blue-slate-mid-dark"
 		>
-			➕ {t('ingestionOverview.newIngestion')}
+			{t('ingestionOverview.newIngestion')}
 		</a>
-	</section>
+	</div>
 
 	{#if emptyState}
 		<section class="rounded-2xl border border-border-soft bg-surface-white px-6 py-8 text-center">

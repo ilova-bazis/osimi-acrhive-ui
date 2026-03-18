@@ -167,9 +167,9 @@ export const createIngestionRequestSchema = z
 			'ocr_and_video_transcript'
 		]),
 		access_level: z.enum(['private', 'family', 'public']),
-		embargo_until: z.string().datetime().optional(),
-		rights_note: z.string().optional(),
-		sensitivity_note: z.string().optional(),
+		embargo_until: z.string().datetime().nullable().optional(),
+		rights_note: z.string().nullable().optional(),
+		sensitivity_note: z.string().nullable().optional(),
 		summary: ingestionSummarySchema
 	})
 	.strict();
@@ -238,6 +238,36 @@ export const commitIngestionFileResponseSchema = z.object({
 	})
 });
 
+export const objectItemMetadataSchema = z
+	.object({
+		title: z.string().min(1).optional(),
+		date: z
+			.object({
+				value: z.union([z.null(), z.string().regex(/^(\d{4}|\d{4}-\d{2}|\d{4}-\d{2}-\d{2})$/)]),
+				approximate: z.boolean()
+			})
+			.strict()
+			.optional(),
+		tags: z.array(z.string().min(1)).optional(),
+		description: z.string().optional(),
+		people: z.array(z.string().min(1)).optional()
+	})
+	.strict();
+
+export const objectGroupSchema = z
+	.object({
+		label: z.string().min(1).optional(),
+		file_ids: z.array(z.string().min(1)).min(1),
+		metadata: objectItemMetadataSchema.optional()
+	})
+	.strict();
+
+export const submitIngestionRequestSchema = z
+	.object({
+		object_groups: z.array(objectGroupSchema).optional()
+	})
+	.strict();
+
 export const submitIngestionResponseSchema = z.object({
 	ingestion: ingestionDtoSchema
 });
@@ -257,8 +287,47 @@ export const ingestionFileDtoSchema = z.object({
 
 export const ingestionDetailResponseSchema = z.object({
 	ingestion: ingestionDtoSchema,
-	files: z.array(ingestionFileDtoSchema).optional()
+	files: z.array(ingestionFileDtoSchema).optional(),
+	object_groups: z.array(objectGroupSchema).optional()
 });
+
+export const saveDraftObjectGroupsResponseSchema = z.object({ ok: z.boolean() });
+
+export const ingestionItemSchema = z.object({
+	id: z.string().min(1),
+	ingestion_id: z.string().min(1),
+	item_index: z.number().int().min(1),
+	status: z.string().min(1),
+	classification_type: z.string().nullable().optional(),
+	item_kind: z.string().nullable().optional(),
+	language_code: z.string().nullable().optional(),
+	title: z.string().nullable().optional(),
+	summary: z.record(z.string(), z.unknown()).optional(),
+	object_id: z.string().nullable().optional(),
+	created_at: z.string().min(1),
+	updated_at: z.string().min(1)
+});
+
+export const ingestionItemFileSchema = z.object({
+	id: z.string().min(1),
+	ingestion_item_id: z.string().min(1),
+	ingestion_file_id: z.string().min(1),
+	ingestion_id: z.string().min(1),
+	role: z.string().optional(),
+	sort_order: z.number().int().min(1),
+	page_number: z.number().nullable().optional(),
+	is_primary: z.boolean().optional(),
+	logical_label: z.string().nullable().optional(),
+	created_at: z.string().min(1)
+});
+
+export const listItemsResponseSchema = z.object({ items: z.array(ingestionItemSchema) });
+export const createItemResponseSchema = z.object({ item: ingestionItemSchema });
+export const updateItemResponseSchema = z.object({ item: ingestionItemSchema });
+export const reorderItemsResponseSchema = z.object({ items: z.array(ingestionItemSchema) });
+export const listItemFilesResponseSchema = z.object({ files: z.array(ingestionItemFileSchema) });
+export const attachItemFileResponseSchema = z.object({ file: ingestionItemFileSchema });
+export const reorderItemFilesResponseSchema = z.object({ files: z.array(ingestionItemFileSchema) });
 
 export const retryIngestionResponseSchema = z.object({
 	ingestion: ingestionDtoSchema
@@ -285,9 +354,12 @@ export const ingestionCapabilitiesResponseSchema = z.object({
 });
 
 export type IngestionDto = z.infer<typeof ingestionDtoSchema>;
+export type ObjectGroupDto = z.infer<typeof objectGroupSchema>;
 export type IngestionSummaryDto = z.infer<typeof ingestionSummarySchema>;
 export type IngestionFileDto = z.infer<typeof ingestionFileDtoSchema>;
 export type IngestionsListResponseDto = z.infer<typeof ingestionsListResponseSchema>;
 export type CreateIngestionResponseDto = z.infer<typeof createIngestionResponseSchema>;
 export type PresignIngestionFileResponseDto = z.infer<typeof presignIngestionFileResponseSchema>;
 export type IngestionCapabilitiesResponseDto = z.infer<typeof ingestionCapabilitiesResponseSchema>;
+export type IngestionItemDto = z.infer<typeof ingestionItemSchema>;
+export type IngestionItemFileDto = z.infer<typeof ingestionItemFileSchema>;

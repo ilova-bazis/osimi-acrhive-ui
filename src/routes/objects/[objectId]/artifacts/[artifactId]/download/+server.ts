@@ -1,8 +1,36 @@
 import { env } from '$env/dynamic/private';
+import { backendErrorSchema } from '$lib/api/schemas/errors';
 import { AUTH_COOKIE_NAME, clearSessionCookie } from '$lib/server/auth';
 import { error, redirect, type RequestEvent } from '@sveltejs/kit';
 
 const getApiBase = (): string => env.PRIVATE_API_BASE || env.PUBLIC_API_BASE || 'http://localhost:3000';
+
+const toPassthroughStatus = (status: number): number => {
+	if (status === 400 || status === 403 || status === 404 || status === 409 || status === 423) {
+		return status;
+	}
+
+	return 502;
+};
+
+const readBackendErrorMessage = async (response: Response): Promise<string | null> => {
+	const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+	if (!contentType.includes('application/json')) {
+		return null;
+	}
+
+	try {
+		const payload = await response.json();
+		const parsed = backendErrorSchema.safeParse(payload);
+		if (!parsed.success) {
+			return null;
+		}
+
+		return parsed.data.error?.message ?? null;
+	} catch {
+		return null;
+	}
+};
 
 export const GET = async ({ params, locals, cookies, fetch }: RequestEvent) => {
 	const token = cookies.get(AUTH_COOKIE_NAME);
@@ -38,8 +66,9 @@ export const GET = async ({ params, locals, cookies, fetch }: RequestEvent) => {
 	}
 
 	if (!response.ok) {
-		throw error(502, {
-			message: 'Failed to download artifact.'
+		const backendMessage = await readBackendErrorMessage(response);
+		throw error(toPassthroughStatus(response.status), {
+			message: backendMessage ?? 'Failed to download artifact.'
 		});
 	}
 

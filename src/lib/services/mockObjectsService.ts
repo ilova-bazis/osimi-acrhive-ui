@@ -17,6 +17,7 @@ const rows: ObjectRow[] = [
 		availabilityState: 'AVAILABLE',
 		accessLevel: 'family',
 		language: 'fa',
+		tags: ['source:family_archive', 'collection:noormags'],
 		tenantId: 'tenant-1',
 		sourceIngestionId: 'ingestion-1',
 		sourceBatchLabel: 'BATCH-20260202-0031',
@@ -43,6 +44,7 @@ const rows: ObjectRow[] = [
 		availabilityState: 'RESTORE_PENDING',
 		accessLevel: 'private',
 		language: 'fa',
+		tags: ['media:image_scan'],
 		tenantId: 'tenant-1',
 		sourceIngestionId: 'ingestion-2',
 		sourceBatchLabel: 'BATCH-20260201-0029',
@@ -69,6 +71,7 @@ const rows: ObjectRow[] = [
 		availabilityState: 'UNAVAILABLE',
 		accessLevel: 'public',
 		language: 'tg',
+		tags: ['subject:interview', 'format:audio'],
 		tenantId: 'tenant-1',
 		sourceIngestionId: 'ingestion-3',
 		sourceBatchLabel: 'BATCH-20260131-0024',
@@ -95,6 +98,7 @@ const rows: ObjectRow[] = [
 		availabilityState: 'ARCHIVED',
 		accessLevel: 'private',
 		language: 'tg',
+		tags: ['subject:correspondence'],
 		tenantId: 'tenant-1',
 		sourceIngestionId: 'ingestion-4',
 		sourceBatchLabel: 'BATCH-20260130-0020',
@@ -135,7 +139,7 @@ export const mockObjectsService: ObjectsService = {
 				classification: {
 					type: found.type,
 					language: found.language,
-					tags: []
+					tags: found.tags
 				}
 			},
 			isAuthorized: found.accessReasonCode !== 'FORBIDDEN_POLICY',
@@ -190,20 +194,6 @@ export const mockObjectsService: ObjectsService = {
 			syncedAt: '2026-03-02T10:00:00.000Z'
 		}
 	],
-	listObjectDownloadRequests: async () => [
-		{
-			id: '33333333-3333-4333-8333-333333333333',
-			availableFileId: '11111111-1111-4111-8111-111111111111',
-			requestedBy: 'user-1',
-			artifactKind: 'original',
-			variant: null,
-			status: 'COMPLETED',
-			failureReason: null,
-			createdAt: '2026-03-02T09:20:00.000Z',
-			updatedAt: '2026-03-02T09:40:00.000Z',
-			completedAt: '2026-03-02T09:40:00.000Z'
-		}
-	],
 	createObjectDownloadRequest: async ({ objectId, availableFileId }) => ({
 		status: 'queued',
 		objectId,
@@ -214,8 +204,28 @@ export const mockObjectsService: ObjectsService = {
 			requestedBy: 'user-1',
 			artifactKind: 'original',
 			variant: null,
-			status: 'QUEUED',
+			status: 'PENDING',
 			failureReason: null,
+			createdAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString(),
+			completedAt: null
+		}
+	}),
+	requestResync: async ({ objectId }) => ({
+		status: 'queued',
+		objectId,
+		request: {
+			id: '55555555-5555-4555-8555-555555555555',
+			tenantId: 'tenant-1',
+			targetType: 'object',
+			targetId: objectId,
+			actionType: 'object_resync',
+			actionPayload: {},
+			requestedBy: 'user-1',
+			dedupeKey: `object_resync:${objectId}`,
+			status: 'PENDING',
+			failureReason: null,
+			failureDetails: null,
 			createdAt: new Date().toISOString(),
 			updatedAt: new Date().toISOString(),
 			completedAt: null
