@@ -477,3 +477,49 @@ Per-object metadata editor shown in the right panel of the ingestion setup scree
   onMetadataChange={(patch) => setObjectMeta(activeObjectKey, patch)}
 />
 ```
+
+## Object View Prototype Components
+
+These read-only components power the object-view prototype at `src/routes/prototype/objects/[id]/+page.svelte`. They keep media presentation separate from metadata so a later edit mode can swap in editing workbenches without disturbing the viewing shell.
+
+### ObjectTopBar
+
+Minimal sticky header for object viewing with back navigation, status, info toggle, and view/edit mode affordance.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| backHref | string | yes | Back-link target for the prototype flow |
+| title | string | yes | Truncated object title |
+| status | `ObjectViewStatus` | yes | `READY`, `PROCESSING`, or `NEEDS_REVIEW` |
+| reviewLabel | string | yes | Secondary read-only context line |
+| onInfoToggle | () => void | yes | Opens the metadata drawer |
+
+### ObjectInfoDrawer
+
+Right-side metadata drawer that stays hidden by default and reveals read-only object information on demand.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| open | boolean | yes | Controls drawer visibility |
+| metadata | `ObjectViewMetadata` | yes | Read-only title, dates, tags, rights, and descriptive fields |
+| onClose | () => void | yes | Close handler for overlay and close button |
+
+### DocumentViewer
+
+Continuous page viewer for document objects with zoom controls, floating page indicator, lazy-loaded page images, and an optional read-only OCR overlay.
+
+### ImageViewer
+
+Media-first image canvas with dark presentation backdrop, zoom controls, and drag-to-pan inspection when zoomed.
+
+### AudioViewer
+
+Prototype audio player with waveform-style playback UI, progress indicator, and optional read-only transcript panel.
+
+### VideoViewer
+
+Prototype video player with poster canvas, playback timeline, captions toggle, and optional transcript reveal.
