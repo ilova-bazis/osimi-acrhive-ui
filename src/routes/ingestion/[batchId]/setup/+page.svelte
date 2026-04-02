@@ -682,6 +682,7 @@
 		}
 	};
 
+
 	const addFileToGroup = (fileId: number, targetGroupId: string) => {
 		// Remove from any existing group first
 		const cleaned = dissolveSmallGroups(
@@ -826,6 +827,7 @@
 		}
 	};
 
+
 	const onGroupRowDragOver = (event: DragEvent, groupId: string) => {
 		if (!hasListDragType(event)) return;
 		const transfer = event.dataTransfer;
@@ -858,6 +860,7 @@
 		if (sourceId === null) return;
 		addFileToGroup(sourceId, groupId);
 	};
+
 
 	// --- end grouping helpers ---
 
@@ -1823,6 +1826,168 @@
 		!isSubmitting
 	);
 
+	// --- Step state ---
+	let step = $state<'organize' | 'metadata'>('organize');
+
+	// --- Step 1 (Organize) ---
+	let selectedFileIds = $state<number[]>([]);
+	let dragOverLeftPanel = $state(false);
+	let validationDismissed = $state(false);
+	let step1DragSourceId = $state<number | null>(null);
+	let step1DragTargetFileId = $state<number | null>(null);
+	let expandedMetadataKeys = $state<string[]>([]);
+
+	const singleGroupWarning = $derived(
+		objectGroups.length === 0 && standaloneFiles.length >= 10 && !validationDismissed
+	);
+	const organizeObjectCount = $derived(objectGroups.length + standaloneFiles.length);
+
+	const fileKindEmoji = (mediaType: BatchMediaType): string => {
+		if (mediaType === 'audio') return '🎵';
+		if (mediaType === 'document') return '📄';
+		if (mediaType === 'video') return '🎬';
+		return '🖼';
+	};
+	const fileKindLabel = (mediaType: BatchMediaType): string => {
+		if (mediaType === 'audio') return 'AUD';
+		if (mediaType === 'document') return 'DOC';
+		if (mediaType === 'video') return 'VID';
+		return 'IMG';
+	};
+	const fileKindLabelClasses = (mediaType: BatchMediaType): string => {
+		if (mediaType === 'audio') return 'bg-alabaster-grey text-blue-slate';
+		if (mediaType === 'document') return 'bg-pearl-beige text-blue-slate';
+		return 'bg-pale-sky/50 text-blue-slate';
+	};
+
+	const toggleFileSelection = (fileId: number) => {
+		if (selectedFileIds.includes(fileId)) {
+			selectedFileIds = selectedFileIds.filter((id) => id !== fileId);
+		} else {
+			selectedFileIds = [...selectedFileIds, fileId];
+		}
+	};
+
+	const organizeGroupSelected = () => {
+		if (selectedFileIds.length < 2) return;
+		const ids = [...selectedFileIds];
+		const updatedGroups = dissolveSmallGroups(
+			objectGroups.map((g) => ({ ...g, fileIds: g.fileIds.filter((fid) => !ids.includes(fid)) }))
+		);
+		const firstFile = files.find((f) => f.id === ids[0]);
+		const label = firstFile ? firstFile.name.replace(/\.[^.]+$/, '') : undefined;
+		const localId = crypto.randomUUID();
+		objectGroups = [...updatedGroups, { id: localId, label, fileIds: ids }];
+		selectedFileIds = [];
+	};
+
+	const organizeSplitSelected = () => {
+		if (selectedFileIds.length === 0) return;
+		const ids = [...selectedFileIds];
+		objectGroups = dissolveSmallGroups(
+			objectGroups.map((g) => ({ ...g, fileIds: g.fileIds.filter((fid) => !ids.includes(fid)) }))
+		);
+		selectedFileIds = [];
+	};
+
+	const createNewGroup = () => {
+		const newId = crypto.randomUUID();
+		objectGroups = [...objectGroups, { id: newId, fileIds: [] }];
+	};
+
+	const toggleMetadataCard = (key: string) => {
+		if (expandedMetadataKeys.includes(key)) {
+			expandedMetadataKeys = expandedMetadataKeys.filter((k) => k !== key);
+		} else {
+			expandedMetadataKeys = [...expandedMetadataKeys, key];
+		}
+	};
+
+	// Step 1 DnD (uses 'application/x-proto-file-id' mime type, distinct from list DnD)
+	const hasProtoFileDragType = (e: DragEvent): boolean => {
+		const types = e.dataTransfer?.types;
+		if (!types) return false;
+		if (typeof (types as { includes?: (v: string) => boolean }).includes === 'function') {
+			return (types as { includes: (v: string) => boolean }).includes('application/x-proto-file-id');
+		}
+		return Array.from(types as Iterable<string>).includes('application/x-proto-file-id');
+	};
+
+	const onStep1FileDragStart = (e: DragEvent, fileId: number) => {
+		if (!e.dataTransfer) return;
+		e.dataTransfer.setData('application/x-proto-file-id', String(fileId));
+		e.dataTransfer.effectAllowed = 'move';
+		step1DragSourceId = fileId;
+	};
+
+	const onStep1FileDragEnd = () => {
+		step1DragSourceId = null;
+		step1DragTargetFileId = null;
+		listDragTargetGroupId = null;
+		dragOverLeftPanel = false;
+	};
+
+	const onStep1GroupDragOver = (e: DragEvent, groupId: string) => {
+		if (!hasProtoFileDragType(e)) return;
+		e.preventDefault();
+		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+		listDragTargetGroupId = groupId;
+	};
+
+	const onStep1GroupDragLeave = (groupId: string) => {
+		if (listDragTargetGroupId === groupId) listDragTargetGroupId = null;
+	};
+
+	const onStep1GroupDrop = (e: DragEvent, groupId: string) => {
+		e.preventDefault();
+		const srcId = step1DragSourceId;
+		listDragTargetGroupId = null;
+		if (srcId === null) return;
+		addFileToGroup(srcId, groupId);
+		step1DragSourceId = null;
+	};
+
+	const onStep1LeftPanelDragOver = (e: DragEvent) => {
+		if (!hasProtoFileDragType(e)) return;
+		e.preventDefault();
+		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+		dragOverLeftPanel = true;
+	};
+
+	const onStep1LeftPanelDrop = (e: DragEvent) => {
+		if (!hasProtoFileDragType(e)) return;
+		e.preventDefault();
+		const srcId = step1DragSourceId;
+		dragOverLeftPanel = false;
+		if (srcId === null) return;
+		objectGroups = dissolveSmallGroups(
+			objectGroups.map((g) => ({ ...g, fileIds: g.fileIds.filter((fid) => fid !== srcId) }))
+		);
+		step1DragSourceId = null;
+	};
+
+	const onStep1GroupFileDragOver = (e: DragEvent, fileId: number) => {
+		if (!hasProtoFileDragType(e)) return;
+		e.preventDefault();
+		e.stopPropagation();
+		step1DragTargetFileId = fileId;
+	};
+
+	const onStep1GroupFileDrop = (e: DragEvent, targetFileId: number, groupId: string) => {
+		e.preventDefault();
+		e.stopPropagation();
+		const srcId = step1DragSourceId;
+		step1DragTargetFileId = null;
+		if (srcId === null || srcId === targetFileId) return;
+		const srcGroup = objectGroups.find((g) => g.fileIds.includes(srcId));
+		if (srcGroup?.id === groupId) {
+			reorderWithinGroup(groupId, srcId, targetFileId);
+		} else {
+			addFileToGroup(srcId, groupId);
+		}
+		step1DragSourceId = null;
+	};
+
 	const startIngestion = async () => {
 		if (!canStartIngestion) return;
 
@@ -1906,11 +2071,12 @@
 </script>
 
 <main
-	class="mx-auto flex min-h-[80vh] max-w-6xl flex-col gap-6 px-6 py-10"
+	class="mx-auto flex min-h-[80vh] max-w-6xl flex-col gap-6 px-6 pb-28 pt-10"
 	ondragenter={handleGlobalDragEnter}
 	ondragleave={handleGlobalDragLeave}
 	ondrop={handleGlobalDrop}
 >
+	<!-- Page header with step indicator -->
 	<section class="flex flex-wrap items-center justify-between gap-4">
 		<div>
 			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionSetup.header.kicker')}</p>
@@ -1919,672 +2085,781 @@
 				{format(t('ingestionSetup.header.subtitle'), { batchId })}
 			</p>
 		</div>
+		<!-- Step indicator -->
+		<nav class="flex items-center gap-2 text-xs uppercase tracking-[0.2em]">
+			<button
+				class={step === 'organize' ? 'font-semibold text-blue-slate' : 'text-text-muted hover:text-blue-slate'}
+				onclick={() => { if (step === 'metadata') step = 'organize'; }}
+			>
+				Step 1: Organize
+			</button>
+			<span class="text-text-muted">→</span>
+			<span class={step === 'metadata' ? 'font-semibold text-blue-slate' : 'text-text-muted'}>
+				Step 2: Metadata
+			</span>
+		</nav>
+		{#if step === 'organize'}
+			<div class="flex items-center gap-2">
+				<button
+					onclick={() => autoGroupByFilename(standaloneFiles)}
+					class="rounded-full border border-blue-slate/50 px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20 active:scale-[0.99]"
+				>
+					Auto-group by filename
+				</button>
+
+			</div>
+		{/if}
 	</section>
 
-	<section class="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
-		<div class="space-y-5">
-			<div
-				class={`relative rounded-2xl border-2 border-dashed px-6 py-8 text-center transition ${
-					isDragging || isGlobalDragging
-						? 'border-blue-slate bg-pearl-beige/70 shadow-[0_0_0_4px_rgba(79,109,122,0.25)]'
-						: 'border-border-soft bg-pearl-beige/60'
-				}`}
-				ondragenter={handleDragEnter}
-				ondragover={handleDragOver}
-				ondragleave={handleDragLeave}
-				ondrop={handleDrop}
-			>
-				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionSetup.dropzone.label')}</p>
-				<p class="mt-3 font-display text-xl text-text-ink">
-					{isDragging || isGlobalDragging
-						? t('ingestionSetup.dropzone.headlineDragging')
-						: t('ingestionSetup.dropzone.headline')}
+	{#if step === 'organize'}
+		<!-- ══════════════ STEP 1: ORGANIZE ══════════════ -->
+
+		<!-- Context banner -->
+		<div class="rounded-xl border border-border-soft bg-pale-sky/15 px-5 py-3">
+			<div class="flex items-center justify-between gap-4">
+				<p class="text-sm text-blue-slate">
+					Each group will become <span class="font-semibold">ONE object</span> in your library.
 				</p>
-				<p class="mt-2 text-xs text-text-muted">
-					{isDragging || isGlobalDragging
-						? t('ingestionSetup.dropzone.supportDragging')
-						: t('ingestionSetup.dropzone.support')}
+				<p class="shrink-0 text-xs text-text-muted">
+					{organizeObjectCount} {organizeObjectCount === 1 ? 'object' : 'objects'} · {files.length} {files.length === 1 ? 'file' : 'files'} total
 				</p>
-				<p class="mt-2 text-sm text-text-muted">{t('ingestionSetup.dropzone.details')}</p>
-				<p class="mt-2 text-[11px] uppercase tracking-[0.16em] text-text-muted">
-					{#if batchMediaType}
-						{format(t('ingestionSetup.dropzone.lockedType'), {
-							mediaType: mediaTypeLabel(batchMediaType),
-							supportedFormats: formatsFor(batchMediaType)
-						})}
-					{:else}
-						{format(t('ingestionSetup.dropzone.unlockedType'), {
-							supportedFormats: formatsFor(null)
-						})}
-					{/if}
-				</p>
-				<button
-					onclick={() => fileInput?.click()}
-					class="mt-5 rounded-full border border-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate"
-				>
-					{t('ingestionSetup.dropzone.browse')}
-				</button>
-				<input
-					bind:this={fileInput}
-					type="file"
-					multiple
-					class="hidden"
-					onchange={handleFileInput}
-				/>
 			</div>
+		</div>
 
-			<div class="rounded-2xl border border-border-soft bg-surface-white">
-				<div class="border-b border-border-soft px-6 py-4">
-					<div class="flex flex-wrap items-start justify-between gap-3">
-						<div>
-							<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionSetup.files.title')}</p>
-							<p class="mt-1 text-sm text-text-muted">{t('ingestionSetup.files.subtitle')}</p>
-							{#if batchMediaType}
-								<p class="mt-2 inline-flex rounded-full border border-blue-slate/40 bg-pale-sky/30 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate">
-									{format(t('ingestionSetup.files.batchType'), {
-										mediaType: mediaTypeLabel(batchMediaType)
-									})}
-								</p>
-							{/if}
-						</div>
-						<div class="text-xs text-text-muted">
-							{format(t('ingestionSetup.files.selectedCount'), { count: selectedIds.length })}
-						</div>
-					</div>
-					{#if addFilesError}
-						<p class="mt-3 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach">
-							{addFilesError}
-						</p>
-					{/if}
+		<!-- Auto-group toast -->
+		{#if autoGroupToast}
+			<div class="rounded-xl border border-blue-slate/20 bg-pale-sky/20 px-5 py-2">
+				<div class="flex items-center gap-3">
+					<span class="text-xs text-blue-slate">✓ Files grouped automatically by filename. Please review and adjust.</span>
+					<button onclick={() => { autoGroupToast = false; }} class="ml-auto text-xs text-blue-slate/50 hover:text-blue-slate">✕</button>
 				</div>
-				{#if files.length === 0}
-					<div class="px-6 py-8 text-center text-sm text-text-muted">
-						{t('ingestionSetup.files.empty')}
-					</div>
-				{:else}
-				{#snippet fileRow(file: LocalIngestionFile)}
-					<div
-						class={`transition ${listDragTargetFileId === file.id ? 'ring-1 ring-inset ring-blue-slate/40' : ''}`}
-						role="listitem"
-						draggable="true"
-						ondragstart={(e) => onFileRowDragStart(e, file.id)}
-						ondragend={onFileRowDragEnd}
-						ondragover={(e) => onFileRowDragOver(e, file.id)}
-						ondragleave={onFileRowDragLeave}
-						ondrop={(e) => onFileRowDrop(e, file.id)}
-					>
-						<div
-							class={`flex flex-wrap items-center justify-between gap-4 px-6 py-4 ${
-								file.id === activeFileId ? 'bg-pale-sky/12' : ''
-							}`}
-							onclick={() => setActiveFile(file.id)}
-						>
-							<label class="flex items-start gap-3">
-								<span
-									class="mt-0.5 cursor-grab select-none text-base leading-none text-text-muted"
-									title="Drag to group"
-								>⠿</span>
-								<input
-									type="checkbox"
-									class="mt-1 h-4 w-4 rounded border-border-soft text-blue-slate"
-									checked={selectedIds.includes(file.id)}
-									onclick={(event) => event.stopPropagation()}
-									onchange={() => toggleSelection(file.id)}
-								/>
-								<div>
-									<p class="text-sm font-medium text-text-ink">{file.name}</p>
-									<p class="mt-1 text-xs text-text-muted">
-										{t(`ingestionSetup.fileTypes.${file.type}`)} · {file.size}
-									</p>
-									{#if file.uploadError}
-										<p class="mt-1 text-xs text-burnt-peach">{file.uploadError}</p>
-									{/if}
-								</div>
-							</label>
-							<div class="flex flex-wrap items-center justify-end gap-2">
-								{#if file.status === 'failed' && file.source === 'local'}
-									<button
-										class="text-xs uppercase tracking-[0.2em] text-burnt-peach"
-										disabled={removingIds.includes(file.id)}
-										onclick={(event) => {
-											event.stopPropagation();
-											retryUpload(file.id);
-										}}
-									>
-										{t('ingestionSetup.files.retryUpload')}
-									</button>
-								{/if}
-								<button
-									class="text-xs uppercase tracking-[0.2em] text-blue-slate"
-									disabled={removingIds.includes(file.id)}
-									onclick={(event) => {
-										event.stopPropagation();
-										void removeFile(file.id);
-									}}
-								>
-									{#if removingIds.includes(file.id)}
-										{t('ingestionSetup.files.removing')}
-									{:else if file.status === 'processing' && file.source === 'local'}
-										{t('ingestionSetup.files.cancelUpload')}
-									{:else}
-										{t('common.remove')}
-									{/if}
-								</button>
-								<StatusBadge status={file.status} label={statusLabel(file.status)} />
-							</div>
-						</div>
-					</div>
-				{/snippet}
+			</div>
+		{/if}
 
-				{#if selectedIds.length > 0}
-					<div class="flex items-center justify-between gap-3 border-b border-border-soft bg-pale-sky/10 px-6 py-3">
-						<p class="text-xs text-text-muted">{selectedIds.length} files selected</p>
-						<div class="flex flex-wrap items-center gap-2">
-							<button
-								type="button"
-								class="rounded-full border border-blue-slate px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-blue-slate hover:bg-pale-sky/20 disabled:cursor-not-allowed disabled:border-blue-slate/30 disabled:text-blue-slate/45"
-								onclick={groupSelectedFiles}
-								disabled={selectedIds.length < 2}
-							>
-								Merge into one document
-							</button>
-							<button
-								type="button"
-								class="rounded-full border border-blue-slate/50 px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-blue-slate/75 hover:border-blue-slate hover:bg-pale-sky/20 hover:text-blue-slate"
-								onclick={splitSelectedFiles}
-							>
-								Split into separate items
-							</button>
-						</div>
-					</div>
-				{:else if standaloneFiles.length >= 2 && batchDefaults.itemKind === 'scanned_document'}
-					<div class="flex items-center justify-end gap-3 border-b border-border-soft px-6 py-2">
+		<!-- Validation warning (10+ unassigned files, no groups) -->
+		{#if singleGroupWarning}
+			<div class="rounded-xl border border-burnt-peach/35 bg-pearl-beige/60 px-5 py-3">
+				<div class="flex flex-wrap items-center gap-4">
+					<p class="text-sm text-burnt-peach">
+						⚠ You have {standaloneFiles.length} files that will each become their own separate object. Is this correct?
+					</p>
+					<div class="ml-auto flex shrink-0 gap-2">
 						<button
-							type="button"
-							class="rounded-full border border-blue-slate/50 px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-blue-slate/70 hover:border-blue-slate hover:bg-pale-sky/20 hover:text-blue-slate"
 							onclick={() => autoGroupByFilename(standaloneFiles)}
+							class="rounded-full border border-burnt-peach/60 px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-burnt-peach transition hover:bg-burnt-peach/10"
 						>
-							Auto-group by filename
+							Auto-group
+						</button>
+						<button
+							onclick={() => { validationDismissed = true; }}
+							class="rounded-full border border-burnt-peach/40 px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-burnt-peach/70 transition hover:border-burnt-peach/60 hover:text-burnt-peach"
+						>
+							Yes, that's correct
 						</button>
 					</div>
-				{/if}
+				</div>
+			</div>
+		{/if}
 
-				{#if autoGroupToast}
-					<div class="flex items-center gap-2 border-b border-border-soft bg-pale-sky/20 px-6 py-2">
-						<span class="text-xs text-blue-slate">✓ Files were grouped automatically by filename. Please review the groups below.</span>
-						<button
-							type="button"
-							class="ml-auto text-xs text-blue-slate/50 hover:text-blue-slate"
-							onclick={() => { autoGroupToast = false; }}
-						>✕</button>
+		<!-- Two-column work area -->
+		<div class="grid grid-cols-[minmax(280px,2fr)_3fr] gap-6">
+			<!-- LEFT: Unassigned files + upload zone -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<aside
+				class={[
+					'rounded-2xl border-2 transition',
+					dragOverLeftPanel
+						? 'border-blue-slate bg-pale-sky/10'
+						: standaloneFiles.length === 0 && files.length > 0
+							? 'border-dashed border-border-soft bg-surface-white/60'
+							: 'border-border-soft bg-surface-white'
+				].join(' ')}
+				ondragover={onStep1LeftPanelDragOver}
+				ondragleave={() => { dragOverLeftPanel = false; }}
+				ondrop={onStep1LeftPanelDrop}
+			>
+				<!-- Compact upload zone -->
+				<div
+					class={`rounded-t-2xl border-b border-border-soft px-5 py-5 text-center transition ${
+						isDragging || isGlobalDragging
+							? 'border-blue-slate bg-pearl-beige/70 shadow-[0_0_0_4px_rgba(79,109,122,0.25)]'
+							: 'bg-pearl-beige/40'
+					}`}
+					ondragenter={handleDragEnter}
+					ondragover={handleDragOver}
+					ondragleave={handleDragLeave}
+					ondrop={handleDrop}
+				>
+					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionSetup.dropzone.label')}</p>
+					<p class="mt-2 font-display text-base text-text-ink">
+						{isDragging || isGlobalDragging
+							? t('ingestionSetup.dropzone.headlineDragging')
+							: t('ingestionSetup.dropzone.headline')}
+					</p>
+					<p class="mt-1 text-[11px] text-text-muted">
+						{#if batchMediaType}
+							{format(t('ingestionSetup.dropzone.lockedType'), {
+								mediaType: mediaTypeLabel(batchMediaType),
+								supportedFormats: formatsFor(batchMediaType)
+							})}
+						{:else}
+							{format(t('ingestionSetup.dropzone.unlockedType'), {
+								supportedFormats: formatsFor(null)
+							})}
+						{/if}
+					</p>
+					{#if addFilesError}
+						<p class="mt-2 text-xs text-burnt-peach">{addFilesError}</p>
+					{/if}
+					<button
+						onclick={() => fileInput?.click()}
+						class="mt-3 rounded-full border border-blue-slate px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-blue-slate"
+					>
+						{t('ingestionSetup.dropzone.browse')}
+					</button>
+					<input bind:this={fileInput} type="file" multiple class="hidden" onchange={handleFileInput} />
+				</div>
+
+				<!-- Unassigned files header -->
+				<div class="border-b border-border-soft px-5 py-3">
+					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Unassigned Files</p>
+					<p class="mt-1 text-xs text-text-muted">
+						{standaloneFiles.length === 0 && files.length > 0
+							? 'All files assigned — ready to continue!'
+							: `${standaloneFiles.length} ${standaloneFiles.length === 1 ? 'file' : 'files'} not yet grouped`}
+					</p>
+				</div>
+
+				{#if selectedFileIds.length > 0}
+					<div class="border-b border-border-soft bg-pale-sky/10 px-5 py-2.5">
+						<div class="flex flex-wrap items-center gap-2">
+							<p class="text-xs text-text-muted">{selectedFileIds.length} {selectedFileIds.length === 1 ? 'file' : 'files'} selected</p>
+							<button
+								disabled={selectedFileIds.length < 2}
+								onclick={organizeGroupSelected}
+								class="rounded-full border border-blue-slate px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20 disabled:cursor-not-allowed disabled:opacity-40"
+							>
+								Merge
+							</button>
+							<button
+								onclick={organizeSplitSelected}
+								class="rounded-full border border-blue-slate/50 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate/75 transition hover:border-blue-slate hover:text-blue-slate"
+							>
+								Split
+							</button>
+							<button
+								onclick={() => { selectedFileIds = []; }}
+								class="ml-auto text-xs text-text-muted hover:text-text-ink"
+							>
+								Clear
+							</button>
+						</div>
 					</div>
 				{/if}
 
-				{#if files.length > 0}
-					<div class="border-b border-border-soft px-6 py-2">
-						<p class="text-xs text-blue-slate/60">
-							Each group below will become <span class="font-medium text-blue-slate/80">one object</span> in your library.{#if files.length >= 2} · {objectCount} {objectCount === 1 ? 'object' : 'objects'} from {files.length} {files.length === 1 ? 'file' : 'files'}{/if}
-						</p>
-					</div>
-				{/if}
-
+				<!-- Unassigned file rows -->
 				<div class="divide-y divide-border-soft">
-					{#each objectGroups as group (group.id)}
-						<ObjectGroupRow
-							groupId={group.id}
-							label={group.label}
-							fileCount={group.fileIds.length}
-							collapsed={collapsedGroups.includes(group.id)}
-							dragOver={listDragTargetGroupId === group.id}
-						active={activeObjectKey === group.id}
-						ungroupDisabled={Boolean(group.serverId)}
-						incomplete={!isItemMetadataComplete(group.id)}
-							onToggleCollapse={() => toggleGroupCollapse(group.id)}
-							onUngroup={() => ungroupFiles(group.id)}
-							onLabelChange={(label) => renameGroup(group.id, label)}
-							onSelect={() => setActiveGroup(group.id)}
-							onDragOver={(e) => onGroupRowDragOver(e, group.id)}
-							onDragLeave={onGroupRowDragLeave}
-							onDrop={(e) => onGroupRowDrop(e, group.id)}
-						>
-							{#each group.fileIds as fileId (fileId)}
-							{@const file = filesById.get(fileId)}
-								{#if file}
-									{@render fileRow(file)}
-								{/if}
-							{/each}
-						</ObjectGroupRow>
-					{/each}
-
+					{#if files.length === 0}
+						<div class="px-5 py-8 text-center text-sm text-text-muted">
+							{t('ingestionSetup.files.empty')}
+						</div>
+					{:else if standaloneFiles.length === 0}
+						<div class="px-5 py-10 text-center text-sm italic text-text-muted">
+							All files have been assigned to groups.
+						</div>
+					{/if}
 					{#each standaloneFiles as file (file.id)}
-						<div class={!isItemMetadataComplete(`file:${file.id}`) ? 'relative border-l-2 border-burnt-peach/50' : ''}>
-							{@render fileRow(file)}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div
+							class={[
+								'flex cursor-grab items-center gap-3 px-5 py-3 transition hover:bg-pale-sky/15',
+								step1DragSourceId === file.id ? 'opacity-40' : '',
+								step1DragTargetFileId === file.id ? 'ring-1 ring-inset ring-blue-slate/40' : '',
+								selectedFileIds.includes(file.id) ? 'bg-pale-sky/10' : ''
+							].join(' ')}
+							draggable="true"
+							ondragstart={(e) => onStep1FileDragStart(e, file.id)}
+							ondragend={onStep1FileDragEnd}
+							onclick={() => toggleFileSelection(file.id)}
+						>
+							<span class="select-none text-text-muted/60" title="Drag to assign to a group">⠿</span>
+							<input
+								type="checkbox"
+								checked={selectedFileIds.includes(file.id)}
+								onclick={(e) => e.stopPropagation()}
+								onchange={() => toggleFileSelection(file.id)}
+								class="h-4 w-4 shrink-0 cursor-pointer rounded border-border-soft accent-blue-slate"
+							/>
+							<span class="shrink-0 text-lg leading-none">{fileKindEmoji(file.mediaType)}</span>
+							<div class="min-w-0 flex-1">
+								<p class="truncate text-sm font-medium text-text-ink">{file.name}</p>
+								<p class="text-[10px] text-text-muted">{file.size}</p>
+							</div>
+							<StatusBadge status={file.status} label={statusLabel(file.status)} />
+							<span class={`shrink-0 rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.12em] ${fileKindLabelClasses(file.mediaType)}`}>
+								{fileKindLabel(file.mediaType)}
+							</span>
 						</div>
 					{/each}
 				</div>
-			{/if}
-			</div>
 
-		</div>
-
-		<aside class="space-y-5">
-			<ObjectMetadataPanel
-				objectKey={activeObjectKey}
-				objectLabel={activeObjectLabel}
-				metadata={activeObjectMeta}
-				batchTitle={batchDefaults.title}
-				batchTags={summaryTags}
-				batchDate={summaryDateEditors.created.precision !== 'none' ? { value: summaryDateEditors.created.year || summaryDateEditors.created.month || summaryDateEditors.created.day || null, approximate: summaryDateEditors.created.approximate } : null}
-				batchDescription={batchDefaults.summaryText}
-				onMetadataChange={(patch) => setObjectMeta(activeObjectKey, patch)}
-			/>
-			<div class="rounded-2xl border border-border-strong bg-blue-slate-deep px-6 py-6 text-pale-sky">
-				<p class="text-xs uppercase tracking-[0.2em] text-burnt-peach">{t('ingestionSetup.batchIntent.title')}</p>
-				<p class="mt-2 text-sm text-pale-sky">{t('ingestionSetup.batchIntent.description')}</p>
-				<p class="mt-3 text-[11px] uppercase tracking-[0.16em] text-pale-sky/80">
-					{#if metadataSaveState === 'saving' || metadataSaveState === 'pending'}
-						{t('ingestionSetup.batchIntent.saveStateSaving')}
-					{:else if metadataSaveState === 'saved'}
-						{t('ingestionSetup.batchIntent.saveStateSaved')}
-					{:else if metadataSaveState === 'error'}
-						{t('ingestionSetup.batchIntent.saveStateError')}
-					{:else}
-						{t('ingestionSetup.batchIntent.saveStateIdle')}
-					{/if}
-				</p>
-				{#if metadataSaveError}
-					<p class="mt-3 rounded-xl border border-burnt-peach/45 bg-pearl-beige/20 px-3 py-2 text-xs text-burnt-peach">
-						{metadataSaveError}
-					</p>
+				{#if step1DragSourceId !== null && dragOverLeftPanel}
+					<div class="px-5 py-3 text-center text-xs text-blue-slate">
+						Drop here to unassign from group
+					</div>
 				{/if}
-				<div class="mt-4 text-sm">
-					<details open class="py-2">
-						<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-burnt-peach">
-							{t('ingestionSetup.batchIntent.sections.coreMetadata')}
-						</summary>
-						<div class="mt-3 grid gap-3 md:grid-cols-2">
-							<div class="md:col-span-2">
-								<label for="intent-title" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.titleLabel')}</label>
-								<input
-									id="intent-title"
-									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-									value={batchDefaults.title}
-									oninput={(event) => {
-										batchDefaults.title = event.currentTarget.value;
-										queueBatchMetadataSave();
-									}}
-								/>
-							</div>
-							<div>
-								<label for="intent-language" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.language')}</label>
-								<select
-									id="intent-language"
-									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-									value={batchDefaults.language}
-									onchange={(event) => {
-										batchDefaults.language = event.currentTarget.value;
-										queueBatchMetadataSave();
-									}}
-								>
-									<option value="">{t('ingestionSetup.batchIntent.selectLanguage')}</option>
-									{#each languages as language (language)}
-										<option value={language}>{t(`ingestionSetup.languages.${language}`)}</option>
-									{/each}
-								</select>
-							</div>
-							<div>
-								<label for="intent-item-kind" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.itemKind')}</label>
-								<select
-									id="intent-item-kind"
-									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-									value={batchDefaults.itemKind}
-									onchange={(event) =>
-										setItemKind(
-											event.currentTarget.value as
-												| 'photo'
-												| 'audio'
-												| 'video'
-												| 'scanned_document'
-												| 'document'
-												| 'other'
-										)}
-								>
-									<option value="document">{t('ingestionSetup.itemKinds.document')}</option>
-									<option value="scanned_document">{t('ingestionSetup.itemKinds.scanned_document')}</option>
-									<option value="photo">{t('ingestionSetup.itemKinds.photo')}</option>
-									<option value="audio">{t('ingestionSetup.itemKinds.audio')}</option>
-									<option value="video">{t('ingestionSetup.itemKinds.video')}</option>
-									<option value="other">{t('ingestionSetup.itemKinds.other')}</option>
-								</select>
-							</div>
-							<div>
-								<label for="intent-classification-type" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.classificationType')}</label>
-								<select
-									id="intent-classification-type"
-									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-									value={batchDefaults.classificationType}
-									onchange={(event) => {
-										batchDefaults.classificationType = event.currentTarget.value;
-										queueBatchMetadataSave();
-									}}
-								>
-									<option value="">{t('ingestionSetup.batchIntent.selectType')}</option>
-									{#each classificationTypes as type (type)}
-										<option value={type}>{t(`ingestionSetup.classificationTypes.${type}`)}</option>
-									{/each}
-								</select>
-								<p class="mt-1 text-[11px] text-pale-sky/75">
-									{#if batchDefaults.itemKind === 'document' || batchDefaults.itemKind === 'scanned_document'}
-										{t('ingestionSetup.batchIntent.classificationHintDocument')}
-									{:else}
-										{t('ingestionSetup.batchIntent.classificationHintAuto')}
-									{/if}
-								</p>
-							</div>
-						</div>
-					</details>
+			</aside>
 
-					<details class="border-t border-pale-sky/20 py-3">
-						<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-burnt-peach">
-							{t('ingestionSetup.batchIntent.sections.summaryContext')}
-						</summary>
-						<div class="mt-3 space-y-3">
-							<div>
-								<label for="intent-tags" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.tags')}</label>
-								<div class="mt-2 flex items-center gap-2">
-									<input
-										id="intent-tags"
-										class="w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-										placeholder={t('ingestionSetup.batchIntent.tagsPlaceholder')}
-										value={summaryTagInput}
-										oninput={(event) => (summaryTagInput = event.currentTarget.value)}
-										onkeydown={(event) => {
-											if (event.key === 'Enter') {
-												event.preventDefault();
-												addSummaryTag();
-											}
-										}}
-									/>
-									<button
-										type="button"
-										onclick={addSummaryTag}
-										class="rounded-full border border-pale-sky/40 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-pale-sky"
-									>
-										{t('ingestionSetup.batchIntent.addTag')}
-									</button>
+			<!-- RIGHT: Object groups -->
+			<section class="space-y-4">
+				{#each objectGroups as group (group.id)}
+					<div class="overflow-hidden rounded-2xl border border-border-soft bg-surface-white">
+					<ObjectGroupRow
+						groupId={group.id}
+						label={group.label}
+						fileCount={group.fileIds.length}
+						collapsed={collapsedGroups.includes(group.id)}
+						dragOver={listDragTargetGroupId === group.id}
+						active={false}
+						ungroupDisabled={Boolean(group.serverId)}
+						incomplete={false}
+						onToggleCollapse={() => toggleGroupCollapse(group.id)}
+						onUngroup={() => ungroupFiles(group.id)}
+						onLabelChange={(label: string) => renameGroup(group.id, label)}
+						onDragOver={(e: DragEvent) => onStep1GroupDragOver(e, group.id)}
+						onDragLeave={(_e: DragEvent) => onStep1GroupDragLeave(group.id)}
+						onDrop={(e: DragEvent) => onStep1GroupDrop(e, group.id)}
+					>
+						<div class="divide-y divide-border-soft bg-surface-white">
+							{#if group.fileIds.length === 0}
+								<div class="px-6 py-6 text-center text-xs italic text-text-muted">
+									Drop files here to add them to this group
 								</div>
-								{#if summaryTags.length > 0}
-									<div class="mt-2 flex flex-wrap gap-2">
-										{#each summaryTags as tag (tag)}
-											<button
-												type="button"
-												onclick={() => removeSummaryTag(tag)}
-												class="rounded-full border border-pale-sky/35 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-pale-sky"
-											>
-												{tag} ×
-											</button>
-										{/each}
+							{/if}
+							{#each group.fileIds as fileId, index (fileId)}
+								{@const file = filesById.get(fileId)}
+								{#if file}
+									<!-- svelte-ignore a11y_no_static_element_interactions -->
+									<div
+										class={[
+											'flex items-center gap-3 px-6 py-2.5 transition hover:bg-pale-sky/10',
+											step1DragSourceId === fileId ? 'opacity-40' : '',
+											step1DragTargetFileId === fileId ? 'ring-1 ring-inset ring-blue-slate/35' : ''
+										].join(' ')}
+										draggable="true"
+										ondragstart={(e) => onStep1FileDragStart(e, fileId)}
+										ondragend={onStep1FileDragEnd}
+										ondragover={(e) => onStep1GroupFileDragOver(e, fileId)}
+										ondrop={(e) => onStep1GroupFileDrop(e, fileId, group.id)}
+									>
+										<span class="w-5 shrink-0 text-center text-[10px] text-text-muted">{index + 1}</span>
+										<span class="shrink-0 cursor-grab select-none text-text-muted/60" title="Drag to reorder">⠿</span>
+										<span class="shrink-0 text-base leading-none">{fileKindEmoji(file.mediaType)}</span>
+										<div class="min-w-0 flex-1">
+											<p class="truncate text-sm text-text-ink">{file.name}</p>
+											<p class="text-[10px] text-text-muted">{file.size}</p>
+										</div>
+										<StatusBadge status={file.status} label={statusLabel(file.status)} />
 									</div>
 								{/if}
-							</div>
-							<div>
-								<label for="intent-summary" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.summary')}</label>
-								<textarea
-									id="intent-summary"
-									rows="2"
-									class="mt-2 w-full resize-none rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-									value={batchDefaults.summaryText}
-									oninput={(event) => {
-										batchDefaults.summaryText = event.currentTarget.value;
-										queueBatchMetadataSave();
-									}}
-								></textarea>
-							</div>
+							{/each}
 						</div>
-					</details>
+					</ObjectGroupRow>
+					</div>
+				{/each}
 
-					<details open class="border-t border-pale-sky/20 py-3">
-						<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-burnt-peach">
-							{t('ingestionSetup.batchIntent.sections.dates')}
-						</summary>
-						<p class="mt-2 text-[11px] text-pale-sky/80">{t('ingestionSetup.batchIntent.dateHint')}</p>
-						<div class="mt-3 space-y-4">
-							{#each summaryDateSections as section, index (section.key)}
-								{@const editor = summaryDateEditors[section.key]}
-								<div class={index === 0 ? 'space-y-2' : 'space-y-2 border-t border-pale-sky/20 pt-4'}>
-									<p class="text-xs uppercase tracking-[0.18em] text-pale-sky">{t(section.labelKey)}</p>
-									<div class="grid gap-2 md:grid-cols-2">
+				{#if objectGroups.length === 0}
+					<div class="rounded-2xl border-2 border-dashed border-border-soft px-8 py-16 text-center">
+						<p class="font-display text-xl text-text-muted">No groups yet</p>
+						<p class="mt-2 text-sm text-text-muted">
+							Click <strong>Auto-group by filename</strong> above, or drag files here from the left panel.
+						</p>
+					</div>
+				{/if}
+			</section>
+		</div>
+
+	{:else}
+		<!-- ══════════════ STEP 2: METADATA ══════════════ -->
+
+		<!-- Batch defaults (dark card) -->
+		<div class="rounded-2xl border border-border-strong bg-blue-slate-deep px-6 py-6 text-pale-sky">
+			<p class="text-xs uppercase tracking-[0.2em] text-burnt-peach">{t('ingestionSetup.batchIntent.title')}</p>
+			<p class="mt-2 text-sm text-pale-sky">{t('ingestionSetup.batchIntent.description')}</p>
+			<p class="mt-3 text-[11px] uppercase tracking-[0.16em] text-pale-sky/80">
+				{#if metadataSaveState === 'saving' || metadataSaveState === 'pending'}
+					{t('ingestionSetup.batchIntent.saveStateSaving')}
+				{:else if metadataSaveState === 'saved'}
+					{t('ingestionSetup.batchIntent.saveStateSaved')}
+				{:else if metadataSaveState === 'error'}
+					{t('ingestionSetup.batchIntent.saveStateError')}
+				{:else}
+					{t('ingestionSetup.batchIntent.saveStateIdle')}
+				{/if}
+			</p>
+			{#if metadataSaveError}
+				<p class="mt-3 rounded-xl border border-burnt-peach/45 bg-pearl-beige/20 px-3 py-2 text-xs text-burnt-peach">
+					{metadataSaveError}
+				</p>
+			{/if}
+			<div class="mt-4 text-sm">
+				<details open class="py-2">
+					<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-burnt-peach">
+						{t('ingestionSetup.batchIntent.sections.coreMetadata')}
+					</summary>
+					<div class="mt-3 grid gap-3 md:grid-cols-2">
+						<div class="md:col-span-2">
+							<label for="intent-title" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.titleLabel')}</label>
+							<input
+								id="intent-title"
+								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								value={batchDefaults.title}
+								oninput={(event) => {
+									batchDefaults.title = event.currentTarget.value;
+									queueBatchMetadataSave();
+								}}
+							/>
+						</div>
+						<div>
+							<label for="intent-language" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.language')}</label>
+							<select
+								id="intent-language"
+								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								value={batchDefaults.language}
+								onchange={(event) => {
+									batchDefaults.language = event.currentTarget.value;
+									queueBatchMetadataSave();
+								}}
+							>
+								<option value="">{t('ingestionSetup.batchIntent.selectLanguage')}</option>
+								{#each languages as language (language)}
+									<option value={language}>{t(`ingestionSetup.languages.${language}`)}</option>
+								{/each}
+							</select>
+						</div>
+						<div>
+							<label for="intent-item-kind" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.itemKind')}</label>
+							<select
+								id="intent-item-kind"
+								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								value={batchDefaults.itemKind}
+								onchange={(event) =>
+									setItemKind(
+										event.currentTarget.value as
+											| 'photo'
+											| 'audio'
+											| 'video'
+											| 'scanned_document'
+											| 'document'
+											| 'other'
+									)}
+							>
+								<option value="document">{t('ingestionSetup.itemKinds.document')}</option>
+								<option value="scanned_document">{t('ingestionSetup.itemKinds.scanned_document')}</option>
+								<option value="photo">{t('ingestionSetup.itemKinds.photo')}</option>
+								<option value="audio">{t('ingestionSetup.itemKinds.audio')}</option>
+								<option value="video">{t('ingestionSetup.itemKinds.video')}</option>
+								<option value="other">{t('ingestionSetup.itemKinds.other')}</option>
+							</select>
+						</div>
+						<div>
+							<label for="intent-classification-type" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.classificationType')}</label>
+							<select
+								id="intent-classification-type"
+								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								value={batchDefaults.classificationType}
+								onchange={(event) => {
+									batchDefaults.classificationType = event.currentTarget.value;
+									queueBatchMetadataSave();
+								}}
+							>
+								<option value="">{t('ingestionSetup.batchIntent.selectType')}</option>
+								{#each classificationTypes as type (type)}
+									<option value={type}>{t(`ingestionSetup.classificationTypes.${type}`)}</option>
+								{/each}
+							</select>
+							<p class="mt-1 text-[11px] text-pale-sky/75">
+								{#if batchDefaults.itemKind === 'document' || batchDefaults.itemKind === 'scanned_document'}
+									{t('ingestionSetup.batchIntent.classificationHintDocument')}
+								{:else}
+									{t('ingestionSetup.batchIntent.classificationHintAuto')}
+								{/if}
+							</p>
+						</div>
+					</div>
+				</details>
+
+				<details class="border-t border-pale-sky/20 py-3">
+					<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-burnt-peach">
+						{t('ingestionSetup.batchIntent.sections.summaryContext')}
+					</summary>
+					<div class="mt-3 space-y-3">
+						<div>
+							<label for="intent-tags" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.tags')}</label>
+							<div class="mt-2 flex items-center gap-2">
+								<input
+									id="intent-tags"
+									class="w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+									placeholder={t('ingestionSetup.batchIntent.tagsPlaceholder')}
+									value={summaryTagInput}
+									oninput={(event) => (summaryTagInput = event.currentTarget.value)}
+									onkeydown={(event) => {
+										if (event.key === 'Enter') {
+											event.preventDefault();
+											addSummaryTag();
+										}
+									}}
+								/>
+								<button
+									type="button"
+									onclick={addSummaryTag}
+									class="rounded-full border border-pale-sky/40 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-pale-sky"
+								>
+									{t('ingestionSetup.batchIntent.addTag')}
+								</button>
+							</div>
+							{#if summaryTags.length > 0}
+								<div class="mt-2 flex flex-wrap gap-2">
+									{#each summaryTags as tag (tag)}
+										<button
+											type="button"
+											onclick={() => removeSummaryTag(tag)}
+											class="rounded-full border border-pale-sky/35 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-pale-sky"
+										>
+											{tag} ×
+										</button>
+									{/each}
+								</div>
+							{/if}
+						</div>
+						<div>
+							<label for="intent-summary" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.summary')}</label>
+							<textarea
+								id="intent-summary"
+								rows="2"
+								class="mt-2 w-full resize-none rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								value={batchDefaults.summaryText}
+								oninput={(event) => {
+									batchDefaults.summaryText = event.currentTarget.value;
+									queueBatchMetadataSave();
+								}}
+							></textarea>
+						</div>
+					</div>
+				</details>
+
+				<details open class="border-t border-pale-sky/20 py-3">
+					<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-burnt-peach">
+						{t('ingestionSetup.batchIntent.sections.dates')}
+					</summary>
+					<p class="mt-2 text-[11px] text-pale-sky/80">{t('ingestionSetup.batchIntent.dateHint')}</p>
+					<div class="mt-3 space-y-4">
+						{#each summaryDateSections as section, index (section.key)}
+							{@const editor = summaryDateEditors[section.key]}
+							<div class={index === 0 ? 'space-y-2' : 'space-y-2 border-t border-pale-sky/20 pt-4'}>
+								<p class="text-xs uppercase tracking-[0.18em] text-pale-sky">{t(section.labelKey)}</p>
+								<div class="grid gap-2 md:grid-cols-2">
+									<select
+										class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+										value={editor.precision}
+										onchange={(event) =>
+											updateSummaryDatePrecision(section.key, event.currentTarget.value as SummaryDatePrecision)}
+									>
+										<option value="none">{t('ingestionSetup.batchIntent.precisionNone')}</option>
+										<option value="year">{t('ingestionSetup.batchIntent.precisionYear')}</option>
+										<option value="month">{t('ingestionSetup.batchIntent.precisionMonth')}</option>
+										<option value="day">{t('ingestionSetup.batchIntent.precisionDay')}</option>
+									</select>
+									{#if editor.precision === 'none'}
+										<div class="px-1 py-2 text-xs text-pale-sky/75">{t('ingestionSetup.batchIntent.noDateSelected')}</div>
+									{:else if editor.precision === 'year'}
+										<input
+											type="number"
+											min="1000"
+											max="2999"
+											placeholder={t('ingestionSetup.batchIntent.yearPlaceholder')}
+											class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+											value={editor.year}
+											oninput={(event) => updateSummaryDateValue(section.key, event.currentTarget.value)}
+										/>
+									{:else if editor.precision === 'month'}
+										<input
+											type="month"
+											class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+											value={editor.month}
+											onchange={(event) => updateSummaryDateValue(section.key, event.currentTarget.value)}
+										/>
+									{:else}
+										<input
+											type="date"
+											class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+											value={editor.day}
+											onchange={(event) => updateSummaryDateValue(section.key, event.currentTarget.value)}
+										/>
+									{/if}
+								</div>
+								{#if editor.precision !== 'none'}
+									<div class="grid gap-2 md:grid-cols-3">
 										<select
 											class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-											value={editor.precision}
+											value={editor.confidence}
 											onchange={(event) =>
-												updateSummaryDatePrecision(section.key, event.currentTarget.value as SummaryDatePrecision)}
+												updateSummaryDateConfidence(section.key, event.currentTarget.value as 'low' | 'medium' | 'high')}
 										>
-											<option value="none">{t('ingestionSetup.batchIntent.precisionNone')}</option>
-											<option value="year">{t('ingestionSetup.batchIntent.precisionYear')}</option>
-											<option value="month">{t('ingestionSetup.batchIntent.precisionMonth')}</option>
-											<option value="day">{t('ingestionSetup.batchIntent.precisionDay')}</option>
+											<option value="low">{t('ingestionSetup.batchIntent.confidenceLow')}</option>
+											<option value="medium">{t('ingestionSetup.batchIntent.confidenceMedium')}</option>
+											<option value="high">{t('ingestionSetup.batchIntent.confidenceHigh')}</option>
 										</select>
-										{#if editor.precision === 'none'}
-											<div class="px-1 py-2 text-xs text-pale-sky/75">{t('ingestionSetup.batchIntent.noDateSelected')}</div>
-										{:else if editor.precision === 'year'}
+										<label class="flex items-center gap-2 rounded-xl border border-pale-sky/25 px-3 py-2 text-xs text-pale-sky">
 											<input
-												type="number"
-												min="1000"
-												max="2999"
-												placeholder={t('ingestionSetup.batchIntent.yearPlaceholder')}
-												class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-												value={editor.year}
-												oninput={(event) => updateSummaryDateValue(section.key, event.currentTarget.value)}
+												type="checkbox"
+												checked={editor.approximate}
+												onchange={(event) => updateSummaryDateApproximate(section.key, event.currentTarget.checked)}
 											/>
-										{:else if editor.precision === 'month'}
-											<input
-												type="month"
-												class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-												value={editor.month}
-												onchange={(event) => updateSummaryDateValue(section.key, event.currentTarget.value)}
-											/>
-										{:else}
-											<input
-												type="date"
-												class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-												value={editor.day}
-												onchange={(event) => updateSummaryDateValue(section.key, event.currentTarget.value)}
-											/>
-										{/if}
+											{t('ingestionSetup.batchIntent.approximateDate')}
+										</label>
+										<input
+											class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+											placeholder={t('ingestionSetup.batchIntent.dateNotePlaceholder')}
+											value={editor.note}
+											oninput={(event) => updateSummaryDateNote(section.key, event.currentTarget.value)}
+										/>
 									</div>
-									{#if editor.precision !== 'none'}
-										<div class="grid gap-2 md:grid-cols-3">
-											<select
-												class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-												value={editor.confidence}
-												onchange={(event) =>
-													updateSummaryDateConfidence(section.key, event.currentTarget.value as 'low' | 'medium' | 'high')}
-											>
-												<option value="low">{t('ingestionSetup.batchIntent.confidenceLow')}</option>
-												<option value="medium">{t('ingestionSetup.batchIntent.confidenceMedium')}</option>
-												<option value="high">{t('ingestionSetup.batchIntent.confidenceHigh')}</option>
-											</select>
-											<label class="flex items-center gap-2 rounded-xl border border-pale-sky/25 px-3 py-2 text-xs text-pale-sky">
-												<input
-													type="checkbox"
-													checked={editor.approximate}
-													onchange={(event) => updateSummaryDateApproximate(section.key, event.currentTarget.checked)}
-												/>
-												{t('ingestionSetup.batchIntent.approximateDate')}
-											</label>
-											<input
-												class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-												placeholder={t('ingestionSetup.batchIntent.dateNotePlaceholder')}
-												value={editor.note}
-												oninput={(event) => updateSummaryDateNote(section.key, event.currentTarget.value)}
-											/>
-										</div>
-									{/if}
-								</div>
-							{/each}
-						</div>
-					</details>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				</details>
 
-					<details class="border-t border-pale-sky/20 py-3">
-						<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-burnt-peach">
-							{t('ingestionSetup.batchIntent.sections.accessPolicy')}
-						</summary>
-						<div class="mt-3 grid gap-3 md:grid-cols-2">
-							<div>
-								<label for="intent-pipeline-preset" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.pipelinePreset')}</label>
-								<select
-									id="intent-pipeline-preset"
-									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-									value={batchDefaults.pipelinePreset}
-									onchange={(event) => {
-										batchDefaults.pipelinePreset = event.currentTarget.value;
-										queueBatchMetadataSave();
-									}}
-								>
-									{#each pipelinePresets as preset (preset)}
-										<option value={preset}>{t(`ingestionSetup.pipelinePresets.${preset}`)}</option>
-									{/each}
-								</select>
-							</div>
-							<div>
-								<label for="intent-access-level" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.accessLevel')}</label>
-								<select
-									id="intent-access-level"
-									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-									value={batchDefaults.accessLevel}
-									onchange={(event) => {
-										batchDefaults.accessLevel = event.currentTarget.value as 'private' | 'family' | 'public';
-										queueBatchMetadataSave();
-									}}
-								>
-									<option value="private">{t('ingestionSetup.batchIntent.accessLevels.private')}</option>
-									<option value="family">{t('ingestionSetup.batchIntent.accessLevels.family')}</option>
-									<option value="public">{t('ingestionSetup.batchIntent.accessLevels.public')}</option>
-								</select>
-							</div>
-							<div>
-								<label for="intent-embargo-until" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.embargoUntil')}</label>
-								<input
-									id="intent-embargo-until"
-									type="datetime-local"
-									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-									value={batchDefaults.embargoUntil}
-									onchange={(event) => {
-										batchDefaults.embargoUntil = event.currentTarget.value;
-										queueBatchMetadataSave();
-									}}
-								/>
-							</div>
-							<div>
-								<label for="intent-rights-note" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.rightsNote')}</label>
-								<input
-									id="intent-rights-note"
-									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-									value={batchDefaults.rightsNote}
-									oninput={(event) => {
-										batchDefaults.rightsNote = event.currentTarget.value;
-										queueBatchMetadataSave();
-									}}
-								/>
-							</div>
-							<div class="md:col-span-2">
-								<label for="intent-sensitivity-note" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.sensitivityNote')}</label>
-								<input
-									id="intent-sensitivity-note"
-									class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
-									value={batchDefaults.sensitivityNote}
-									oninput={(event) => {
-										batchDefaults.sensitivityNote = event.currentTarget.value;
-										queueBatchMetadataSave();
-									}}
-								/>
-							</div>
+				<details class="border-t border-pale-sky/20 py-3">
+					<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-burnt-peach">
+						{t('ingestionSetup.batchIntent.sections.accessPolicy')}
+					</summary>
+					<div class="mt-3 grid gap-3 md:grid-cols-2">
+						<div>
+							<label for="intent-pipeline-preset" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.pipelinePreset')}</label>
+							<select
+								id="intent-pipeline-preset"
+								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								value={batchDefaults.pipelinePreset}
+								onchange={(event) => {
+									batchDefaults.pipelinePreset = event.currentTarget.value;
+									queueBatchMetadataSave();
+								}}
+							>
+								{#each pipelinePresets as preset (preset)}
+									<option value={preset}>{t(`ingestionSetup.pipelinePresets.${preset}`)}</option>
+								{/each}
+							</select>
 						</div>
-					</details>
-				</div>
+						<div>
+							<label for="intent-access-level" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.accessLevel')}</label>
+							<select
+								id="intent-access-level"
+								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								value={batchDefaults.accessLevel}
+								onchange={(event) => {
+									batchDefaults.accessLevel = event.currentTarget.value as 'private' | 'family' | 'public';
+									queueBatchMetadataSave();
+								}}
+							>
+								<option value="private">{t('ingestionSetup.batchIntent.accessLevels.private')}</option>
+								<option value="family">{t('ingestionSetup.batchIntent.accessLevels.family')}</option>
+								<option value="public">{t('ingestionSetup.batchIntent.accessLevels.public')}</option>
+							</select>
+						</div>
+						<div>
+							<label for="intent-embargo-until" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.embargoUntil')}</label>
+							<input
+								id="intent-embargo-until"
+								type="datetime-local"
+								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								value={batchDefaults.embargoUntil}
+								onchange={(event) => {
+									batchDefaults.embargoUntil = event.currentTarget.value;
+									queueBatchMetadataSave();
+								}}
+							/>
+						</div>
+						<div>
+							<label for="intent-rights-note" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.rightsNote')}</label>
+							<input
+								id="intent-rights-note"
+								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								value={batchDefaults.rightsNote}
+								oninput={(event) => {
+									batchDefaults.rightsNote = event.currentTarget.value;
+									queueBatchMetadataSave();
+								}}
+							/>
+						</div>
+						<div class="md:col-span-2">
+							<label for="intent-sensitivity-note" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.sensitivityNote')}</label>
+							<input
+								id="intent-sensitivity-note"
+								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								value={batchDefaults.sensitivityNote}
+								oninput={(event) => {
+									batchDefaults.sensitivityNote = event.currentTarget.value;
+									queueBatchMetadataSave();
+								}}
+							/>
+						</div>
+					</div>
+				</details>
 			</div>
-		</aside>
-	</section>
-
-	<section class="rounded-2xl border border-border-soft bg-surface-white px-6 py-5">
-		<div class="flex flex-wrap items-start justify-between gap-4">
-			<div class="space-y-2">
-				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionSetup.readiness.title')}</p>
-			<p class="text-sm text-text-muted">
-					{canStartIngestion
-						? t('ingestionSetup.readiness.ready')
-						: hasPendingUploads
-							? t('ingestionSetup.readiness.uploading')
-							: hasUploadFailures
-								? t('ingestionSetup.readiness.uploadFailed')
-								: !isReady
-									? t('ingestionSetup.readiness.missing')
-									: t('ingestionSetup.readiness.missingItemMetadata')}
-				</p>
-				{#if !isReady}
-					<div class="rounded-xl border border-border-soft bg-pale-sky/15 px-4 py-3 text-xs text-text-muted">
-						<p>{format(t('ingestionSetup.readiness.missingCount'), { count: missingCount })}</p>
-						<ul class="mt-2 space-y-1">
-							{#each missingSummaries as entry (entry.file.id)}
-								<li>
-									<span class="text-text-ink">{entry.file.name}</span>
-									· {entry.missing.join(', ')}
-								</li>
-							{/each}
-						</ul>
-					</div>
-				{/if}
-				{#if isReady && incompleteItemCount > 0}
-					<div class="rounded-xl border border-border-soft bg-pale-sky/15 px-4 py-3 text-xs text-text-muted">
-						<p>{format(t('ingestionSetup.readiness.missingItemMetadataCount'), { count: incompleteItemCount })}</p>
-						<ul class="mt-2 space-y-1">
-							{#each incompleteItemSummaries as entry (entry.label)}
-								<li>
-									<span class="text-text-ink">{entry.label}</span>
-									· {entry.missing.join(', ')}
-								</li>
-							{/each}
-						</ul>
-					</div>
-				{/if}
-				{#if hasOversizedGroup}
-					<div class="rounded-xl border border-burnt-peach/35 bg-pearl-beige/60 px-4 py-3 text-xs text-text-muted">
-						This document has <strong>{largestGroupSize}</strong> pages. Please confirm this grouping before continuing.
-					</div>
-				{/if}
-				{#if batchDefaults.itemKind === 'scanned_document' && standaloneFiles.length >= 3 && !groupingWarningDismissed}
-					<div class="flex items-start gap-3 rounded-xl border border-burnt-peach/30 bg-pearl-beige/60 px-4 py-3 text-xs text-text-muted">
-						<span class="mt-0.5 shrink-0 text-burnt-peach">⚠</span>
-						<p class="flex-1">
-							You have <strong>{standaloneFiles.length}</strong> separate objects with 1 file each.
-							If these are pages of the same document, consider grouping them first.
-						</p>
-						<button
-							type="button"
-							class="shrink-0 text-text-muted/50 hover:text-text-muted"
-							onclick={() => { groupingWarningDismissed = true; }}
-							aria-label="Dismiss"
-						>✕</button>
-					</div>
-				{/if}
-			</div>
-			{#if submitError}
-				<p class="rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach">
-					{submitError}
-				</p>
-			{/if}
-			<button
-				disabled={!canStartIngestion}
-				onclick={() => (showConfirm = true)}
-				class={`rounded-full px-5 py-2 text-xs uppercase tracking-[0.2em] text-surface-white ${
-					canStartIngestion ? 'bg-blue-slate' : 'bg-blue-slate/40 text-surface-white/70'
-				}`}
-			>
-				{t('common.startIngestion')}
-			</button>
 		</div>
-	</section>
+
+		<!-- Per-object metadata cards -->
+		<div class="space-y-3">
+			<div class="flex items-center justify-between">
+				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Per-Object Metadata</p>
+				<p class="text-xs text-text-muted">{objectCount} {objectCount === 1 ? 'object' : 'objects'}</p>
+			</div>
+
+			{#each objectGroups as group (group.id)}
+				{@const key = group.id}
+				{@const meta = objectMetadata[key] ?? {}}
+				<div class="rounded-2xl border border-border-soft bg-surface-white">
+					<button
+						type="button"
+						class={`flex w-full items-center gap-3 px-6 py-4 text-left transition hover:bg-pale-sky/8 ${expandedMetadataKeys.includes(key) ? 'bg-pale-sky/8' : ''}`}
+						onclick={() => toggleMetadataCard(key)}
+					>
+						<span class="text-xs text-blue-slate/60 transition-transform" style={expandedMetadataKeys.includes(key) ? '' : 'transform: rotate(-90deg)'}>▾</span>
+						<span class="min-w-0 flex-1 truncate text-sm font-medium text-text-ink">
+							{group.label || `Object ${group.id.slice(0, 6)}`}
+						</span>
+						<span class="shrink-0 rounded-full border border-border-soft px-2 py-0.5 text-[10px] text-text-muted">
+							{group.fileIds.length} {group.fileIds.length === 1 ? 'file' : 'files'}
+						</span>
+						{#if !isItemMetadataComplete(key)}
+							<span class="shrink-0 text-[10px] text-burnt-peach" title="Missing required metadata (title, date, tags)">●</span>
+						{/if}
+					</button>
+					{#if expandedMetadataKeys.includes(key)}
+						<div class="border-t border-border-soft px-6 py-5">
+							<ObjectMetadataPanel
+								objectKey={key}
+								objectLabel={group.label ?? ''}
+								metadata={meta}
+								batchTitle={batchDefaults.title}
+								batchTags={summaryTags}
+								batchDate={summaryDateEditors.created.precision !== 'none' ? { value: summaryDateEditors.created.year || summaryDateEditors.created.month || summaryDateEditors.created.day || null, approximate: summaryDateEditors.created.approximate } : null}
+								batchDescription={batchDefaults.summaryText}
+								onMetadataChange={(patch) => setObjectMeta(key, patch)}
+							/>
+						</div>
+					{/if}
+				</div>
+			{/each}
+
+			{#each standaloneFiles as file (file.id)}
+				{@const key = `file:${file.id}`}
+				{@const meta = objectMetadata[key] ?? {}}
+				<div class="rounded-2xl border border-border-soft bg-surface-white">
+					<button
+						type="button"
+						class={`flex w-full items-center gap-3 px-6 py-4 text-left transition hover:bg-pale-sky/8 ${expandedMetadataKeys.includes(key) ? 'bg-pale-sky/8' : ''}`}
+						onclick={() => toggleMetadataCard(key)}
+					>
+						<span class="text-xs text-blue-slate/60 transition-transform" style={expandedMetadataKeys.includes(key) ? '' : 'transform: rotate(-90deg)'}>▾</span>
+						<span class="shrink-0 text-base leading-none">{fileKindEmoji(file.mediaType)}</span>
+						<span class="min-w-0 flex-1 truncate text-sm font-medium text-text-ink">{file.name}</span>
+						<span class="shrink-0 text-xs text-text-muted">{file.size}</span>
+						{#if !isItemMetadataComplete(key)}
+							<span class="shrink-0 text-[10px] text-burnt-peach" title="Missing required metadata (title, date, tags)">●</span>
+						{/if}
+					</button>
+					{#if expandedMetadataKeys.includes(key)}
+						<div class="border-t border-border-soft px-6 py-5">
+							<ObjectMetadataPanel
+								objectKey={key}
+								objectLabel={file.name}
+								metadata={meta}
+								batchTitle={batchDefaults.title}
+								batchTags={summaryTags}
+								batchDate={summaryDateEditors.created.precision !== 'none' ? { value: summaryDateEditors.created.year || summaryDateEditors.created.month || summaryDateEditors.created.day || null, approximate: summaryDateEditors.created.approximate } : null}
+								batchDescription={batchDefaults.summaryText}
+								onMetadataChange={(patch) => setObjectMeta(key, patch)}
+							/>
+						</div>
+					{/if}
+				</div>
+			{/each}
+		</div>
+
+		<!-- Readiness section -->
+		<section class="rounded-2xl border border-border-soft bg-surface-white px-6 py-5">
+			<div class="flex flex-wrap items-start justify-between gap-4">
+				<div class="space-y-2">
+					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionSetup.readiness.title')}</p>
+					<p class="text-sm text-text-muted">
+						{canStartIngestion
+							? t('ingestionSetup.readiness.ready')
+							: hasPendingUploads
+								? t('ingestionSetup.readiness.uploading')
+								: hasUploadFailures
+									? t('ingestionSetup.readiness.uploadFailed')
+									: !isReady
+										? t('ingestionSetup.readiness.missing')
+										: t('ingestionSetup.readiness.missingItemMetadata')}
+					</p>
+					{#if !isReady}
+						<div class="rounded-xl border border-border-soft bg-pale-sky/15 px-4 py-3 text-xs text-text-muted">
+							<p>{format(t('ingestionSetup.readiness.missingCount'), { count: missingCount })}</p>
+							<ul class="mt-2 space-y-1">
+								{#each missingSummaries as entry (entry.file.id)}
+									<li>
+										<span class="text-text-ink">{entry.file.name}</span>
+										· {entry.missing.join(', ')}
+									</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
+					{#if isReady && incompleteItemCount > 0}
+						<div class="rounded-xl border border-border-soft bg-pale-sky/15 px-4 py-3 text-xs text-text-muted">
+							<p>{format(t('ingestionSetup.readiness.missingItemMetadataCount'), { count: incompleteItemCount })}</p>
+							<ul class="mt-2 space-y-1">
+								{#each incompleteItemSummaries as entry (entry.label)}
+									<li>
+										<span class="text-text-ink">{entry.label}</span>
+										· {entry.missing.join(', ')}
+									</li>
+								{/each}
+							</ul>
+						</div>
+					{/if}
+					{#if hasOversizedGroup}
+						<div class="rounded-xl border border-burnt-peach/35 bg-pearl-beige/60 px-4 py-3 text-xs text-text-muted">
+							This document has <strong>{largestGroupSize}</strong> pages. Please confirm this grouping before continuing.
+						</div>
+					{/if}
+					{#if batchDefaults.itemKind === 'scanned_document' && standaloneFiles.length >= 3 && !groupingWarningDismissed}
+						<div class="flex items-start gap-3 rounded-xl border border-burnt-peach/30 bg-pearl-beige/60 px-4 py-3 text-xs text-text-muted">
+							<span class="mt-0.5 shrink-0 text-burnt-peach">⚠</span>
+							<p class="flex-1">
+								You have <strong>{standaloneFiles.length}</strong> separate objects with 1 file each.
+								If these are pages of the same document, consider grouping them first.
+							</p>
+							<button
+								type="button"
+								class="shrink-0 text-text-muted/50 hover:text-text-muted"
+								onclick={() => { groupingWarningDismissed = true; }}
+								aria-label="Dismiss"
+							>✕</button>
+						</div>
+					{/if}
+				</div>
+				{#if submitError}
+					<p class="rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach">
+						{submitError}
+					</p>
+				{/if}
+			</div>
+		</section>
+	{/if}
 
 	{#if showConfirm}
 		<div class="fixed inset-0 z-50 flex items-center justify-center bg-dark-grey/60 px-6">
@@ -2673,3 +2948,57 @@
 		</div>
 	{/if}
 </main>
+
+<!-- Sticky footer -->
+<footer class="fixed bottom-0 left-0 right-0 border-t border-border-soft bg-surface-white px-6 py-4 shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+	<div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
+		{#if step === 'organize'}
+			<p class="text-sm text-text-muted">
+				{organizeObjectCount} {organizeObjectCount === 1 ? 'object' : 'objects'} ready
+				{#if standaloneFiles.length > 0}
+					· <span class="text-blue-slate/70">{standaloneFiles.length} unassigned (will become individual objects)</span>
+				{/if}
+			</p>
+			<div class="flex items-center gap-3">
+				<a
+					href="/ingestion"
+					class="rounded-full border border-blue-slate/40 px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20"
+				>
+					Back
+				</a>
+				<button
+					disabled={hasPendingUploads}
+					onclick={() => { step = 'metadata'; }}
+					class="rounded-full bg-blue-slate px-5 py-2 text-xs uppercase tracking-[0.2em] text-surface-white transition hover:bg-blue-slate/80 disabled:cursor-not-allowed disabled:opacity-50"
+				>
+					Continue →
+				</button>
+			</div>
+		{:else}
+			<p class="text-sm text-text-muted">
+				{canStartIngestion
+					? t('ingestionSetup.readiness.ready')
+					: hasPendingUploads
+						? t('ingestionSetup.readiness.uploading')
+						: t('ingestionSetup.readiness.missingItemMetadata')}
+			</p>
+			<div class="flex items-center gap-3">
+				<button
+					onclick={() => { step = 'organize'; }}
+					class="rounded-full border border-blue-slate/40 px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20"
+				>
+					← Back
+				</button>
+				<button
+					disabled={!canStartIngestion}
+					onclick={() => (showConfirm = true)}
+					class={`rounded-full px-5 py-2 text-xs uppercase tracking-[0.2em] text-surface-white ${
+						canStartIngestion ? 'bg-blue-slate' : 'bg-blue-slate/40 text-surface-white/70'
+					}`}
+				>
+					{t('common.startIngestion')}
+				</button>
+			</div>
+		{/if}
+	</div>
+</footer>
