@@ -3,23 +3,40 @@
 
 	export type SupportSheetState = 'hidden' | 'peek' | 'expanded';
 
+	export type Tab = {
+		id: string;
+		label: string;
+	};
+
 	let {
 		state,
 		title,
 		variant = 'light',
+		activeTab,
+		tabs = [],
 		onStateChange,
+		onTabChange,
 		children
 	} = $props<{
 		state: SupportSheetState;
 		title: string;
 		variant?: 'light' | 'dark';
+		activeTab?: string;
+		tabs?: Tab[];
 		onStateChange: (state: SupportSheetState) => void;
+		onTabChange?: (tabId: string) => void;
 		children?: () => unknown;
 	}>();
 
 	const handleToggle = (): void => {
 		if (state === 'peek') onStateChange('expanded');
 		else if (state === 'expanded') onStateChange('peek');
+	};
+
+	const handleTabSelect = (tabId: string): void => {
+		if (onTabChange && tabId !== activeTab) {
+			onTabChange(tabId);
+		}
 	};
 </script>
 
@@ -47,7 +64,7 @@
 			<div class={`h-1 w-9 rounded-full ${variant === 'dark' ? 'bg-white/18' : 'bg-text-muted/25'}`}></div>
 		</button>
 
-		<div class={`flex items-center justify-between gap-4 px-5 pb-3 ${state === 'expanded' ? `border-b ${variant === 'dark' ? 'border-white/8' : 'border-border-soft'}` : ''}`}>
+		<div class={`flex items-center justify-between gap-4 px-5 ${state === 'expanded' ? `pb-3 border-b ${variant === 'dark' ? 'border-white/8' : 'border-border-soft'}` : 'pb-3'}`}>
 			<div class="min-w-0">
 				<p class={`text-[10px] uppercase tracking-[0.2em] ${variant === 'dark' ? 'text-white/35' : 'text-blue-slate'}`}>Support</p>
 				<h2 class="mt-1 truncate text-sm font-medium">{title}</h2>
@@ -64,10 +81,22 @@
 			</button>
 		</div>
 
-		{#if state === 'expanded'}
-			<div class="max-h-[65vh] overflow-y-auto px-5 py-5">
-				{@render children?.()}
+		{#if tabs.length > 0}
+			<div class={`flex gap-1 px-5 py-2 ${state === 'expanded' ? 'border-b border-border-soft/50' : ''} ${variant === 'dark' ? '' : ''}`}>
+				{#each tabs as tab (tab.id)}
+					<button
+						type="button"
+						onclick={() => handleTabSelect(tab.id)}
+						class={`rounded-full px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] transition ${activeTab === tab.id ? (variant === 'dark' ? 'bg-surface-white text-text-ink shadow-sm' : 'bg-blue-slate text-surface-white shadow-sm') : (variant === 'dark' ? 'text-white/55 hover:bg-white/10' : 'text-text-muted hover:text-text-ink hover:bg-alabaster-grey/50')}`}
+					>
+						{tab.label}
+					</button>
+				{/each}
 			</div>
 		{/if}
+
+		<div class={`overflow-y-auto px-5 py-5 ${state === 'peek' ? 'max-h-[25vh]' : 'max-h-[65vh]'}`}>
+			{@render children?.()}
+		</div>
 	</aside>
 {/if}

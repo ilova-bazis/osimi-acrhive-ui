@@ -193,21 +193,6 @@
 	const introLabelClass = $derived.by(() =>
 		viewer?.mediaType === 'document' ? 'text-blue-slate' : 'text-white/45'
 	);
-	const floatingNavClass = $derived.by(() =>
-		viewer?.mediaType === 'document'
-			? 'border-border-soft/80 bg-surface-white/80'
-			: 'border-white/10 bg-black/30 backdrop-blur-md'
-	);
-	const floatingNavActiveClass = $derived.by(() =>
-		viewer?.mediaType === 'document'
-			? 'bg-surface-white text-blue-slate shadow-sm'
-			: 'bg-surface-white text-text-ink shadow-sm'
-	);
-	const floatingNavIdleClass = $derived.by(() =>
-		viewer?.mediaType === 'document'
-			? 'text-text-muted hover:text-text-ink'
-			: 'text-white/55 hover:bg-white/10 hover:text-white'
-	);
 	const requestableAvailableFileId = $derived(viewer?.primarySource.availableFileId ?? '');
 	const requestPrimaryMedia = (): void => {
 		(requestForm as HTMLFormElement | null)?.requestSubmit();
@@ -232,13 +217,14 @@
 	const handleTabSelect = (tab: TabId): void => {
 		if (activeTab !== tab) {
 			activeTab = tab;
-			supportSheetState = 'peek';
+			if (supportSheetState === 'hidden') {
+				supportSheetState = 'expanded';
+			}
 			return;
 		}
 
-		if (supportSheetState === 'hidden') supportSheetState = 'peek';
-		else if (supportSheetState === 'peek') supportSheetState = 'expanded';
-		else supportSheetState = 'hidden';
+		if (supportSheetState === 'hidden') supportSheetState = 'expanded';
+		else if (supportSheetState === 'peek' || supportSheetState === 'expanded') supportSheetState = 'hidden';
 	};
 </script>
 
@@ -330,25 +316,29 @@
 		</section>
 
 		<section class="pb-24">
-		<div class={`fixed inset-x-0 bottom-0 z-10 flex justify-center px-4 pb-4 transition-opacity duration-200 ${supportSheetState !== 'hidden' ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-			<div class={`pointer-events-auto inline-flex gap-0.5 rounded-full border p-1 ${floatingNavClass}`}>
-				{#each tabIds as tab (tab)}
-					<button
-						type="button"
-						onclick={() => handleTabSelect(tab)}
-						class={`${activeTab === tab ? floatingNavActiveClass : floatingNavIdleClass} rounded-full px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] transition`}
-					>
-						{t(`objects.detail.tabs.${tab}`)}
-					</button>
-				{/each}
+		{#if supportSheetState === 'hidden'}
+			<div class="fixed inset-x-0 bottom-0 z-10 flex justify-center px-4 pb-4">
+				<button
+					type="button"
+					onclick={() => (supportSheetState = 'expanded')}
+					class={`pointer-events-auto inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[10px] uppercase tracking-[0.2em] transition ${supportVariant === 'dark' ? 'border-white/10 bg-black/30 text-white/70 hover:bg-white/10 hover:text-white' : 'border-border-soft bg-surface-white/80 text-text-muted hover:border-blue-slate/35 hover:text-blue-slate'}`}
+				>
+					<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" class="h-4 w-4" aria-hidden="true">
+						<path d="M10 3v14M3 10h14" stroke-linecap="round" />
+					</svg>
+					Support
+				</button>
 			</div>
-		</div>
+		{/if}
 
 		<ObjectSupportSheet
 			state={supportSheetState}
 			title={activeTabLabel}
 			variant={supportVariant}
+			activeTab={activeTab}
+			tabs={tabIds.map((id) => ({ id, label: t(`objects.detail.tabs.${id}`) }))}
 			onStateChange={(state) => (supportSheetState = state)}
+			onTabChange={(tabId) => handleTabSelect(tabId as TabId)}
 		>
 		{#if activeTab === 'files'}
 			<div class="grid gap-6 xl:grid-cols-2">
