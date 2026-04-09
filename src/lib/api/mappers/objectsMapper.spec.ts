@@ -186,18 +186,20 @@ describe('mapObjectsList', () => {
 				},
 				is_authorized: true,
 				is_deliverable: true
-			}
+			},
+			viewer: null
 		});
 
-		expect(mapped.objectId).toBe('OBJ-9');
-		expect(mapped.thumbnailArtifactId).toBe('60000000-0000-4000-8000-000000000999');
-		expect(mapped.tags).toEqual(['source:family_archive']);
-		expect(mapped.ingestManifest).toEqual({
+		expect(mapped.detail.objectId).toBe('OBJ-9');
+		expect(mapped.detail.thumbnailArtifactId).toBe('60000000-0000-4000-8000-000000000999');
+		expect(mapped.detail.tags).toEqual(['source:family_archive']);
+		expect(mapped.detail.ingestManifest).toEqual({
 			schema_version: '1.0',
 			object_id: 'OBJ-9'
 		});
-		expect(mapped.isAuthorized).toBe(true);
-		expect(mapped.isDeliverable).toBe(true);
+		expect(mapped.detail.isAuthorized).toBe(true);
+		expect(mapped.detail.isDeliverable).toBe(true);
+		expect(mapped.viewer).toBeNull();
 	});
 
 	it('maps artifact list fields', () => {

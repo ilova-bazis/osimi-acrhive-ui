@@ -95,6 +95,14 @@ const documentObject: DocumentObjectView = {
 		rightsNote: 'Reading access permitted. Derivative reuse requires curator confirmation.',
 		collection: 'Osimi pilot archive'
 	},
+	mediaAccess: {
+		state: 'available',
+		action: 'read',
+		reasonCode: 'OK',
+		requestLabel: 'Request full document',
+		helperText: 'Scanned pages and OCR are ready for reading now.',
+		availableNow: ['thumbnail', 'ocr']
+	},
 	pageCount: 12,
 	pages: buildDocumentPages(12),
 	hasOcr: true
@@ -118,6 +126,14 @@ const imageObject: ImageObjectView = {
 		rightsNote: 'Open for study and exhibition with attribution to the Osimi collection.',
 		collection: 'Portrait cabinet collection'
 	},
+	mediaAccess: {
+		state: 'request_required',
+		action: 'view',
+		reasonCode: 'RESTORE_REQUIRED',
+		requestLabel: 'Request full image',
+		helperText: 'A reference preview is available now. The high-resolution scan must be restored before close inspection.',
+		availableNow: ['thumbnail']
+	},
 	imageUrl: imageSvg(),
 	imageAlt: 'Mock archival portrait rendered as a moody studio photograph.',
 	hasZoom: true
@@ -140,6 +156,20 @@ const audioObject: AudioObjectView = {
 		accessLevel: 'Family',
 		rightsNote: 'Listening allowed for approved researchers. Public quotation remains restricted.',
 		collection: 'Voices of the archive'
+	},
+	mediaAccess: {
+		state: 'request_pending',
+		action: 'listen',
+		reasonCode: 'RESTORE_IN_PROGRESS',
+		requestLabel: 'Request audio access',
+		helperText: 'Transcript is ready, but the listening copy is still being staged from archive storage.',
+		availableNow: ['transcript', 'thumbnail'],
+		pendingRequest: {
+			id: 'req-audio-001',
+			status: 'PROCESSING',
+			requestedAt: '2026-04-02T10:15:00Z',
+			estimatedReadyLabel: 'Usually ready in a minute or two'
+		}
 	},
 	durationSeconds: 382,
 	waveform: [20, 34, 28, 52, 40, 61, 46, 30, 18, 24, 46, 57, 68, 45, 38, 29, 22, 19, 31, 54, 62, 48, 34, 26, 16, 24, 42, 50, 64, 59, 44, 28],
@@ -192,6 +222,14 @@ const videoObject: VideoObjectView = {
 		accessLevel: 'Public',
 		rightsNote: 'May be screened for teaching and non-commercial research with source credit.',
 		collection: 'Moving image shelf'
+	},
+	mediaAccess: {
+		state: 'request_required',
+		action: 'watch',
+		reasonCode: 'RESTORE_REQUIRED',
+		requestLabel: 'Request video access',
+		helperText: 'Poster, captions, and transcript can be reviewed now. Playback starts after a streaming copy is prepared.',
+		availableNow: ['poster', 'captions', 'transcript']
 	},
 	durationSeconds: 264,
 	posterUrl: videoPosterSvg(),

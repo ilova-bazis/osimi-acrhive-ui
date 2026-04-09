@@ -2,8 +2,10 @@
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import Chip from '$lib/components/Chip.svelte';
-	import ObjectThumbnail from '$lib/components/ObjectThumbnail.svelte';
-	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import ObjectDetailInfoDrawer from '$lib/components/object-detail/ObjectDetailInfoDrawer.svelte';
+	import ObjectDetailTopBar from '$lib/components/object-detail/ObjectDetailTopBar.svelte';
+	import ObjectSupportSheet from '$lib/components/object-detail/ObjectSupportSheet.svelte';
+	import ObjectViewerCanvas from '$lib/components/object-detail/ObjectViewerCanvas.svelte';
 	import { locale } from '$lib/i18n/locale';
 	import { translations } from '$lib/i18n/translations';
 	import { formatTemplate, translate } from '$lib/i18n/translate';
@@ -11,12 +13,21 @@
 	import type {
 		ObjectArtifact,
 		ObjectAvailableFile,
-		ObjectDetail,
+		ObjectDetail
 	} from '$lib/services/objects';
 	import type { FileStatus } from '$lib/types';
 	import type { ActionData } from './$types';
 
 	type TabId = 'files' | 'access' | 'requests' | 'raw';
+	type SupportSheetState = 'hidden' | 'peek' | 'expanded';
+
+	type ObjectViewer = {
+		mediaType: 'document' | 'image' | 'audio' | 'video';
+		primarySource: {
+			status: 'available' | 'request_required' | 'request_pending' | 'restricted' | 'temporarily_unavailable';
+			availableFileId: string | null;
+		};
+	};
 
 	let {
 		data,
@@ -24,6 +35,7 @@
 	} = $props<{
 		data: {
 			detail: ObjectDetail;
+			viewer: ObjectViewer | null;
 			artifacts: ObjectArtifact[];
 			artifactsError: string | null;
 			availableFiles: ObjectAvailableFile[];
@@ -35,6 +47,7 @@
 	}>();
 
 	const detail = $derived(data.detail);
+	const viewer = $derived(data.viewer);
 	const artifacts = $derived(data.artifacts);
 	const artifactsError = $derived(data.artifactsError);
 	const availableFiles = $derived(data.availableFiles);
@@ -43,10 +56,13 @@
 	const pendingRequestsError = $derived(data.pendingRequestsError);
 
 	let activeTab = $state<TabId>('files');
+	let supportSheetState = $state<SupportSheetState>('hidden');
+	let infoOpen = $state(false);
 	let showRawManifest = $state(false);
 	let showResyncConfirm = $state(false);
 	let resyncRunning = $state(false);
 	let resyncMessage = $state<{ type: 'success' | 'error'; text: string } | null>(null);
+	let requestForm = $state<HTMLFormElement | null>(null);
 
 	const runResync = async () => {
 		showResyncConfirm = false;
@@ -158,57 +174,109 @@
 	const displayTitle = $derived(
 		detail.title ?? formatTemplate(t('objects.detail.untitled'), { suffix: detail.objectId.slice(-6) })
 	);
+	const reviewLabel = $derived.by(() => {
+		if (viewer?.primarySource.status === 'available') return 'Media available in read-only mode';
+		if (viewer?.primarySource.status === 'request_pending') return 'Primary media request in progress';
+		if (viewer?.primarySource.status === 'request_required') return 'Primary media available on request';
+		if (viewer?.primarySource.status === 'restricted') return 'Preview artifacts only';
+		return 'Read-only object inspection';
+	});
+	const mediaTypeLabel = $derived(viewer?.mediaType ?? detail.type.toLowerCase());
+	const pageBgClass = $derived.by(() => {
+		if (viewer?.mediaType === 'document') return 'bg-[linear-gradient(180deg,#f5f2eb_0%,#edf1f2_100%)]';
+		if (viewer?.mediaType === 'audio') return 'bg-[#1f2f38]';
+		return 'bg-[#0a0f12]';
+	});
+	const introTextClass = $derived.by(() =>
+		viewer?.mediaType === 'document' ? 'text-text-muted' : 'text-white/65'
+	);
+	const introLabelClass = $derived.by(() =>
+		viewer?.mediaType === 'document' ? 'text-blue-slate' : 'text-white/45'
+	);
+	const floatingNavClass = $derived.by(() =>
+		viewer?.mediaType === 'document'
+			? 'border-border-soft/80 bg-surface-white/80'
+			: 'border-white/10 bg-black/30 backdrop-blur-md'
+	);
+	const floatingNavActiveClass = $derived.by(() =>
+		viewer?.mediaType === 'document'
+			? 'bg-surface-white text-blue-slate shadow-sm'
+			: 'bg-surface-white text-text-ink shadow-sm'
+	);
+	const floatingNavIdleClass = $derived.by(() =>
+		viewer?.mediaType === 'document'
+			? 'text-text-muted hover:text-text-ink'
+			: 'text-white/55 hover:bg-white/10 hover:text-white'
+	);
+	const requestableAvailableFileId = $derived(viewer?.primarySource.availableFileId ?? '');
+	const requestPrimaryMedia = (): void => {
+		(requestForm as HTMLFormElement | null)?.requestSubmit();
+	};
+
+	$effect(() => {
+		if (viewer?.primarySource.status !== 'request_pending') return;
+
+		const interval = window.setInterval(() => {
+			void invalidateAll();
+		}, 12000);
+
+		return () => {
+			window.clearInterval(interval);
+		};
+	});
 
 	const tabIds: TabId[] = ['files', 'access', 'requests', 'raw'];
+	const activeTabLabel = $derived(t(`objects.detail.tabs.${activeTab}`));
+	const supportVariant = $derived(viewer?.mediaType === 'document' ? 'light' : 'dark');
+
+	const handleTabSelect = (tab: TabId): void => {
+		if (activeTab !== tab) {
+			activeTab = tab;
+			supportSheetState = 'peek';
+			return;
+		}
+
+		if (supportSheetState === 'hidden') supportSheetState = 'peek';
+		else if (supportSheetState === 'peek') supportSheetState = 'expanded';
+		else supportSheetState = 'hidden';
+	};
 </script>
 
-<main class="mx-auto flex min-h-[80vh] max-w-6xl flex-col gap-6 px-6 py-10">
-	<section class="rounded-2xl border border-border-soft bg-surface-white px-6 py-5">
-		<div class="flex items-center justify-between gap-4">
-			<a
-				href={resolve('/objects')}
-				class="flex items-center gap-1.5 text-[11px] text-text-muted transition-colors hover:text-blue-slate"
-			>
-				<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" class="h-3.5 w-3.5 shrink-0" aria-hidden="true">
-					<path d="M12 4L6 10L12 16" stroke-linecap="round" stroke-linejoin="round"/>
-				</svg>
-				{t('objects.detail.back')}
-			</a>
-			<div class="flex items-center gap-3">
-				{#if resyncMessage}
-					<p class={`text-[11px] ${resyncMessage.type === 'success' ? 'text-blue-slate' : 'text-burnt-peach'}`}>
-						{resyncMessage.text}
-					</p>
+<ObjectDetailTopBar
+	backHref={resolve('/objects')}
+	title={displayTitle}
+	objectId={detail.objectId}
+	processingLabel={processingLabel(detail.processingState)}
+	processingTone={toTone(detail.processingState, detail.curationState)}
+	availabilityLabel={availabilityLabel(detail.availabilityState)}
+	accessLevelLabel={accessLevelLabel(detail.accessLevel)}
+	reviewLabel={reviewLabel}
+	onInfoToggle={() => (infoOpen = !infoOpen)}
+	onResync={() => (showResyncConfirm = true)}
+	{resyncRunning}
+	{resyncMessage}
+/>
+
+
+<main class={`min-h-screen ${pageBgClass}`}>
+	<div class="mx-auto flex max-w-[96rem] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+		<div class="max-w-3xl">
+			<p class={`text-xs uppercase tracking-[0.2em] ${introLabelClass}`}>{mediaTypeLabel} object</p>
+			<p class={`mt-2 text-sm leading-relaxed ${introTextClass}`}>{descriptionText ?? 'Read-only object inspection with media-first access, preview artifacts, and request-aware behavior.'}</p>
+			<div class="mt-4 flex flex-wrap items-center gap-2">
+				<Chip class="border-border-soft bg-surface-white/80 text-[10px] uppercase tracking-[0.18em] text-text-muted">View mode</Chip>
+				{#if viewer}
+					<Chip class="border-blue-slate/20 bg-pale-sky/18 text-[10px] uppercase tracking-[0.18em] text-blue-slate">{viewer.mediaType}</Chip>
 				{/if}
-				<button
-					type="button"
-					onclick={() => (showResyncConfirm = true)}
-					disabled={resyncRunning}
-					class="flex items-center gap-1.5 text-[11px] text-text-muted transition-colors hover:text-blue-slate disabled:cursor-not-allowed disabled:opacity-40"
-				>
-					<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" class={`h-3.5 w-3.5 shrink-0 ${resyncRunning ? 'animate-spin' : ''}`} aria-hidden="true">
-						<path d="M4.5 10a5.5 5.5 0 1 1 1.4 3.7" stroke-linecap="round" stroke-linejoin="round"/>
-						<path d="M4.5 14.5v-4h4" stroke-linecap="round" stroke-linejoin="round"/>
-					</svg>
-					{t('objects.resync.button')}
-				</button>
+				{#if viewer?.primarySource.status === 'request_required'}
+					<Chip class="border-pearl-beige bg-pearl-beige/60 text-[10px] uppercase tracking-[0.18em] text-blue-slate">Request required</Chip>
+				{:else if viewer?.primarySource.status === 'request_pending'}
+					<Chip class="border-blue-slate/20 bg-alabaster-grey/80 text-[10px] uppercase tracking-[0.18em] text-blue-slate">Request pending</Chip>
+				{:else if viewer?.primarySource.status === 'available'}
+					<Chip class="border-blue-slate/20 bg-pale-sky/18 text-[10px] uppercase tracking-[0.18em] text-blue-slate">Available now</Chip>
+				{/if}
 			</div>
 		</div>
-		<h1 class="mt-4 font-display text-2xl text-text-ink">{displayTitle}</h1>
-		<p class="mt-1 text-xs text-text-muted">{detail.objectId}</p>
-		<div class="mt-3 flex flex-wrap items-center gap-2">
-			<StatusBadge
-				status={toTone(detail.processingState, detail.curationState)}
-				label={processingLabel(detail.processingState)}
-			/>
-			<Chip class="border-blue-slate/30 bg-pale-sky/25 text-[10px] text-blue-slate">
-				{availabilityLabel(detail.availabilityState)}
-			</Chip>
-			<Chip class="border-border-soft bg-alabaster-grey/60 text-[10px] text-text-muted">
-				{accessLevelLabel(detail.accessLevel)}
-			</Chip>
-		</div>
-	</section>
 
 {#if showResyncConfirm}
 	<button
@@ -239,66 +307,36 @@
 	</div>
 {/if}
 
-	<section class="grid gap-6 lg:grid-cols-[1.15fr_1fr]">
-		<article class="rounded-2xl border border-border-soft bg-surface-white p-5">
-			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.detail.preview.title')}</p>
-			<p class="mt-1 text-sm text-text-muted">{t('objects.detail.preview.subtitle')}</p>
-			<ObjectThumbnail
-				objectId={detail.objectId}
-				thumbnailArtifactId={detail.thumbnailArtifactId}
-				objectType={detail.type}
-				class="mt-4 h-72 w-full"
-			/>
-		</article>
-
-		<article class="rounded-2xl border border-border-soft bg-surface-white px-6 py-5">
-			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.detail.description.title')}</p>
-			<p class="mt-3 text-sm leading-relaxed text-text-ink">
-				{descriptionText ?? t('objects.detail.description.empty')}
-			</p>
-			{#if displayTags.length > 0}
-				<div class="mt-4">
-					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">
-						{t('objects.detail.description.tags')}
-					</p>
-					<div class="mt-2 flex flex-wrap gap-2">
-						{#each displayTags as tag (tag)}
-							<Chip class="border-blue-slate/30 bg-pale-sky/20 text-[10px] text-blue-slate">{tag}</Chip>
-						{/each}
-					</div>
-				</div>
+		<section class="space-y-4">
+			{#if form?.message}
+				<p class="rounded-xl border border-blue-slate/35 bg-pale-sky/25 px-4 py-3 text-sm text-blue-slate">
+					{form.message}
+				</p>
 			{/if}
-			<div class="mt-5 grid gap-3 text-sm text-text-muted sm:grid-cols-2">
-				<p>{t('objects.detail.provenance.type')}: <span class="text-text-ink">{detail.type}</span></p>
-				<p>{t('objects.detail.access.language')}: <span class="text-text-ink">{detail.language ?? '-'}</span></p>
-				<p>{t('objects.detail.provenance.created')}: <span class="text-text-ink">{formatDate(detail.createdAt)}</span></p>
-				<p>{t('objects.detail.provenance.updated')}: <span class="text-text-ink">{formatDate(detail.updatedAt)}</span></p>
-				{#if detail.sourceBatchLabel}
-					<p>
-						{t('objects.detail.provenance.batch')}: <span class="text-text-ink">{detail.sourceBatchLabel}</span>
-					</p>
-				{/if}
-				{#if detail.sourceIngestionId}
-					<p>
-						{t('objects.detail.provenance.ingestion')}: <a href={resolve('/ingestion/[batchId]', { batchId: detail.sourceIngestionId })} class="text-blue-slate underline-offset-2 hover:underline">{detail.sourceIngestionId}</a>
-					</p>
-				{/if}
-			</div>
-		</article>
-	</section>
+			{#if form?.error}
+				<p class="rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-4 py-3 text-sm text-burnt-peach">
+					{form.error}
+				</p>
+			{/if}
+			<form bind:this={requestForm} method="POST" action="?/requestDownload" class="hidden">
+				<input type="hidden" name="availableFileId" value={requestableAvailableFileId} />
+			</form>
+			<ObjectViewerCanvas
+				objectId={detail.objectId}
+				title={displayTitle}
+				{viewer}
+				onRequest={requestPrimaryMedia}
+			/>
+		</section>
 
-	<section class="rounded-2xl border border-border-soft bg-surface-white">
-		<div class="px-6 pt-5">
-			<div class="inline-flex gap-0.5 rounded-xl bg-alabaster-grey/70 p-1">
+		<section class="pb-24">
+		<div class={`fixed inset-x-0 bottom-0 z-10 flex justify-center px-4 pb-4 transition-opacity duration-200 ${supportSheetState !== 'hidden' ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+			<div class={`pointer-events-auto inline-flex gap-0.5 rounded-full border p-1 ${floatingNavClass}`}>
 				{#each tabIds as tab (tab)}
 					<button
 						type="button"
-						onclick={() => {
-							activeTab = tab;
-						}}
-						class={activeTab === tab
-							? 'rounded-lg bg-surface-white px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-blue-slate shadow-sm'
-							: 'rounded-lg px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-text-muted transition-colors hover:text-text-ink'}
+						onclick={() => handleTabSelect(tab)}
+						class={`${activeTab === tab ? floatingNavActiveClass : floatingNavIdleClass} rounded-full px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] transition`}
 					>
 						{t(`objects.detail.tabs.${tab}`)}
 					</button>
@@ -306,8 +344,12 @@
 			</div>
 		</div>
 
-		<div class="px-6 pb-6 pt-5">
-
+		<ObjectSupportSheet
+			state={supportSheetState}
+			title={activeTabLabel}
+			variant={supportVariant}
+			onStateChange={(state) => (supportSheetState = state)}
+		>
 		{#if activeTab === 'files'}
 			<div class="grid gap-6 xl:grid-cols-2">
 				<article>
@@ -325,9 +367,9 @@
 					{:else if artifacts.length === 0}
 						<p class="mt-4 text-sm text-text-muted">{t('objects.detail.artifacts.empty')}</p>
 					{:else}
-						<div class="mt-4 space-y-3">
+						<div class="mt-4 divide-y divide-border-soft/70 rounded-xl border border-border-soft/70 bg-transparent">
 							{#each artifacts as artifact (artifact.id)}
-								<div class="rounded-xl border border-border-soft bg-alabaster-grey/35 p-3">
+								<div class="p-3 first:rounded-t-xl last:rounded-b-xl">
 									<div class="flex flex-wrap items-start justify-between gap-3">
 										<div class="text-sm text-text-ink">
 											<p class="font-medium">{artifact.kind}</p>
@@ -382,9 +424,9 @@
 					{:else if availableFiles.length === 0}
 						<p class="mt-4 text-sm text-text-muted">{t('objects.detail.availableFiles.empty')}</p>
 					{:else}
-						<div class="mt-4 space-y-3">
+						<div class="mt-4 divide-y divide-border-soft/70 rounded-xl border border-border-soft/70 bg-transparent">
 							{#each availableFiles as file (file.id)}
-								<div class="rounded-xl border border-border-soft bg-alabaster-grey/35 p-3">
+								<div class="p-3 first:rounded-t-xl last:rounded-b-xl">
 									<div class="flex flex-wrap items-start justify-between gap-3">
 										<div class="text-sm text-text-ink">
 											<p class="font-medium">{file.displayName}</p>
@@ -506,7 +548,23 @@
 				{/if}
 			</section>
 		{/if}
-
-		</div>
+		</ObjectSupportSheet>
 	</section>
+	</div>
 </main>
+
+<ObjectDetailInfoDrawer
+	open={infoOpen}
+	title={displayTitle}
+	description={descriptionText}
+	tags={displayTags}
+	type={detail.type}
+	language={detail.language}
+	createdAt={formatDate(detail.createdAt)}
+	updatedAt={formatDate(detail.updatedAt)}
+	sourceBatchLabel={detail.sourceBatchLabel}
+	sourceIngestionId={detail.sourceIngestionId}
+	rightsNote={detail.rightsNote}
+	sensitivityNote={detail.sensitivityNote}
+	onClose={() => (infoOpen = false)}
+/>

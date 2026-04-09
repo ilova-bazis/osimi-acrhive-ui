@@ -1,14 +1,21 @@
 <script lang="ts">
 	import type { ObjectViewDocumentPage } from '$lib/objectView/types';
+	import AltMediaRequestBanner from './AltMediaRequestBanner.svelte';
+
+	type Availability = 'AVAILABLE' | 'ARCHIVED' | 'RESTORE_PENDING' | 'RESTORING' | 'UNAVAILABLE';
 
 	let {
 		title,
 		pages,
-		hasOcr
+		hasOcr,
+		availability = 'AVAILABLE',
+		onRequestAccess
 	} = $props<{
 		title: string;
 		pages: ObjectViewDocumentPage[];
 		hasOcr: boolean;
+		availability?: Availability;
+		onRequestAccess?: () => void;
 	}>();
 
 	let zoom = $state(1);
@@ -18,9 +25,9 @@
 	let controlsVisible = $state(true);
 	let fadeTimer = 0;
 
+	const isAvailable = $derived(availability === 'AVAILABLE');
 	const totalPages = $derived(pages.length);
 	const zoomLabel = $derived(`${Math.round(zoom * 100)}%`);
-	const zoomWidth = $derived(`${Math.round(zoom * 100)}%`);
 
 	const clampZoom = (value: number): number => Math.min(1.6, Math.max(0.7, value));
 
@@ -57,18 +64,24 @@
 			<p class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">Document</p>
 			<span class="h-3 w-px bg-blue-slate/20"></span>
 			<p class="text-[10px] text-text-muted">{totalPages} pages</p>
+			{#if !isAvailable}
+				<span class="h-3 w-px bg-blue-slate/20"></span>
+				<p class="text-[10px] text-burnt-peach">Preview quality</p>
+			{/if}
 		</div>
 		<div class="flex items-center gap-1.5">
 			<button
 				type="button"
-				class="rounded-full border border-border-soft bg-surface-white px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20"
+				class="rounded-full border border-border-soft bg-surface-white px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20 disabled:opacity-35 disabled:cursor-not-allowed"
 				onclick={() => (zoom = clampZoom(zoom - 0.1))}
+				disabled={!isAvailable}
 			>-</button>
 			<span class="min-w-[3.5rem] rounded-full border border-border-soft bg-surface-white px-2.5 py-1 text-center text-[10px] uppercase tracking-[0.2em] text-text-ink">{zoomLabel}</span>
 			<button
 				type="button"
-				class="rounded-full border border-border-soft bg-surface-white px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20"
+				class="rounded-full border border-border-soft bg-surface-white px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20 disabled:opacity-35 disabled:cursor-not-allowed"
 				onclick={() => (zoom = clampZoom(zoom + 0.1))}
+				disabled={!isAvailable}
 			>+</button>
 			<span class="mx-1 h-4 w-px bg-border-soft"></span>
 			<button
@@ -88,20 +101,37 @@
 		class="flex-1 overflow-y-auto overflow-x-hidden"
 		onscroll={updateCurrentPage}
 	>
-		<div class="mx-auto px-4 py-6 sm:px-8" style="max-width: {Math.round(64 * zoom)}rem;">
+		<!-- Request banner when not available -->
+		{#if !isAvailable}
+			<div class="mx-auto max-w-xl px-4 pt-6">
+				<AltMediaRequestBanner
+					{availability}
+					mediaLabel="document scans"
+					variant="light"
+					onRequest={onRequestAccess ?? (() => {})}
+				/>
+			</div>
+		{/if}
+
+		<div class="mx-auto px-4 py-6 sm:px-8" style="max-width: {Math.round(64 * (isAvailable ? zoom : 1))}rem;">
 			{#each pages as page, index (page.id)}
 				<article
 					data-page-index={index + 1}
 					class="relative mb-6"
 				>
-					<div class="overflow-hidden rounded-lg border border-[#d7ccb4]/60 bg-[#fbf8f1] shadow-[0_4px_20px_rgba(79,109,122,0.1)]">
+					<div class="relative overflow-hidden rounded-lg border border-[#d7ccb4]/60 bg-[#fbf8f1] shadow-[0_4px_20px_rgba(79,109,122,0.1)]">
 						<img
 							src={page.imageUrl}
 							alt="{title} {page.label}"
 							loading="lazy"
-							class="block h-auto w-full select-none"
+							class="block h-auto w-full select-none {!isAvailable ? 'opacity-60' : ''}"
 							draggable="false"
 						/>
+						{#if !isAvailable}
+							<div class="absolute right-3 top-3 rounded-full border border-burnt-peach/25 bg-pearl-beige/80 px-2.5 py-1 text-[9px] uppercase tracking-[0.15em] text-burnt-peach">
+								Preview
+							</div>
+						{/if}
 					</div>
 					{#if showOcr}
 						<div class="mt-2 rounded-lg border border-blue-slate/10 bg-surface-white/90 px-4 py-3">

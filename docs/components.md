@@ -523,3 +523,15 @@ Prototype audio player with waveform-style playback UI, progress indicator, and 
 ### VideoViewer
 
 Prototype video player with poster canvas, playback timeline, captions toggle, and optional transcript reveal.
+
+### ObjectMediaGate
+
+Read-only access gate for object media that appears when the source file is not yet deliverable. It keeps preview artifacts visible while presenting request-required, request-pending, or unavailable states directly inside the media canvas.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| mediaType | `document` \\| `image` \\| `audio` \\| `video` | yes | Tunes the visual treatment to the media being requested |
+| access | object | yes | Current request state, helper text, preview artifacts, and optional pending request metadata |
+| onRequest | () => void | yes | Prototype callback used to simulate requesting source media |

@@ -132,18 +132,21 @@ export const mockObjectsService: ObjectsService = {
 		}
 
 		return {
-			...found,
-			ingestManifest: {
-				schema_version: '1.0',
-				object_id: found.objectId,
-				classification: {
-					type: found.type,
-					language: found.language,
-					tags: found.tags
-				}
+			detail: {
+				...found,
+				ingestManifest: {
+					schema_version: '1.0',
+					object_id: found.objectId,
+					classification: {
+						type: found.type,
+						language: found.language,
+						tags: found.tags
+					}
+				},
+				isAuthorized: found.accessReasonCode !== 'FORBIDDEN_POLICY',
+				isDeliverable: found.availabilityState === 'AVAILABLE'
 			},
-			isAuthorized: found.accessReasonCode !== 'FORBIDDEN_POLICY',
-			isDeliverable: found.availabilityState === 'AVAILABLE'
+			viewer: null
 		};
 	},
 	listObjectArtifacts: async ({ objectId }) => [

@@ -87,7 +87,7 @@ describe('/objects/[objectId] +page.server', () => {
 			isDeliverable: true
 		};
 
-		getObjectDetailMock.mockResolvedValue(detail);
+		getObjectDetailMock.mockResolvedValue({ detail, viewer: null });
 
 		await expect(
 			load({
@@ -98,6 +98,7 @@ describe('/objects/[objectId] +page.server', () => {
 			} as never)
 		).resolves.toEqual({
 			detail,
+			viewer: null,
 			artifacts: [],
 			artifactsError: null,
 			availableFiles: [],
@@ -167,7 +168,7 @@ describe('/objects/[objectId] +page.server', () => {
 			isDeliverable: true
 		};
 
-		getObjectDetailMock.mockResolvedValue(detail);
+		getObjectDetailMock.mockResolvedValue({ detail, viewer: null });
 		listObjectArtifactsMock.mockRejectedValue(
 			new ApiClientError({
 				status: 502,
@@ -186,6 +187,7 @@ describe('/objects/[objectId] +page.server', () => {
 			} as never)
 		).resolves.toEqual({
 			detail,
+			viewer: null,
 			artifacts: [],
 			artifactsError: 'Failed to load object artifacts (request: req-123).',
 			availableFiles: [],

@@ -35,7 +35,7 @@ export const load = async ({
     }
 
     try {
-        const detail = await objectsService.getObjectDetail({
+        const { detail, viewer } = await objectsService.getObjectDetail({
             context,
             objectId,
         });
@@ -114,6 +114,7 @@ export const load = async ({
 
         return {
             detail,
+			viewer,
             artifacts,
             artifactsError,
             availableFiles,

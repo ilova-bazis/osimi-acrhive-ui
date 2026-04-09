@@ -5,6 +5,7 @@ import type {
 	ObjectAvailableFilesResponseDto,
 	ObjectDetailItemDto,
 	ObjectDetailResponseDto,
+	ObjectViewerDto,
 	ObjectDownloadRequestDto,
 	ObjectListItemDto,
 	ObjectsListResponseDto,
@@ -13,14 +14,22 @@ import type {
 	CreateObjectResyncResponseDto
 } from '$lib/api/schemas/objects';
 import type {
+	AudioViewerPayload,
 	CreateObjectDownloadRequestResult,
+	DocumentViewerPayload,
 	ObjectArtifact,
 	ObjectAvailableFile,
 	ObjectDetail,
+	ObjectDetailResponse,
 	ObjectDownloadRequest,
 	ObjectIndicators,
 	ObjectRow,
+	ObjectViewer,
+	ObjectViewerActiveRequest,
+	ObjectViewerArtifactRef,
 	ObjectsListResponse,
+	VideoViewerPayload,
+	ImageViewerPayload,
 	ObjectResyncRequest,
 	CreateObjectResyncResult
 } from '$lib/services/objects';
@@ -66,6 +75,98 @@ const toObjectDetail = (item: ObjectDetailItemDto): ObjectDetail => ({
 	ingestManifest: item.ingest_manifest ?? null,
 	isAuthorized: item.is_authorized ?? true,
 	isDeliverable: item.is_deliverable ?? item.can_download
+});
+
+const toObjectViewerArtifactRef = (item: NonNullable<ObjectViewerDto['preview_artifacts']['thumbnail']>): ObjectViewerArtifactRef => ({
+	available: item.available,
+	artifactId: item.artifact_id,
+	contentType: item.content_type,
+	displayName: item.display_name,
+	metadata: item.metadata,
+});
+
+const toObjectViewerActiveRequest = (item: NonNullable<ObjectViewerDto['active_request']>): ObjectViewerActiveRequest => ({
+	id: item.id,
+	actionType: item.action_type,
+	status: item.status,
+	createdAt: item.created_at,
+	updatedAt: item.updated_at,
+});
+
+const toDocumentViewerPayload = (item: Extract<ObjectViewerDto['viewer_payload'], { kind: 'document' }>): DocumentViewerPayload => ({
+	kind: item.kind,
+	artifactId: item.artifact_id,
+	contentType: item.content_type,
+	ocrTextArtifactId: item.ocr_text_artifact_id,
+	pageCount: item.page_count,
+	pages: item.pages?.map((page) => ({
+		pageNumber: page.page_number,
+		label: page.label ?? null,
+		imageArtifactId: page.image_artifact_id,
+		ocrTextArtifactId: page.ocr_text_artifact_id,
+	})),
+});
+
+const toImageViewerPayload = (item: Extract<ObjectViewerDto['viewer_payload'], { kind: 'image' }>): ImageViewerPayload => ({
+	kind: item.kind,
+	artifactId: item.artifact_id,
+	contentType: item.content_type,
+	width: item.width,
+	height: item.height,
+});
+
+const toAudioViewerPayload = (item: Extract<ObjectViewerDto['viewer_payload'], { kind: 'audio' }>): AudioViewerPayload => ({
+	kind: item.kind,
+	artifactId: item.artifact_id,
+	contentType: item.content_type,
+	transcriptArtifactId: item.transcript_artifact_id,
+	durationSeconds: item.duration_seconds,
+});
+
+const toVideoViewerPayload = (item: Extract<ObjectViewerDto['viewer_payload'], { kind: 'video' }>): VideoViewerPayload => ({
+	kind: item.kind,
+	artifactId: item.artifact_id,
+	contentType: item.content_type,
+	posterArtifactId: item.poster_artifact_id,
+	transcriptArtifactId: item.transcript_artifact_id,
+	captionsArtifactId: item.captions_artifact_id,
+	durationSeconds: item.duration_seconds,
+});
+
+const toObjectViewer = (item: ObjectViewerDto): ObjectViewer => ({
+	mediaType: item.media_type,
+	primarySource: {
+		sourceType: item.primary_source.source_type,
+		artifactKind: item.primary_source.artifact_kind,
+		variant: item.primary_source.variant,
+		status: item.primary_source.status,
+		availableFileId: item.primary_source.available_file_id,
+		artifactId: item.primary_source.artifact_id,
+		displayName: item.primary_source.display_name,
+		contentType: item.primary_source.content_type,
+		sizeBytes: item.primary_source.size_bytes,
+		accessReasonCode: item.primary_source.access_reason_code,
+	},
+	activeRequest: item.active_request ? toObjectViewerActiveRequest(item.active_request) : null,
+	previewArtifacts: {
+		thumbnail: item.preview_artifacts.thumbnail ? toObjectViewerArtifactRef(item.preview_artifacts.thumbnail) : null,
+		poster: item.preview_artifacts.poster ? toObjectViewerArtifactRef(item.preview_artifacts.poster) : null,
+		ocrText: item.preview_artifacts.ocr_text ? toObjectViewerArtifactRef(item.preview_artifacts.ocr_text) : null,
+		transcript: item.preview_artifacts.transcript ? toObjectViewerArtifactRef(item.preview_artifacts.transcript) : null,
+		captions: item.preview_artifacts.captions ? toObjectViewerArtifactRef(item.preview_artifacts.captions) : null,
+	},
+	viewerPayload: (() => {
+		switch (item.viewer_payload.kind) {
+			case 'document':
+				return toDocumentViewerPayload(item.viewer_payload);
+			case 'image':
+				return toImageViewerPayload(item.viewer_payload);
+			case 'audio':
+				return toAudioViewerPayload(item.viewer_payload);
+			case 'video':
+				return toVideoViewerPayload(item.viewer_payload);
+		}
+	})(),
 });
 
 const toObjectArtifact = (item: ObjectArtifactDto): ObjectArtifact => ({
@@ -120,8 +221,10 @@ export const mapObjectsList = (params: {
 	};
 };
 
-export const mapObjectDetail = (response: ObjectDetailResponseDto): ObjectDetail =>
-	toObjectDetail(response.object);
+export const mapObjectDetail = (response: ObjectDetailResponseDto): ObjectDetailResponse => ({
+	detail: toObjectDetail(response.object),
+	viewer: response.viewer ? toObjectViewer(response.viewer) : null,
+});
 
 export const mapObjectArtifacts = (response: ObjectArtifactsResponseDto): ObjectArtifact[] =>
 	response.artifacts.map(toObjectArtifact);

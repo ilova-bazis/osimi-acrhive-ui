@@ -2,6 +2,42 @@ export type ObjectViewMediaType = 'document' | 'image' | 'audio' | 'video';
 
 export type ObjectViewStatus = 'READY' | 'PROCESSING' | 'NEEDS_REVIEW';
 
+export type ObjectViewReasonCode =
+	| 'OK'
+	| 'FORBIDDEN_POLICY'
+	| 'EMBARGO_ACTIVE'
+	| 'RESTORE_REQUIRED'
+	| 'RESTORE_IN_PROGRESS'
+	| 'TEMP_UNAVAILABLE';
+
+export type ObjectViewMediaAccessState =
+	| 'available'
+	| 'request_required'
+	| 'request_pending'
+	| 'restricted'
+	| 'temporarily_unavailable';
+
+export type ObjectViewMediaAccessAction = 'read' | 'view' | 'listen' | 'watch';
+
+export type ObjectViewPreviewArtifact = 'thumbnail' | 'ocr' | 'transcript' | 'captions' | 'poster';
+
+export type ObjectViewPendingRequest = {
+	id: string;
+	status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+	requestedAt: string;
+	estimatedReadyLabel: string;
+};
+
+export type ObjectViewMediaAccess = {
+	state: ObjectViewMediaAccessState;
+	action: ObjectViewMediaAccessAction;
+	reasonCode: ObjectViewReasonCode;
+	requestLabel: string;
+	helperText: string;
+	availableNow: ObjectViewPreviewArtifact[];
+	pendingRequest?: ObjectViewPendingRequest;
+};
+
 export type ObjectViewTag = {
 	label: string;
 };
@@ -47,6 +83,7 @@ type ObjectViewBase = {
 	subtitle: string;
 	metadata: ObjectViewMetadata;
 	reviewLabel: string;
+	mediaAccess: ObjectViewMediaAccess;
 };
 
 export type DocumentObjectView = ObjectViewBase & {

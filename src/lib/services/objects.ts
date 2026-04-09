@@ -76,6 +76,128 @@ export type ObjectDetail = ObjectRow & {
 	isDeliverable: boolean;
 };
 
+export type ObjectViewerMediaType = 'document' | 'image' | 'audio' | 'video';
+
+export type ObjectViewerSourceType =
+	| 'original'
+	| 'access_copy'
+	| 'stream'
+	| 'preview'
+	| 'other';
+
+export type ObjectViewerPrimarySourceStatus =
+	| 'available'
+	| 'request_required'
+	| 'request_pending'
+	| 'restricted'
+	| 'temporarily_unavailable';
+
+export type ObjectViewerActiveRequest = {
+	id: string;
+	actionType: 'artifact_fetch';
+	status: 'PENDING' | 'PROCESSING';
+	createdAt: string;
+	updatedAt: string;
+};
+
+export type ObjectViewerArtifactRef = {
+	available: true;
+	artifactId: string;
+	contentType: string | null;
+	displayName: string | null;
+	metadata: Record<string, unknown>;
+};
+
+export type ObjectViewerPreviewArtifacts = {
+	thumbnail: ObjectViewerArtifactRef | null;
+	poster: ObjectViewerArtifactRef | null;
+	ocrText: ObjectViewerArtifactRef | null;
+	transcript: ObjectViewerArtifactRef | null;
+	captions: ObjectViewerArtifactRef | null;
+};
+
+export type ObjectViewerPrimarySource = {
+	sourceType: ObjectViewerSourceType;
+	artifactKind:
+		| 'original'
+		| 'preview'
+		| 'pdf'
+		| 'ocr_text'
+		| 'thumbnail'
+		| 'web_version'
+		| 'transcript'
+		| 'other';
+	variant: string | null;
+	status: ObjectViewerPrimarySourceStatus;
+	availableFileId: string | null;
+	artifactId: string | null;
+	displayName: string | null;
+	contentType: string | null;
+	sizeBytes: number | null;
+	accessReasonCode: AccessReasonCode;
+};
+
+export type ObjectViewerDocumentPage = {
+	pageNumber: number;
+	label: string | null;
+	imageArtifactId: string | null;
+	ocrTextArtifactId: string | null;
+};
+
+export type DocumentViewerPayload = {
+	kind: 'document';
+	artifactId: string | null;
+	contentType: string | null;
+	ocrTextArtifactId: string | null;
+	pageCount: number | null;
+	pages?: ObjectViewerDocumentPage[];
+};
+
+export type ImageViewerPayload = {
+	kind: 'image';
+	artifactId: string | null;
+	contentType: string | null;
+	width: number | null;
+	height: number | null;
+};
+
+export type AudioViewerPayload = {
+	kind: 'audio';
+	artifactId: string | null;
+	contentType: string | null;
+	transcriptArtifactId: string | null;
+	durationSeconds: number | null;
+};
+
+export type VideoViewerPayload = {
+	kind: 'video';
+	artifactId: string | null;
+	contentType: string | null;
+	posterArtifactId: string | null;
+	transcriptArtifactId: string | null;
+	captionsArtifactId: string | null;
+	durationSeconds: number | null;
+};
+
+export type ObjectViewerPayload =
+	| DocumentViewerPayload
+	| ImageViewerPayload
+	| AudioViewerPayload
+	| VideoViewerPayload;
+
+export type ObjectViewer = {
+	mediaType: ObjectViewerMediaType;
+	primarySource: ObjectViewerPrimarySource;
+	activeRequest: ObjectViewerActiveRequest | null;
+	previewArtifacts: ObjectViewerPreviewArtifacts;
+	viewerPayload: ObjectViewerPayload;
+};
+
+export type ObjectDetailResponse = {
+	detail: ObjectDetail;
+	viewer: ObjectViewer | null;
+};
+
 export type ObjectArtifact = {
 	id: string;
 	kind: string;
@@ -227,7 +349,7 @@ export type RequestResyncRequest = {
 export type ObjectsService = {
 	listObjects: (request: ObjectsListRequest) => Promise<ObjectsListResponse>;
 	listRecent: (request: ObjectsRecentRequest) => Promise<ObjectRow[]>;
-	getObjectDetail: (request: ObjectDetailRequest) => Promise<ObjectDetail>;
+	getObjectDetail: (request: ObjectDetailRequest) => Promise<ObjectDetailResponse>;
 	listObjectArtifacts: (request: ObjectArtifactsRequest) => Promise<ObjectArtifact[]>;
 	listObjectAvailableFiles: (request: ObjectAvailableFilesRequest) => Promise<ObjectAvailableFile[]>;
 	createObjectDownloadRequest: (
