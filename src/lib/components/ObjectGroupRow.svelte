@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { locale } from '$lib/i18n/locale';
 	import { translations } from '$lib/i18n/translations';
+	import IngestionFilePreview from '$lib/components/IngestionFilePreview.svelte';
+	import type { IngestionMediaKind } from '$lib/services/ingestionCapabilities';
 
 	const dictionary = $derived(translations[$locale]);
 	const t = (key: string): string => {
@@ -21,7 +23,7 @@
 	let {
 		groupId,
 		label,
-		fileCount,
+		files = [],
 		collapsed = false,
 		dragOver = false,
 		active = false,
@@ -38,7 +40,13 @@
 	} = $props<{
 		groupId: string;
 		label?: string;
-		fileCount: number;
+		files?: Array<{
+			id: string;
+			name: string;
+			mediaType: IngestionMediaKind;
+			size: string;
+			previewUrl?: string | null;
+		}>;
 		collapsed?: boolean;
 		dragOver?: boolean;
 		active?: boolean;
@@ -53,6 +61,8 @@
 		onDrop: (event: DragEvent) => void;
 		children?: () => unknown;
 	}>();
+
+	const fileCount = $derived(files.length);
 
 	let editingLabel = $state(false);
 	let labelInput = $state(label ?? '');
@@ -134,6 +144,12 @@
 		{/if}
 
 		<span class="shrink-0 text-xs text-text-muted">— {fileCountLabel}</span>
+
+		{#if files.length > 0}
+			<div class="shrink-0">
+				<IngestionFilePreview {files} maxVisible={3} />
+			</div>
+		{/if}
 
 		{#if incomplete}
 			<span class="shrink-0 text-[10px] text-burnt-peach" title="Missing required metadata (title, date, tags)">●</span>

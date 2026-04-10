@@ -81,6 +81,7 @@
 	let isDragging = $state(false);
 	let isGlobalDragging = $state(false);
 	let fileInput: HTMLInputElement | null = null;
+	let previewUrls = $state<Record<number, string>>({});
 
 	const classificationTypes = [
 		'document',
@@ -1189,6 +1190,12 @@
 
 		if (accepted.length > 0) {
 			files = [...files, ...accepted];
+			for (const file of accepted) {
+				if (file.mediaType === 'image' && file.rawFile) {
+					const url = URL.createObjectURL(file.rawFile);
+					previewUrls = { ...previewUrls, [file.id]: url };
+				}
+			}
 		}
 
 		if (!activeFileId && accepted.length) {
@@ -1664,6 +1671,7 @@
 		const snapshot = removeLocalFile(id);
 		if (!snapshot) return;
 
+		revokePreviewUrl(id);
 		removingIds = [...removingIds, id];
 		try {
 			uploadControllers.get(id)?.abort();
@@ -1858,6 +1866,16 @@
 		if (mediaType === 'audio') return 'bg-alabaster-grey text-blue-slate';
 		if (mediaType === 'document') return 'bg-pearl-beige text-blue-slate';
 		return 'bg-pale-sky/50 text-blue-slate';
+	};
+
+	const revokePreviewUrl = (fileId: number): void => {
+		const url = previewUrls[fileId];
+		if (url) {
+			URL.revokeObjectURL(url);
+			// eslint-disable-next-line @typescript-eslint/no-unused-vars
+			const { [fileId]: _unused, ...rest } = previewUrls;
+			previewUrls = rest;
+		}
 	};
 
 	const toggleFileSelection = (fileId: number) => {
@@ -2313,11 +2331,12 @@
 			<!-- RIGHT: Object groups -->
 			<section class="space-y-4">
 				{#each objectGroups as group (group.id)}
+					{@const groupFiles = group.fileIds.map((id) => filesById.get(id)).filter((f): f is LocalIngestionFile => f !== undefined).map((f) => ({ id: String(f.id), name: f.name, mediaType: f.mediaType, size: f.size, previewUrl: previewUrls[f.id] }))}
 					<div class="overflow-hidden rounded-2xl border border-border-soft bg-surface-white">
 					<ObjectGroupRow
 						groupId={group.id}
 						label={group.label}
-						fileCount={group.fileIds.length}
+						files={groupFiles}
 						collapsed={collapsedGroups.includes(group.id)}
 						dragOver={listDragTargetGroupId === group.id}
 						active={false}
@@ -2738,10 +2757,12 @@
 						{/if}
 					</button>
 					{#if expandedMetadataKeys.includes(key)}
+						{@const panelFiles = group.fileIds.map((id) => filesById.get(id)).filter((f): f is LocalIngestionFile => f !== undefined).map((f) => ({ id: String(f.id), name: f.name, mediaType: f.mediaType, size: f.size, previewUrl: previewUrls[f.id] }))}
 						<div class="border-t border-border-soft px-6 py-5">
 							<ObjectMetadataPanel
 								objectKey={key}
 								objectLabel={group.label ?? ''}
+								files={panelFiles}
 								metadata={meta}
 								batchTitle={batchDefaults.title}
 								batchTags={summaryTags}
@@ -2772,10 +2793,12 @@
 						{/if}
 					</button>
 					{#if expandedMetadataKeys.includes(key)}
+						{@const panelFiles = [{ id: String(file.id), name: file.name, mediaType: file.mediaType, size: file.size, previewUrl: previewUrls[file.id] }]}
 						<div class="border-t border-border-soft px-6 py-5">
 							<ObjectMetadataPanel
 								objectKey={key}
 								objectLabel={file.name}
+								files={panelFiles}
 								metadata={meta}
 								batchTitle={batchDefaults.title}
 								batchTags={summaryTags}

@@ -3,6 +3,8 @@
 	import type { ObjectItemMetadata } from '$lib/models';
 	import { locale } from '$lib/i18n/locale';
 	import { translations } from '$lib/i18n/translations';
+	import IngestionFilePreview from '$lib/components/IngestionFilePreview.svelte';
+	import type { IngestionMediaKind } from '$lib/services/ingestionCapabilities';
 
 	const dictionary = $derived(translations[$locale]);
 	const t = (key: string): string => {
@@ -18,6 +20,7 @@
 	let {
 		objectKey,
 		objectLabel,
+		files = [],
 		metadata,
 		batchTitle,
 		batchTags,
@@ -27,6 +30,13 @@
 	} = $props<{
 		objectKey: string | null;
 		objectLabel: string;
+		files?: Array<{
+			id: string;
+			name: string;
+			mediaType: IngestionMediaKind;
+			size: string;
+			previewUrl?: string | null;
+		}>;
 		metadata: ObjectItemMetadata;
 		batchTitle: string;
 		batchTags: string[];
@@ -120,6 +130,12 @@
 		</p>
 	{:else}
 		<p class="mt-1 truncate text-sm font-medium text-text-ink">{objectLabel}</p>
+
+		{#if files.length > 0}
+			<div class="mt-3">
+				<IngestionFilePreview {files} maxVisible={4} />
+			</div>
+		{/if}
 
 		<div class="mt-4 space-y-4">
 			<!-- Title -->
