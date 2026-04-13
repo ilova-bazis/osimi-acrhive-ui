@@ -162,6 +162,17 @@
 		<div class="mb-5 max-w-3xl">
 			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{object.mediaType} object</p>
 			<p class="mt-2 text-sm leading-relaxed text-text-muted">{object.subtitle} The page stays intentionally calm and read-only so the object itself remains the primary focus.</p>
+			<div class="mt-4">
+				<button
+					type="button"
+					onclick={() => {
+						window.location.href = `/prototype/objects/${object.id}/edit`;
+					}}
+					class="inline-flex items-center rounded-full border border-border-soft bg-surface-white px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20"
+				>
+					Open editing prototype
+				</button>
+			</div>
 			<div class="mt-4 flex flex-wrap items-center gap-2">
 				<Chip class={`text-[10px] uppercase tracking-[0.2em] ${accessToneClass}`}>{accessStateLabel}</Chip>
 				{#each mediaAccess.availableNow as artifact (artifact)}
