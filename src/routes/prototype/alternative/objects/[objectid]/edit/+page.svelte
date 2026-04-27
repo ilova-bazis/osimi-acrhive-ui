@@ -41,8 +41,9 @@
 		isDocumentEditData(data.editData) ? data.editData.editMode : 'per-page'
 	);
 	let activeVideoTab = $state<'transcript' | 'captions'>('transcript');
-	let metadataOpen = $state(true);
+	let metadataOpen = $state(false);
 	let rightsOpen = $state(false);
+	let detailsPaneOpen = $state(false);
 
 	const isDirty = $derived(JSON.stringify(editData) !== initialSnapshot);
 	const docPageCount = $derived(isDocumentEditData(editData) ? editData.pages.length : 0);
@@ -75,8 +76,9 @@
 		activeDocPage = 0;
 		docEditMode = isDocumentEditData(data.editData) ? data.editData.editMode : 'per-page';
 		activeVideoTab = 'transcript';
-		metadataOpen = true;
+		metadataOpen = false;
 		rightsOpen = false;
+		detailsPaneOpen = false;
 	});
 
 	const handleDiscard = (): void => {
@@ -368,7 +370,7 @@
 			</div>
 
 			<!-- Center: source text diff editor -->
-			<div class="flex min-w-0 flex-1 flex-col border-r border-border-soft bg-surface-white">
+			<div class="flex min-w-0 flex-1 flex-col {detailsPaneOpen ? '' : 'border-r border-border-soft'} bg-surface-white">
 				<!-- Editor header -->
 				<div class="shrink-0 border-b border-border-soft px-5 py-3">
 					{#if docEditMode === 'per-page'}
@@ -384,25 +386,51 @@
 										: 'No curated text yet — copy from source or write from scratch'}
 								</p>
 							</div>
-							<div class="flex items-center gap-1">
+							<div class="flex items-center gap-2">
+								<div class="flex items-center gap-1">
+									<button
+										type="button"
+										onclick={() => (activeDocPage = Math.max(0, activeDocPage - 1))}
+										disabled={activeDocPage === 0}
+										class="rounded-full border border-border-soft px-3 py-1.5 text-[10px] text-blue-slate transition hover:bg-pale-sky/20 disabled:pointer-events-none disabled:opacity-30"
+									>←</button>
+									<span class="text-[9px] text-text-muted">{activeDocPage + 1}/{editData.pages.length}</span>
+									<button
+										type="button"
+										onclick={() => (activeDocPage = Math.min(docPageCount - 1, activeDocPage + 1))}
+										disabled={activeDocPage === docPageCount - 1}
+										class="rounded-full border border-border-soft px-3 py-1.5 text-[10px] text-blue-slate transition hover:bg-pale-sky/20 disabled:pointer-events-none disabled:opacity-30"
+									>→</button>
+								</div>
 								<button
 									type="button"
-									onclick={() => (activeDocPage = Math.max(0, activeDocPage - 1))}
-									disabled={activeDocPage === 0}
-									class="rounded-full border border-border-soft px-3 py-1.5 text-[10px] text-blue-slate transition hover:bg-pale-sky/20 disabled:pointer-events-none disabled:opacity-30"
-								>←</button>
-								<span class="text-[9px] text-text-muted">{activeDocPage + 1}/{editData.pages.length}</span>
-								<button
-									type="button"
-									onclick={() => (activeDocPage = Math.min(docPageCount - 1, activeDocPage + 1))}
-									disabled={activeDocPage === docPageCount - 1}
-									class="rounded-full border border-border-soft px-3 py-1.5 text-[10px] text-blue-slate transition hover:bg-pale-sky/20 disabled:pointer-events-none disabled:opacity-30"
-								>→</button>
+									onclick={() => (detailsPaneOpen = !detailsPaneOpen)}
+									class="rounded-full border px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] transition {detailsPaneOpen
+										? 'border-blue-slate bg-blue-slate text-surface-white'
+										: 'border-border-soft text-blue-slate hover:bg-pale-sky/20'}"
+									title="Toggle details panel"
+								>
+									Details
+								</button>
 							</div>
 						</div>
 					{:else}
-						<p class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">Whole document curation</p>
-						<p class="mt-0.5 text-[10px] text-text-muted">Editing the full combined text. Per-page edits are preserved separately and merged on save.</p>
+						<div class="flex items-center justify-between gap-3">
+							<div>
+								<p class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">Whole document curation</p>
+								<p class="mt-0.5 text-[10px] text-text-muted">Editing the full combined text. Per-page edits are preserved separately and merged on save.</p>
+							</div>
+							<button
+								type="button"
+								onclick={() => (detailsPaneOpen = !detailsPaneOpen)}
+								class="shrink-0 rounded-full border px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] transition {detailsPaneOpen
+									? 'border-blue-slate bg-blue-slate text-surface-white'
+									: 'border-border-soft text-blue-slate hover:bg-pale-sky/20'}"
+								title="Toggle details panel"
+							>
+								Details
+							</button>
+						</div>
 					{/if}
 				</div>
 				<!-- Diff editor -->
@@ -431,41 +459,43 @@
 				</div>
 			</div>
 
-			<!-- Right: collapsible metadata + rights -->
-			<div class="flex w-[28%] shrink-0 flex-col overflow-y-auto border-l border-border-soft bg-alabaster-grey">
-				<!-- Details accordion -->
-				<div class="border-b border-border-soft">
-					<button
-						type="button"
-						onclick={() => (metadataOpen = !metadataOpen)}
-						class="flex w-full items-center justify-between px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/10"
-					>
-						<span>Details</span>
-						<span class="text-text-muted">{metadataOpen ? '▴' : '▾'}</span>
-					</button>
-					{#if metadataOpen}
-						<div class="px-4 pb-5 pt-1">
-							<ObjectEditDetails metadata={editData.metadata} onMetadataChange={handleMetadataChange} />
-						</div>
-					{/if}
+			<!-- Right: collapsible metadata + rights (hidable) -->
+			{#if detailsPaneOpen}
+				<div class="flex w-[28%] shrink-0 flex-col overflow-y-auto border-l border-border-soft bg-alabaster-grey">
+					<!-- Details accordion -->
+					<div class="border-b border-border-soft">
+						<button
+							type="button"
+							onclick={() => (metadataOpen = !metadataOpen)}
+							class="flex w-full items-center justify-between px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/10"
+						>
+							<span>Details</span>
+							<span class="text-text-muted">{metadataOpen ? '▴' : '▾'}</span>
+						</button>
+						{#if metadataOpen}
+							<div class="px-4 pb-5 pt-1">
+								<ObjectEditDetails metadata={editData.metadata} onMetadataChange={handleMetadataChange} />
+							</div>
+						{/if}
+					</div>
+					<!-- Rights accordion -->
+					<div class="border-b border-border-soft">
+						<button
+							type="button"
+							onclick={() => (rightsOpen = !rightsOpen)}
+							class="flex w-full items-center justify-between px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/10"
+						>
+							<span>Rights & Access</span>
+							<span class="text-text-muted">{rightsOpen ? '▴' : '▾'}</span>
+						</button>
+						{#if rightsOpen}
+							<div class="px-4 pb-5 pt-1">
+								<ObjectEditRights rights={editData.rights} onRightsChange={handleRightsChange} />
+							</div>
+						{/if}
+					</div>
 				</div>
-				<!-- Rights accordion -->
-				<div class="border-b border-border-soft">
-					<button
-						type="button"
-						onclick={() => (rightsOpen = !rightsOpen)}
-						class="flex w-full items-center justify-between px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/10"
-					>
-						<span>Rights & Access</span>
-						<span class="text-text-muted">{rightsOpen ? '▴' : '▾'}</span>
-					</button>
-					{#if rightsOpen}
-						<div class="px-4 pb-5 pt-1">
-							<ObjectEditRights rights={editData.rights} onRightsChange={handleRightsChange} />
-						</div>
-					{/if}
-				</div>
-			</div>
+			{/if}
 
 		<!-- ════════════════ IMAGE: two-column, image-heavy ════════════════ -->
 		{:else if object.mediaType === 'image'}
@@ -545,7 +575,7 @@
 				</div>
 			</div>
 
-			<!-- Right: segment editor cards + metadata accordion -->
+			<!-- Center: segment editor cards -->
 			<div class="flex min-w-0 flex-1 flex-col overflow-hidden bg-alabaster-grey">
 				<!-- Editor header -->
 				<div class="shrink-0 flex items-center justify-between border-b border-border-soft bg-surface-white px-5 py-3">
@@ -555,17 +585,27 @@
 							Source text is read-only; curated text is yours to refine per segment.
 						</p>
 					</div>
-					<button
-						type="button"
-						onclick={handleCopyAllAudio}
-						class="shrink-0 rounded-full border border-border-soft bg-surface-white px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-blue-slate transition hover:bg-pale-sky/20"
-					>
-						Copy all from source
-					</button>
+					<div class="flex shrink-0 items-center gap-2">
+						<button
+							type="button"
+							onclick={handleCopyAllAudio}
+							class="rounded-full border border-border-soft bg-surface-white px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-blue-slate transition hover:bg-pale-sky/20"
+						>
+							Copy all from source
+						</button>
+						<button
+							type="button"
+							onclick={() => (detailsPaneOpen = !detailsPaneOpen)}
+							class="rounded-full border px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] transition {detailsPaneOpen
+								? 'border-blue-slate bg-blue-slate text-surface-white'
+								: 'border-border-soft text-blue-slate hover:bg-pale-sky/20'}"
+						>
+							Details
+						</button>
+					</div>
 				</div>
-				<!-- Scrollable content -->
+				<!-- Scrollable segment cards -->
 				<div class="flex-1 overflow-y-auto">
-					<!-- Segment cards -->
 					<div class="space-y-3 p-5">
 						{#each editData.curatedTranscript as seg (seg.id)}
 							{@const sourceSeg = getAudioSourceSeg(seg.id)}
@@ -619,42 +659,44 @@
 							</div>
 						{/each}
 					</div>
+				</div>
+			</div>
 
-					<!-- Details accordion -->
-					<div class="border-t border-border-soft">
+			<!-- Right: hidable details pane -->
+			{#if detailsPaneOpen}
+				<div class="flex w-[28%] shrink-0 flex-col overflow-y-auto border-l border-border-soft bg-alabaster-grey">
+					<div class="border-b border-border-soft">
 						<button
 							type="button"
 							onclick={() => (metadataOpen = !metadataOpen)}
-							class="flex w-full items-center justify-between bg-surface-white px-5 py-3 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/10"
+							class="flex w-full items-center justify-between px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/10"
 						>
-							<span>Object details</span>
+							<span>Details</span>
 							<span class="text-text-muted">{metadataOpen ? '▴' : '▾'}</span>
 						</button>
 						{#if metadataOpen}
-							<div class="bg-surface-white px-5 pb-5 pt-1">
+							<div class="px-4 pb-5 pt-1">
 								<ObjectEditDetails metadata={editData.metadata} onMetadataChange={handleMetadataChange} />
 							</div>
 						{/if}
 					</div>
-
-					<!-- Rights accordion -->
-					<div class="border-t border-border-soft">
+					<div class="border-b border-border-soft">
 						<button
 							type="button"
 							onclick={() => (rightsOpen = !rightsOpen)}
-							class="flex w-full items-center justify-between bg-surface-white px-5 py-3 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/10"
+							class="flex w-full items-center justify-between px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/10"
 						>
 							<span>Rights & Access</span>
 							<span class="text-text-muted">{rightsOpen ? '▴' : '▾'}</span>
 						</button>
 						{#if rightsOpen}
-							<div class="bg-surface-white px-5 pb-5 pt-1">
+							<div class="px-4 pb-5 pt-1">
 								<ObjectEditRights rights={editData.rights} onRightsChange={handleRightsChange} />
 							</div>
 						{/if}
 					</div>
 				</div>
-			</div>
+			{/if}
 
 		<!-- ════════════════ VIDEO: two-column, dual-track ════════════════ -->
 		{:else if object.mediaType === 'video' && isVideoEditData(editData)}
@@ -705,7 +747,7 @@
 				</div>
 			</div>
 
-			<!-- Right: transcript/captions sub-tabs + metadata accordion -->
+			<!-- Center: transcript/captions sub-tabs -->
 			<div class="flex min-w-0 flex-1 flex-col overflow-hidden bg-alabaster-grey">
 				<!-- Sub-tab strip -->
 				<div class="shrink-0 flex items-center justify-between border-b border-border-soft bg-surface-white px-5 py-3">
@@ -729,13 +771,24 @@
 							Captions
 						</button>
 					</div>
-					<button
-						type="button"
-						onclick={activeVideoTab === 'transcript' ? handleCopyAllVideoTranscript : handleCopyAllVideoCaptions}
-						class="rounded-full border border-border-soft bg-surface-white px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-blue-slate transition hover:bg-pale-sky/20"
-					>
-						Copy all from source
-					</button>
+					<div class="flex items-center gap-2">
+						<button
+							type="button"
+							onclick={activeVideoTab === 'transcript' ? handleCopyAllVideoTranscript : handleCopyAllVideoCaptions}
+							class="rounded-full border border-border-soft bg-surface-white px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] text-blue-slate transition hover:bg-pale-sky/20"
+						>
+							Copy all from source
+						</button>
+						<button
+							type="button"
+							onclick={() => (detailsPaneOpen = !detailsPaneOpen)}
+							class="rounded-full border px-3 py-1.5 text-[10px] uppercase tracking-[0.18em] transition {detailsPaneOpen
+								? 'border-blue-slate bg-blue-slate text-surface-white'
+								: 'border-border-soft text-blue-slate hover:bg-pale-sky/20'}"
+						>
+							Details
+						</button>
+					</div>
 				</div>
 				<!-- Scrollable content -->
 				<div class="flex-1 overflow-y-auto">
@@ -824,42 +877,44 @@
 							{/each}
 						</div>
 					{/if}
+				</div>
+			</div>
 
-					<!-- Details accordion -->
-					<div class="border-t border-border-soft">
+			<!-- Right: hidable details pane -->
+			{#if detailsPaneOpen}
+				<div class="flex w-[28%] shrink-0 flex-col overflow-y-auto border-l border-border-soft bg-alabaster-grey">
+					<div class="border-b border-border-soft">
 						<button
 							type="button"
 							onclick={() => (metadataOpen = !metadataOpen)}
-							class="flex w-full items-center justify-between bg-surface-white px-5 py-3 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/10"
+							class="flex w-full items-center justify-between px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/10"
 						>
-							<span>Object details</span>
+							<span>Details</span>
 							<span class="text-text-muted">{metadataOpen ? '▴' : '▾'}</span>
 						</button>
 						{#if metadataOpen}
-							<div class="bg-surface-white px-5 pb-5 pt-1">
+							<div class="px-4 pb-5 pt-1">
 								<ObjectEditDetails metadata={editData.metadata} onMetadataChange={handleMetadataChange} />
 							</div>
 						{/if}
 					</div>
-
-					<!-- Rights accordion -->
-					<div class="border-t border-border-soft">
+					<div class="border-b border-border-soft">
 						<button
 							type="button"
 							onclick={() => (rightsOpen = !rightsOpen)}
-							class="flex w-full items-center justify-between bg-surface-white px-5 py-3 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/10"
+							class="flex w-full items-center justify-between px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/10"
 						>
 							<span>Rights & Access</span>
 							<span class="text-text-muted">{rightsOpen ? '▴' : '▾'}</span>
 						</button>
 						{#if rightsOpen}
-							<div class="bg-surface-white px-5 pb-5 pt-1">
+							<div class="px-4 pb-5 pt-1">
 								<ObjectEditRights rights={editData.rights} onRightsChange={handleRightsChange} />
 							</div>
 						{/if}
 					</div>
 				</div>
-			</div>
+			{/if}
 
 		{/if}
 	</div>

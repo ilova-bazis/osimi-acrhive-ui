@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import type { ActionData } from './$types';
 	import { locale } from '$lib/i18n/locale';
 	import { translations } from '$lib/i18n/translations';
@@ -18,6 +20,14 @@
 	let summary = $state('');
 	let tagsInput = $state('');
 	let summaryTags = $state<string[]>([]);
+	let submitting = $state(false);
+	let classificationChangedByKind = $state(false);
+
+	$effect(() => {
+		if (!classificationChangedByKind) return;
+		const id = setTimeout(() => { classificationChangedByKind = false; }, 3000);
+		return () => clearTimeout(id);
+	});
 
 	const addTag = () => {
 		const normalized = tagsInput.trim().replace(/^#/, '');
@@ -38,21 +48,17 @@
 	const requiresDetailedClassification = $derived(
 		itemKind === 'document' || itemKind === 'scanned_document'
 	);
+	const pipelineHint = $derived(t(`ingestionNew.fields.pipelineHints.${pipelinePreset}`));
 
 	const applyClassificationDefault = (kind: string) => {
-		if (kind === 'photo') {
-			classificationType = 'image';
-			return;
+		let next = 'document';
+		if (kind === 'photo') next = 'image';
+		else if (kind === 'audio' || kind === 'video' || kind === 'other') next = 'other';
+
+		if (next !== classificationType) {
+			classificationType = next;
+			classificationChangedByKind = true;
 		}
-		if (kind === 'audio' || kind === 'video') {
-			classificationType = 'other';
-			return;
-		}
-		if (kind === 'other') {
-			classificationType = 'other';
-			return;
-		}
-		classificationType = 'document';
 	};
 </script>
 
@@ -70,7 +76,17 @@
 		</div>
 	</section>
 
-	<form method="POST" class="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
+	<form
+		method="POST"
+		class="grid gap-5 lg:grid-cols-[1.6fr_1fr]"
+		use:enhance={() => {
+			submitting = true;
+			return async ({ update }) => {
+				await update();
+				submitting = false;
+			};
+		}}
+	>
 		<section class="space-y-5 rounded-3xl border border-border-soft bg-surface-white p-6">
 			<div class="grid gap-4 md:grid-cols-2">
 				<div class="space-y-2 md:col-span-2">
@@ -127,16 +143,23 @@
 					{:else}
 						<p class="text-[11px] text-text-muted">{t('ingestionNew.fields.classificationHintAuto')}</p>
 					{/if}
+					{#if classificationChangedByKind}
+						<p class="text-[11px] text-blue-slate">{t('ingestionNew.fields.classificationUpdatedByKind')}</p>
+					{/if}
 				</div>
 				<div class="space-y-2">
 					<label class="text-xs uppercase tracking-[0.2em] text-blue-slate" for="languageCode">{t('ingestionNew.fields.languageCode')}</label>
-					<input
+					<select
 						id="languageCode"
 						name="languageCode"
-						type="text"
 						class="w-full rounded-xl border border-border-soft bg-surface-white px-4 py-3 text-sm text-text-ink focus:outline-none focus:ring-2 focus:ring-blue-slate/30"
 						bind:value={languageCode}
-					/>
+					>
+						<option value="en">{t('ingestionSetup.languages.en')}</option>
+						<option value="ru">{t('ingestionSetup.languages.ru')}</option>
+						<option value="tg">{t('ingestionSetup.languages.tg')}</option>
+						<option value="fa">{t('ingestionSetup.languages.fa')}</option>
+					</select>
 				</div>
 				<div class="space-y-2">
 					<label class="text-xs uppercase tracking-[0.2em] text-blue-slate" for="pipelinePreset">{t('ingestionNew.fields.pipelinePreset')}</label>
@@ -154,6 +177,7 @@
 						<option value="ocr_and_audio_transcript">{t('ingestionSetup.pipelinePresets.ocr_and_audio_transcript')}</option>
 						<option value="ocr_and_video_transcript">{t('ingestionSetup.pipelinePresets.ocr_and_video_transcript')}</option>
 					</select>
+					<p class="text-[11px] text-text-muted">{pipelineHint}</p>
 				</div>
 				<div class="space-y-2">
 					<label class="text-xs uppercase tracking-[0.2em] text-blue-slate" for="accessLevel">{t('ingestionNew.fields.accessLevel')}</label>
@@ -271,12 +295,19 @@
 				</p>
 			{/if}
 
-			<div class="flex justify-end">
+			<div class="flex items-center justify-end gap-3">
+				<a
+					href={resolve('/ingestion')}
+					class="rounded-full border border-border-soft bg-surface-white px-5 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate"
+				>
+					{t('ingestionNew.cancel')}
+				</a>
 				<button
 					type="submit"
-					class="rounded-full bg-blue-slate px-5 py-2 text-xs uppercase tracking-[0.2em] text-surface-white"
+					disabled={submitting}
+					class="rounded-full bg-blue-slate px-5 py-2 text-xs uppercase tracking-[0.2em] text-surface-white disabled:pointer-events-none disabled:opacity-40"
 				>
-					{t('ingestionNew.continue')}
+					{submitting ? t('ingestionNew.creating') : t('ingestionNew.continue')}
 				</button>
 			</div>
 		</section>

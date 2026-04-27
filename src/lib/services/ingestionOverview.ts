@@ -32,6 +32,7 @@ export type IngestionOverviewSummary = {
 	stats: IngestionStats;
 	activeAndRecent: IngestionBatch[];
 	drafts: IngestionBatch[];
+	nextCursor: string | null;
 };
 
 export type IngestionOverviewRequest = {

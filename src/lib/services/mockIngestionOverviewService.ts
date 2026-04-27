@@ -50,7 +50,8 @@ const summary: IngestionOverviewSummary = {
 			progress: { completed: 5, total: 10 },
 			actions: ['resume', 'delete']
 		}
-	]
+	],
+	nextCursor: null
 };
 
 export const mockIngestionOverviewService: IngestionOverviewService = {

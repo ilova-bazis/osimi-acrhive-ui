@@ -145,6 +145,10 @@ export const translations = {
 				deleteConflict: 'Only draft, uploading, or canceled ingestions can be deleted.',
 				failedNamed: 'Failed to {action} ingestion {name}.',
 				failed: 'Failed to {action} ingestion.'
+			},
+			pagination: {
+				prev: '← Prev',
+				next: 'Next →'
 			}
 		},
 		ingestionDetail: {
@@ -211,8 +215,18 @@ export const translations = {
 				classificationType: 'Classification type',
 				classificationHintDocument: 'Required for document and scanned document batches.',
 				classificationHintAuto: 'Auto-defaulted from item kind; you can refine it later in setup.',
+				classificationUpdatedByKind: '↳ Updated to match item kind',
 				languageCode: 'Language code',
 				pipelinePreset: 'Pipeline preset',
+				pipelineHints: {
+					auto: 'Selects pipelines automatically based on item kind',
+					none: 'No processing pipelines will run',
+					ocr_text: 'Runs OCR to extract text from document images',
+					audio_transcript: 'Transcribes spoken audio to text',
+					video_transcript: 'Transcribes spoken audio from video to text',
+					ocr_and_audio_transcript: 'Runs OCR and audio transcription',
+					ocr_and_video_transcript: 'Runs OCR and video transcription'
+				},
 				accessLevel: 'Access level',
 				embargoUntil: 'Embargo until',
 				rightsNote: 'Rights note',
@@ -228,7 +242,9 @@ export const translations = {
 				summaryText: 'Summary text',
 				summaryPlaceholder: 'Short contextual summary for classification metadata'
 			},
-			continue: 'Continue to setup'
+			continue: 'Continue to setup',
+			creating: 'Creating…',
+			cancel: 'Cancel'
 		},
 		objects: {
 			header: {
@@ -543,6 +559,7 @@ export const translations = {
 			},
 			languages: {
 				en: 'English',
+				ru: 'Russian',
 				fa: 'Persian',
 				tg: 'Tajik',
 				persian: 'Persian',
@@ -836,6 +853,10 @@ export const translations = {
 				deleteConflict: 'Удалять можно только черновые, загружаемые или отмененные загрузки.',
 				failedNamed: 'Не удалось выполнить действие {action} для загрузки {name}.',
 				failed: 'Не удалось выполнить действие {action} для загрузки.'
+			},
+			pagination: {
+				prev: '← Назад',
+				next: 'Далее →'
 			}
 		},
 		ingestionDetail: {
@@ -902,8 +923,18 @@ export const translations = {
 				classificationType: 'Тип классификации',
 				classificationHintDocument: 'Обязательно для партий document и scanned_document.',
 				classificationHintAuto: 'Подставляется по виду элемента; можно уточнить позже в настройке.',
+				classificationUpdatedByKind: '↳ Обновлено по виду элемента',
 				languageCode: 'Код языка',
 				pipelinePreset: 'Набор конвейеров',
+				pipelineHints: {
+					auto: 'Конвейеры выбираются автоматически по виду элемента',
+					none: 'Конвейеры обработки не запускаются',
+					ocr_text: 'Запускает OCR для извлечения текста из изображений документов',
+					audio_transcript: 'Транскрибирует речь в текст',
+					video_transcript: 'Транскрибирует речь из видео в текст',
+					ocr_and_audio_transcript: 'Запускает OCR и транскрипцию аудио',
+					ocr_and_video_transcript: 'Запускает OCR и транскрипцию видео'
+				},
 				accessLevel: 'Уровень доступа',
 				embargoUntil: 'Эмбарго до',
 				rightsNote: 'Примечание о правах',
@@ -919,7 +950,9 @@ export const translations = {
 				summaryText: 'Текст сводки',
 				summaryPlaceholder: 'Краткая контекстная сводка для классификационных метаданных'
 			},
-			continue: 'Перейти к настройке'
+			continue: 'Перейти к настройке',
+			creating: 'Создание…',
+			cancel: 'Отмена'
 		},
 		objects: {
 			header: {
@@ -1234,6 +1267,7 @@ export const translations = {
 			},
 			languages: {
 				en: 'Английский',
+				ru: 'Русский',
 				fa: 'Персидский',
 				tg: 'Таджикский',
 				persian: 'Персидский',

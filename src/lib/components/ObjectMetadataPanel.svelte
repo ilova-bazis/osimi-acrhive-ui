@@ -142,26 +142,33 @@
 			<div>
 				<label
 					for="obj-title-{objectKey}"
-					class="text-xs uppercase tracking-[0.2em] text-blue-slate"
+					class="flex items-center gap-1 text-xs uppercase tracking-[0.2em] text-blue-slate"
 				>
 					{t('ingestionSetup.objectMetadata.fields.title')}
+					<span class="text-burnt-peach">*</span>
 				</label>
 				<input
 					id="obj-title-{objectKey}"
-					class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink placeholder:text-text-muted/60"
+					class={`mt-2 w-full rounded-xl border bg-surface-white px-3 py-2 text-sm text-text-ink placeholder:text-text-muted/60 ${!(metadata.title ?? '').trim() ? 'border-burnt-peach/50' : 'border-border-soft'}`}
 					placeholder={batchTitle || t('ingestionSetup.objectMetadata.fields.titlePlaceholder')}
 					value={metadata.title ?? ''}
 					oninput={(e) =>
 						onMetadataChange({ title: e.currentTarget.value.trim() || undefined })}
 				/>
+				{#if !(metadata.title ?? '').trim()}
+					<p class="mt-1 text-[10px] text-burnt-peach">Required</p>
+				{/if}
 			</div>
 
 			<!-- Date -->
 			<div>
-				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionSetup.objectMetadata.fields.date')}</p>
+				<p class="flex items-center gap-1 text-xs uppercase tracking-[0.2em] text-blue-slate">
+					{t('ingestionSetup.objectMetadata.fields.date')}
+					<span class="text-burnt-peach">*</span>
+				</p>
 				<div class="mt-2 grid grid-cols-2 gap-2">
 					<select
-						class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+						class={`rounded-xl border bg-surface-white px-3 py-2 text-sm text-text-ink ${metadata.date?.value == null ? 'border-burnt-peach/50' : 'border-border-soft'}`}
 						value={localDatePrecision}
 						onchange={(e) => setDatePrecision(e.currentTarget.value as DatePrecision)}
 					>
@@ -176,7 +183,7 @@
 							min="1000"
 							max="2999"
 							placeholder={batchDate?.value?.substring(0, 4) ?? 'YYYY'}
-							class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink placeholder:text-text-muted/60"
+							class={`rounded-xl border bg-surface-white px-3 py-2 text-sm text-text-ink placeholder:text-text-muted/60 ${!dateInputValue ? 'border-burnt-peach/50' : 'border-border-soft'}`}
 							value={dateInputValue}
 							oninput={(e) => updateDateValue(e.currentTarget.value)}
 						/>
@@ -184,14 +191,14 @@
 						<input
 							type="month"
 							placeholder={batchDate?.value?.substring(0, 7) ?? ''}
-							class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+							class={`rounded-xl border bg-surface-white px-3 py-2 text-sm text-text-ink ${!dateInputValue ? 'border-burnt-peach/50' : 'border-border-soft'}`}
 							value={dateInputValue}
 							onchange={(e) => updateDateValue(e.currentTarget.value)}
 						/>
 					{:else if localDatePrecision === 'day'}
 						<input
 							type="date"
-							class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+							class={`rounded-xl border bg-surface-white px-3 py-2 text-sm text-text-ink ${!dateInputValue ? 'border-burnt-peach/50' : 'border-border-soft'}`}
 							value={dateInputValue}
 							onchange={(e) => updateDateValue(e.currentTarget.value)}
 						/>
@@ -199,6 +206,9 @@
 						<div></div>
 					{/if}
 				</div>
+				{#if metadata.date?.value == null}
+					<p class="mt-1 text-[10px] text-burnt-peach">Required</p>
+				{/if}
 				{#if localDatePrecision !== 'none'}
 					<label class="mt-2 flex items-center gap-2 text-xs text-text-muted">
 						<input
@@ -213,10 +223,13 @@
 
 			<!-- Tags -->
 			<div>
-				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionSetup.objectMetadata.fields.tags')}</p>
+				<p class="flex items-center gap-1 text-xs uppercase tracking-[0.2em] text-blue-slate">
+					{t('ingestionSetup.objectMetadata.fields.tags')}
+					<span class="text-burnt-peach">*</span>
+				</p>
 				<div class="mt-2 flex items-center gap-2">
 					<input
-						class="w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+						class={`w-full rounded-xl border bg-surface-white px-3 py-2 text-sm text-text-ink ${!(metadata.tags ?? []).length ? 'border-burnt-peach/50' : 'border-border-soft'}`}
 						placeholder={t('ingestionSetup.objectMetadata.fields.tagsPlaceholder')}
 						value={tagInput}
 						oninput={(e) => (tagInput = e.currentTarget.value)}
@@ -235,6 +248,9 @@
 						{t('ingestionSetup.objectMetadata.fields.addTag')}
 					</button>
 				</div>
+				{#if !(metadata.tags ?? []).length}
+					<p class="mt-1 text-[10px] text-burnt-peach">Required — add at least one tag</p>
+				{/if}
 				{#if (metadata.tags && metadata.tags.length > 0) || batchTags.length > 0}
 					<div class="mt-2 flex flex-wrap gap-2">
 						{#each metadata.tags ?? [] as tag (tag)}

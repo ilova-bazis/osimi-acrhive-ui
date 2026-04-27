@@ -3,7 +3,7 @@ import { ingestionsListResponseSchema } from '$lib/api/schemas/ingestions';
 import { backendRequest } from '$lib/server/apiClient';
 import type { IngestionOverviewService } from './ingestionOverview';
 
-const DEFAULT_LIMIT = 50;
+const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 200;
 
 const clampLimit = (value: number | undefined): number => {

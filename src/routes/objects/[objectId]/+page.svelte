@@ -42,6 +42,7 @@
 			availableFilesError: string | null;
 			pendingRequests: ArchiveRequest[];
 			pendingRequestsError: string | null;
+			session?: { role: string } | null;
 		};
 		form?: ActionData;
 	}>();
@@ -251,6 +252,14 @@
 			<p class={`mt-2 text-sm leading-relaxed ${introTextClass}`}>{descriptionText ?? 'Read-only object inspection with media-first access, preview artifacts, and request-aware behavior.'}</p>
 			<div class="mt-4 flex flex-wrap items-center gap-2">
 				<Chip class="border-border-soft bg-surface-white/80 text-[10px] uppercase tracking-[0.18em] text-text-muted">View mode</Chip>
+				{#if data.session?.role === 'archiver' || data.session?.role === 'admin'}
+					<a
+						href={resolve('/objects/[objectId]/edit', { objectId: detail.objectId })}
+						class="inline-flex items-center rounded-full border border-blue-slate/30 bg-surface-white px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20"
+					>
+						Edit
+					</a>
+				{/if}
 				{#if viewer}
 					<Chip class="border-blue-slate/20 bg-pale-sky/18 text-[10px] uppercase tracking-[0.18em] text-blue-slate">{viewer.mediaType}</Chip>
 				{/if}

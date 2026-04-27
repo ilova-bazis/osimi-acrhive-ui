@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type { IngestionMediaKind } from '$lib/services/ingestionCapabilities';
-	import { onDestroy } from 'svelte';
 
 	export type FilePreviewItem = {
 		id: string;
@@ -29,16 +28,6 @@
 
 	const visibleFiles = $derived(expanded ? files : files.slice(0, maxVisible));
 	const hiddenCount = $derived(files.length - maxVisible);
-
-	for (const file of files) {
-		if (file.previewUrl) {
-			onDestroy(() => {
-				if (file.previewUrl?.startsWith('blob:')) {
-					URL.revokeObjectURL(file.previewUrl);
-				}
-			});
-		}
-	}
 </script>
 
 <div class="flex flex-col gap-2">

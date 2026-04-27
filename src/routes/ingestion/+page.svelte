@@ -13,11 +13,30 @@
 	import type { FileStatus } from '$lib/types';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 
-	let { data } = $props<{ data: { summary: IngestionOverviewSummary } }>();
+	let { data } = $props<{ data: { summary: IngestionOverviewSummary; activePage: number; draftPage: number } }>();
+
+	const PAGE_SIZE = 10;
 
 	const summary = $derived(data.summary);
 	const activeAndRecent = $derived(summary.activeAndRecent);
 	const drafts = $derived(summary.drafts);
+	const activePage = $derived(data.activePage);
+	const draftPage = $derived(data.draftPage);
+	const activeTotalPages = $derived(Math.max(1, Math.ceil(activeAndRecent.length / PAGE_SIZE)));
+	const draftTotalPages  = $derived(Math.max(1, Math.ceil(drafts.length / PAGE_SIZE)));
+	const activePageItems  = $derived(activeAndRecent.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE));
+	const draftPageItems   = $derived(drafts.slice((draftPage - 1) * PAGE_SIZE, draftPage * PAGE_SIZE));
+
+	const goActivePage = (page: number) => {
+		const qs = draftPage > 1 ? `?ap=${page}&dp=${draftPage}` : `?ap=${page}`;
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
+		goto(resolve('/ingestion') + qs);
+	};
+	const goDraftPage = (page: number) => {
+		const qs = activePage > 1 ? `?ap=${activePage}&dp=${page}` : `?dp=${page}`;
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
+		goto(resolve('/ingestion') + qs);
+	};
  	const dictionary = $derived(translations[$locale]);
 	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
 
@@ -211,12 +230,12 @@
 					<span class="text-right">{t('ingestionOverview.table.action')}</span>
 				</div>
 				<div class="mt-4 space-y-3">
-				{#each activeAndRecent as batch (batch.id)}
+				{#each activePageItems as batch (batch.id)}
 					<article class="rounded-2xl border border-border-soft bg-surface-white px-5 py-4">
 						<div class="grid gap-3 md:grid-cols-[2fr_1fr_1fr_auto] md:items-center">
 							<div class="flex flex-wrap items-center gap-3">
 								<div>
-									<p class="text-sm font-semibold text-text-ink">{batch.name}</p>
+									<a href={resolve(`/ingestion/${batch.id}`)} class="text-sm font-medium text-text-ink hover:underline">{batch.name}</a>
 									<p class="mt-1 text-xs text-text-muted">{batch.id}</p>
 								</div>
 								<StatusBadge status={getStatusTone(batch.status)} label={getStatusLabel(batch.status)} />
@@ -256,6 +275,21 @@
 					</article>
 				{/each}
 				</div>
+				{#if activeTotalPages > 1}
+					<div class="mt-4 flex items-center justify-between border-t border-border-soft pt-3 text-xs">
+						<button
+							onclick={() => goActivePage(activePage - 1)}
+							disabled={activePage <= 1}
+							class="rounded-full border border-border-soft px-3 py-1.5 uppercase tracking-[0.2em] text-blue-slate disabled:pointer-events-none disabled:opacity-30"
+						>{t('ingestionOverview.pagination.prev')}</button>
+						<span class="text-text-muted">{activePage} / {activeTotalPages}</span>
+						<button
+							onclick={() => goActivePage(activePage + 1)}
+							disabled={activePage >= activeTotalPages}
+							class="rounded-full border border-border-soft px-3 py-1.5 uppercase tracking-[0.2em] text-blue-slate disabled:pointer-events-none disabled:opacity-30"
+						>{t('ingestionOverview.pagination.next')}</button>
+					</div>
+				{/if}
 			</div>
 		</section>
 
@@ -275,12 +309,12 @@
 						<span class="text-right">{t('ingestionOverview.table.action')}</span>
 					</div>
 					<div class="mt-4 space-y-3">
-					{#each drafts as batch (batch.id)}
+					{#each draftPageItems as batch (batch.id)}
 						<article class="rounded-2xl border border-border-soft bg-pearl-beige/20 px-5 py-4">
 							<div class="grid gap-3 md:grid-cols-[2fr_1fr_1fr_auto] md:items-center">
 								<div class="flex flex-wrap items-center gap-3">
 									<div>
-										<p class="text-sm font-semibold text-text-ink">{batch.name}</p>
+										<a href={resolve(`/ingestion/${batch.id}`)} class="text-sm font-medium text-text-ink hover:underline">{batch.name}</a>
 										<p class="mt-1 text-xs text-text-muted">{batch.id}</p>
 									</div>
 									<StatusBadge status={getStatusTone(batch.status)} label={getStatusLabel(batch.status)} />
@@ -320,6 +354,21 @@
 						</article>
 					{/each}
 					</div>
+					{#if draftTotalPages > 1}
+						<div class="mt-4 flex items-center justify-between border-t border-border-soft pt-3 text-xs">
+							<button
+								onclick={() => goDraftPage(draftPage - 1)}
+								disabled={draftPage <= 1}
+								class="rounded-full border border-border-soft px-3 py-1.5 uppercase tracking-[0.2em] text-blue-slate disabled:pointer-events-none disabled:opacity-30"
+							>{t('ingestionOverview.pagination.prev')}</button>
+							<span class="text-text-muted">{draftPage} / {draftTotalPages}</span>
+							<button
+								onclick={() => goDraftPage(draftPage + 1)}
+								disabled={draftPage >= draftTotalPages}
+								class="rounded-full border border-border-soft px-3 py-1.5 uppercase tracking-[0.2em] text-blue-slate disabled:pointer-events-none disabled:opacity-30"
+							>{t('ingestionOverview.pagination.next')}</button>
+						</div>
+					{/if}
 				</div>
 			</section>
 		{/if}

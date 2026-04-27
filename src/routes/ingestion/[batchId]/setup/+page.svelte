@@ -7,7 +7,7 @@
 	import { locale } from '$lib/i18n/locale';
 	import { translations } from '$lib/i18n/translations';
 	import { SvelteMap } from 'svelte/reactivity';
-	import { onDestroy } from 'svelte';
+	import { untrack, onDestroy } from 'svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import ObjectGroupRow from '$lib/components/ObjectGroupRow.svelte';
 	import ObjectMetadataPanel from '$lib/components/ObjectMetadataPanel.svelte';
@@ -98,7 +98,7 @@
 		'other'
 	] as const;
 
-	const languages = ['en', 'fa', 'tg', 'mixed'] as const;
+	const languages = ['en', 'ru', 'fa', 'tg', 'mixed'] as const;
 
 	const pipelinePresets = [
 		'auto',
@@ -165,7 +165,7 @@
 					delete itemUpdateTimers[key];
 					const meta = objectMetadata[key];
 					void postSetupAction({ action: 'update_item', itemId: serverId, metadata: meta })
-						.catch(() => undefined);
+						.catch(showItemSaveError);
 				}, 300);
 			}
 		}
@@ -441,6 +441,8 @@
 	let groupingWarningDismissed = $state(false);
 	let autoGroupToast = $state(false);
 	let autoGroupToastTimer: ReturnType<typeof setTimeout> | null = null;
+	let itemSaveError = $state(false);
+	let itemSaveErrorTimer: ReturnType<typeof setTimeout> | null = null;
 	let metadataHydrated = $state(false);
 	let mismatchDialog = $state<{
 		open: boolean;
@@ -653,6 +655,12 @@
 		}
 	};
 
+	const showItemSaveError = () => {
+		itemSaveError = true;
+		if (itemSaveErrorTimer) clearTimeout(itemSaveErrorTimer);
+		itemSaveErrorTimer = setTimeout(() => { itemSaveError = false; }, 6000);
+	};
+
 	const ungroupFiles = (groupId: string) => {
 		const group = objectGroups.find((g) => g.id === groupId);
 		if (group?.serverId) return; // cannot ungroup synced items
@@ -679,7 +687,7 @@
 		const group = objectGroups.find((g) => g.id === groupId);
 		if (group?.serverId) {
 			void postSetupAction({ action: 'update_item', itemId: group.serverId, label: label || '' })
-				.catch(() => undefined);
+				.catch(showItemSaveError);
 		}
 	};
 
@@ -702,7 +710,7 @@
 				itemId: targetGroup.serverId,
 				fileId: backendFileId,
 				sortOrder
-			}).catch(() => undefined);
+			}).catch(showItemSaveError);
 		}
 	};
 
@@ -753,7 +761,7 @@
 					action: 'reorder_item_files',
 					itemId: group.serverId,
 					files: fileEntries
-				}).catch(() => undefined);
+				}).catch(showItemSaveError);
 			}
 		}
 	};
@@ -765,6 +773,17 @@
 		event.dataTransfer.setData('application/x-list-file-id', String(fileId));
 		event.dataTransfer.effectAllowed = 'move';
 		listDragSourceId = fileId;
+		const file = filesById.get(fileId);
+		if (file) {
+			const label = file.name.length > 32 ? file.name.slice(0, 32) + '…' : file.name;
+			const ghost = document.createElement('div');
+			ghost.style.cssText =
+				'position:fixed;top:-200px;left:0;background:#fff;border:1px solid rgba(79,109,122,0.3);border-radius:8px;padding:5px 12px;font-size:11px;color:#1a2633;box-shadow:0 2px 8px rgba(0,0,0,0.12);white-space:nowrap;';
+			ghost.textContent = label;
+			document.body.appendChild(ghost);
+			event.dataTransfer.setDragImage(ghost, 16, 16);
+			setTimeout(() => ghost.remove(), 0);
+		}
 	};
 
 	const hasListDragType = (event: DragEvent): boolean => {
@@ -1433,10 +1452,70 @@
 		);
 	};
 
+	const getItemCompletenessState = (key: string): 'complete' | 'partial' | 'untouched' => {
+		const meta = objectMetadata[key];
+		if (!meta) return 'untouched';
+		const hasAny =
+			(meta.title ?? '').trim().length > 0 ||
+			(meta.date?.value ?? null) !== null ||
+			(meta.tags ?? []).length > 0;
+		if (!hasAny) return 'untouched';
+		return isItemMetadataComplete(key) ? 'complete' : 'partial';
+	};
+
+	const getItemMissingFields = (key: string): string[] => {
+		const meta = objectMetadata[key] ?? {};
+		const missing: string[] = [];
+		if (!(meta.title ?? '').trim()) missing.push('title');
+		if (meta.date?.value == null) missing.push('date');
+		if (!(meta.tags ?? []).length) missing.push('tags');
+		return missing;
+	};
+
 	const allObjectKeys = $derived<string[]>([
 		...objectGroups.map((g) => g.id),
 		...standaloneFiles.map((f) => `file:${f.id}`)
 	]);
+
+	// Propagate batch defaults into any per-item field that has not been explicitly touched.
+	// "Untouched" = still undefined. Once a user types anything the field is defined and won't be overwritten.
+	$effect(() => {
+		const keys = allObjectKeys;
+		const defaultTitle = batchDefaults.title.trim();
+		const defaultTags = summaryTags;
+		const createdEditor = summaryDateEditors.created;
+		const defaultDescription = batchDefaults.summaryText.trim();
+
+		const batchDateValue =
+			createdEditor.precision !== 'none'
+				? createdEditor.year || createdEditor.month || createdEditor.day || null
+				: null;
+		const batchDateApproximate = createdEditor.approximate;
+
+		if (!defaultTitle && !batchDateValue && defaultTags.length === 0 && !defaultDescription) return;
+
+		untrack(() => {
+			let updated = false;
+			const next: Record<string, ObjectItemMetadata> = { ...objectMetadata };
+
+			for (const key of keys) {
+				const current = next[key] ?? {};
+				const patch: Partial<ObjectItemMetadata> = {};
+
+				if (current.title === undefined && defaultTitle) patch.title = defaultTitle;
+				if (current.date === undefined && batchDateValue) patch.date = { value: batchDateValue, approximate: batchDateApproximate };
+				if (current.tags === undefined && defaultTags.length > 0) patch.tags = [...defaultTags];
+				if (current.description === undefined && defaultDescription) patch.description = defaultDescription;
+
+				if (Object.keys(patch).length > 0) {
+					next[key] = { ...current, ...patch };
+					updated = true;
+				}
+			}
+
+			if (updated) objectMetadata = next;
+		});
+	});
 
 	const hasRequiredItemMetadata = $derived(
 		allObjectKeys.length === 0 || allObjectKeys.every(isItemMetadataComplete)
@@ -1531,8 +1610,14 @@
 		if (autoGroupToastTimer) {
 			clearTimeout(autoGroupToastTimer);
 		}
+		if (itemSaveErrorTimer) {
+			clearTimeout(itemSaveErrorTimer);
+		}
 		for (const timer of Object.values(itemUpdateTimers)) {
 			clearTimeout(timer);
+		}
+		for (const url of Object.values(previewUrls)) {
+			URL.revokeObjectURL(url);
 		}
 	});
 
@@ -1936,6 +2021,17 @@
 		e.dataTransfer.setData('application/x-proto-file-id', String(fileId));
 		e.dataTransfer.effectAllowed = 'move';
 		step1DragSourceId = fileId;
+		const file = filesById.get(fileId);
+		if (file) {
+			const label = file.name.length > 32 ? file.name.slice(0, 32) + '…' : file.name;
+			const ghost = document.createElement('div');
+			ghost.style.cssText =
+				'position:fixed;top:-200px;left:0;background:#fff;border:1px solid rgba(79,109,122,0.3);border-radius:8px;padding:5px 12px;font-size:11px;color:#1a2633;box-shadow:0 2px 8px rgba(0,0,0,0.12);white-space:nowrap;';
+			ghost.textContent = label;
+			document.body.appendChild(ghost);
+			e.dataTransfer.setDragImage(ghost, 16, 16);
+			setTimeout(() => ghost.remove(), 0);
+		}
 	};
 
 	const onStep1FileDragEnd = () => {
@@ -2198,11 +2294,12 @@
 			>
 				<!-- Compact upload zone -->
 				<div
-					class={`rounded-t-2xl border-b border-border-soft px-5 py-5 text-center transition ${
+					class={[
+						'rounded-t-2xl border-b px-5 py-5 text-center transition',
 						isDragging || isGlobalDragging
 							? 'border-blue-slate bg-pearl-beige/70 shadow-[0_0_0_4px_rgba(79,109,122,0.25)]'
-							: 'bg-pearl-beige/40'
-					}`}
+							: 'border-border-soft bg-pearl-beige/40 [outline:2px_dashed_rgba(79,109,122,0.2)] [outline-offset:-8px]'
+					].join(' ')}
 					ondragenter={handleDragEnter}
 					ondragover={handleDragOver}
 					ondragleave={handleDragLeave}
@@ -2288,6 +2385,7 @@
 					{/if}
 					{#each standaloneFiles as file (file.id)}
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						{@const itemState = getItemCompletenessState(`file:${file.id}`)}
 						<div
 							class={[
 								'flex cursor-grab items-center gap-3 px-5 py-3 transition hover:bg-pale-sky/15',
@@ -2314,9 +2412,23 @@
 								<p class="text-[10px] text-text-muted">{file.size}</p>
 							</div>
 							<StatusBadge status={file.status} label={statusLabel(file.status)} />
+							{#if itemState === 'complete'}
+								<span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" title="Metadata complete"></span>
+							{:else if itemState === 'partial'}
+								{@const missing = getItemMissingFields(`file:${file.id}`)}
+								<span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-burnt-peach" title="Missing: {missing.join(', ')}"></span>
+							{/if}
 							<span class={`shrink-0 rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.12em] ${fileKindLabelClasses(file.mediaType)}`}>
 								{fileKindLabel(file.mediaType)}
 							</span>
+							<button
+								type="button"
+								class="shrink-0 rounded-full p-1 text-text-muted/50 transition hover:text-burnt-peach disabled:opacity-30"
+								disabled={removingIds.includes(file.id)}
+								onclick={(e) => { e.stopPropagation(); removeFile(file.id); }}
+								title="Remove file"
+								aria-label="Remove {file.name}"
+							>✕</button>
 						</div>
 					{/each}
 				</div>
@@ -2331,17 +2443,16 @@
 			<!-- RIGHT: Object groups -->
 			<section class="space-y-4">
 				{#each objectGroups as group (group.id)}
-					{@const groupFiles = group.fileIds.map((id) => filesById.get(id)).filter((f): f is LocalIngestionFile => f !== undefined).map((f) => ({ id: String(f.id), name: f.name, mediaType: f.mediaType, size: f.size, previewUrl: previewUrls[f.id] }))}
 					<div class="overflow-hidden rounded-2xl border border-border-soft bg-surface-white">
 					<ObjectGroupRow
 						groupId={group.id}
 						label={group.label}
-						files={groupFiles}
+						fileCount={group.fileIds.length}
 						collapsed={collapsedGroups.includes(group.id)}
 						dragOver={listDragTargetGroupId === group.id}
 						active={false}
 						ungroupDisabled={Boolean(group.serverId)}
-						incomplete={false}
+						incomplete={getItemCompletenessState(group.id) === 'partial'}
 						onToggleCollapse={() => toggleGroupCollapse(group.id)}
 						onUngroup={() => ungroupFiles(group.id)}
 						onLabelChange={(label: string) => renameGroup(group.id, label)}
@@ -2373,12 +2484,26 @@
 									>
 										<span class="w-5 shrink-0 text-center text-[10px] text-text-muted">{index + 1}</span>
 										<span class="shrink-0 cursor-grab select-none text-text-muted/60" title="Drag to reorder">⠿</span>
-										<span class="shrink-0 text-base leading-none">{fileKindEmoji(file.mediaType)}</span>
+										<div class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border-soft bg-alabaster-grey/50">
+											{#if previewUrls[fileId] && file.mediaType === 'image'}
+												<img src={previewUrls[fileId]} alt={file.name} class="h-full w-full object-cover" />
+											{:else}
+												<span class="text-sm leading-none">{fileKindEmoji(file.mediaType)}</span>
+											{/if}
+										</div>
 										<div class="min-w-0 flex-1">
 											<p class="truncate text-sm text-text-ink">{file.name}</p>
 											<p class="text-[10px] text-text-muted">{file.size}</p>
 										</div>
 										<StatusBadge status={file.status} label={statusLabel(file.status)} />
+										<button
+											type="button"
+											class="shrink-0 rounded-full p-1 text-text-muted/50 transition hover:text-burnt-peach disabled:opacity-30"
+											disabled={removingIds.includes(fileId)}
+											onclick={(e) => { e.stopPropagation(); removeFile(fileId); }}
+											title="Remove file"
+											aria-label="Remove {file.name}"
+										>✕</button>
 									</div>
 								{/if}
 							{/each}
@@ -2739,7 +2864,7 @@
 			{#each objectGroups as group (group.id)}
 				{@const key = group.id}
 				{@const meta = objectMetadata[key] ?? {}}
-				<div class="rounded-2xl border border-border-soft bg-surface-white">
+				<div class={`rounded-2xl border bg-surface-white ${isItemMetadataComplete(key) ? 'border-border-soft' : 'border-burnt-peach/35'}`}>
 					<button
 						type="button"
 						class={`flex w-full items-center gap-3 px-6 py-4 text-left transition hover:bg-pale-sky/8 ${expandedMetadataKeys.includes(key) ? 'bg-pale-sky/8' : ''}`}
@@ -2753,7 +2878,8 @@
 							{group.fileIds.length} {group.fileIds.length === 1 ? 'file' : 'files'}
 						</span>
 						{#if !isItemMetadataComplete(key)}
-							<span class="shrink-0 text-[10px] text-burnt-peach" title="Missing required metadata (title, date, tags)">●</span>
+							{@const missing = getItemMissingFields(key)}
+							<span class="shrink-0 rounded-full border border-burnt-peach/30 bg-burnt-peach/10 px-2.5 py-0.5 text-[9px] uppercase tracking-[0.15em] text-burnt-peach" title="Missing: {missing.join(', ')}">needs info</span>
 						{/if}
 					</button>
 					{#if expandedMetadataKeys.includes(key)}
@@ -2778,7 +2904,7 @@
 			{#each standaloneFiles as file (file.id)}
 				{@const key = `file:${file.id}`}
 				{@const meta = objectMetadata[key] ?? {}}
-				<div class="rounded-2xl border border-border-soft bg-surface-white">
+				<div class={`rounded-2xl border bg-surface-white ${isItemMetadataComplete(key) ? 'border-border-soft' : 'border-burnt-peach/35'}`}>
 					<button
 						type="button"
 						class={`flex w-full items-center gap-3 px-6 py-4 text-left transition hover:bg-pale-sky/8 ${expandedMetadataKeys.includes(key) ? 'bg-pale-sky/8' : ''}`}
@@ -2789,7 +2915,8 @@
 						<span class="min-w-0 flex-1 truncate text-sm font-medium text-text-ink">{file.name}</span>
 						<span class="shrink-0 text-xs text-text-muted">{file.size}</span>
 						{#if !isItemMetadataComplete(key)}
-							<span class="shrink-0 text-[10px] text-burnt-peach" title="Missing required metadata (title, date, tags)">●</span>
+							{@const missing = getItemMissingFields(key)}
+							<span class="shrink-0 rounded-full border border-burnt-peach/30 bg-burnt-peach/10 px-2.5 py-0.5 text-[9px] uppercase tracking-[0.15em] text-burnt-peach" title="Missing: {missing.join(', ')}">needs info</span>
 						{/if}
 					</button>
 					{#if expandedMetadataKeys.includes(key)}
@@ -2968,6 +3095,20 @@
 					</button>
 				</div>
 			</div>
+		</div>
+	{/if}
+
+	<!-- Item save error toast -->
+	{#if itemSaveError}
+		<div class="fixed bottom-24 right-6 z-50 flex items-center gap-3 rounded-xl border border-burnt-peach/40 bg-pearl-beige px-4 py-3 shadow-lg">
+			<span class="text-burnt-peach">⚠</span>
+			<p class="text-xs text-burnt-peach">A change failed to save — check your connection.</p>
+			<button
+				type="button"
+				onclick={() => { itemSaveError = false; }}
+				class="ml-2 text-burnt-peach/50 hover:text-burnt-peach"
+				aria-label="Dismiss"
+			>✕</button>
 		</div>
 	{/if}
 </main>

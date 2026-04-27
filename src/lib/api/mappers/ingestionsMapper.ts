@@ -99,7 +99,8 @@ export const mapIngestionOverviewSummary = (
 			needsAttention: allBatches.filter((batch) => batch.status === 'failed').length
 		},
 		activeAndRecent,
-		drafts
+		drafts,
+		nextCursor: response.next_cursor ?? null
 	};
 };
 
