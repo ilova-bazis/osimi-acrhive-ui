@@ -180,7 +180,7 @@
 		<p class="text-[11px] text-text-muted">{t('objects.filters.hint')}</p>
 		<div class="flex flex-wrap items-center gap-2">
 			<label class="hidden sm:inline-flex items-center gap-2 rounded-full border border-border-soft bg-surface-white px-3 py-2">
-				<span class="text-[10px] uppercase tracking-[0.18em] text-text-muted">{t('objects.filters.availability')}</span>
+				<span class="text-xs uppercase tracking-[0.2em] text-text-muted">{t('objects.filters.availability')}</span>
 				<select
 					name="availability_state"
 					class="bg-transparent text-xs text-text-ink focus:outline-none"
@@ -193,7 +193,7 @@
 				</select>
 			</label>
 			<label class="hidden sm:inline-flex items-center gap-2 rounded-full border border-border-soft bg-surface-white px-3 py-2">
-				<span class="text-[10px] uppercase tracking-[0.18em] text-text-muted">{t('objects.filters.access')}</span>
+				<span class="text-xs uppercase tracking-[0.2em] text-text-muted">{t('objects.filters.access')}</span>
 				<select
 					name="access_level"
 					class="bg-transparent text-xs text-text-ink focus:outline-none"
@@ -206,7 +206,7 @@
 				</select>
 			</label>
 			<label class="hidden sm:inline-flex items-center gap-2 rounded-full border border-border-soft bg-surface-white px-3 py-2">
-				<span class="text-[10px] uppercase tracking-[0.18em] text-text-muted">{t('objects.filters.sort')}</span>
+				<span class="text-xs uppercase tracking-[0.2em] text-text-muted">{t('objects.filters.sort')}</span>
 				<select
 					name="sort"
 					class="bg-transparent text-xs text-text-ink focus:outline-none"

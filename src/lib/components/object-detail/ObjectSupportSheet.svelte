@@ -66,7 +66,7 @@
 
 		<div class={`flex items-center justify-between gap-4 px-5 ${state === 'expanded' ? `pb-3 border-b ${variant === 'dark' ? 'border-white/8' : 'border-border-soft'}` : 'pb-3'}`}>
 			<div class="min-w-0">
-				<p class={`text-[10px] uppercase tracking-[0.2em] ${variant === 'dark' ? 'text-white/35' : 'text-blue-slate'}`}>Support</p>
+				<p class={`text-xs uppercase tracking-[0.2em] ${variant === 'dark' ? 'text-white/35' : 'text-blue-slate'}`}>Support</p>
 				<h2 class="mt-1 truncate text-sm font-medium">{title}</h2>
 			</div>
 			<button
@@ -87,7 +87,7 @@
 					<button
 						type="button"
 						onclick={() => handleTabSelect(tab.id)}
-						class={`rounded-full px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] transition ${activeTab === tab.id ? (variant === 'dark' ? 'bg-surface-white text-text-ink shadow-sm' : 'bg-blue-slate text-surface-white shadow-sm') : (variant === 'dark' ? 'text-white/55 hover:bg-white/10' : 'text-text-muted hover:text-text-ink hover:bg-alabaster-grey/50')}`}
+						class={`rounded-full px-3 py-1.5 text-xs uppercase tracking-[0.2em] transition ${activeTab === tab.id ? (variant === 'dark' ? 'bg-surface-white text-text-ink shadow-sm' : 'bg-blue-slate text-surface-white shadow-sm') : (variant === 'dark' ? 'text-white/55 hover:bg-white/10' : 'text-text-muted hover:text-text-ink hover:bg-alabaster-grey/50')}`}
 					>
 						{tab.label}
 					</button>

@@ -251,24 +251,24 @@
 			<p class={`text-xs uppercase tracking-[0.2em] ${introLabelClass}`}>{mediaTypeLabel} object</p>
 			<p class={`mt-2 text-sm leading-relaxed ${introTextClass}`}>{descriptionText ?? 'Read-only object inspection with media-first access, preview artifacts, and request-aware behavior.'}</p>
 			<div class="mt-4 flex flex-wrap items-center gap-2">
-				<Chip class="border-border-soft bg-surface-white/80 text-[10px] uppercase tracking-[0.18em] text-text-muted">View mode</Chip>
+				<Chip class="border-border-soft bg-surface-white/80 text-xs uppercase tracking-[0.2em] text-text-muted">View mode</Chip>
 				{#if data.session?.role === 'archiver' || data.session?.role === 'admin'}
 					<a
 						href={resolve('/objects/[objectId]/edit', { objectId: detail.objectId })}
-						class="inline-flex items-center rounded-full border border-blue-slate/30 bg-surface-white px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20"
+						class="inline-flex items-center rounded-full border border-blue-slate/30 bg-surface-white px-3 py-1 text-xs uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20"
 					>
 						Edit
 					</a>
 				{/if}
 				{#if viewer}
-					<Chip class="border-blue-slate/20 bg-pale-sky/18 text-[10px] uppercase tracking-[0.18em] text-blue-slate">{viewer.mediaType}</Chip>
+					<Chip class="border-blue-slate/20 bg-pale-sky/18 text-xs uppercase tracking-[0.2em] text-blue-slate">{viewer.mediaType}</Chip>
 				{/if}
 				{#if viewer?.primarySource.status === 'request_required'}
-					<Chip class="border-pearl-beige bg-pearl-beige/60 text-[10px] uppercase tracking-[0.18em] text-blue-slate">Request required</Chip>
+					<Chip class="border-pearl-beige bg-pearl-beige/60 text-xs uppercase tracking-[0.2em] text-blue-slate">Request required</Chip>
 				{:else if viewer?.primarySource.status === 'request_pending'}
-					<Chip class="border-blue-slate/20 bg-alabaster-grey/80 text-[10px] uppercase tracking-[0.18em] text-blue-slate">Request pending</Chip>
+					<Chip class="border-blue-slate/20 bg-alabaster-grey/80 text-xs uppercase tracking-[0.2em] text-blue-slate">Request pending</Chip>
 				{:else if viewer?.primarySource.status === 'available'}
-					<Chip class="border-blue-slate/20 bg-pale-sky/18 text-[10px] uppercase tracking-[0.18em] text-blue-slate">Available now</Chip>
+					<Chip class="border-blue-slate/20 bg-pale-sky/18 text-xs uppercase tracking-[0.2em] text-blue-slate">Available now</Chip>
 				{/if}
 			</div>
 		</div>
@@ -330,7 +330,7 @@
 				<button
 					type="button"
 					onclick={() => (supportSheetState = 'expanded')}
-					class={`pointer-events-auto inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[10px] uppercase tracking-[0.2em] transition ${supportVariant === 'dark' ? 'border-white/10 bg-black/30 text-white/70 hover:bg-white/10 hover:text-white' : 'border-border-soft bg-surface-white/80 text-text-muted hover:border-blue-slate/35 hover:text-blue-slate'}`}
+					class={`pointer-events-auto inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs uppercase tracking-[0.2em] transition ${supportVariant === 'dark' ? 'border-white/10 bg-black/30 text-white/70 hover:bg-white/10 hover:text-white' : 'border-border-soft bg-surface-white/80 text-text-muted hover:border-blue-slate/35 hover:text-blue-slate'}`}
 				>
 					<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" class="h-4 w-4" aria-hidden="true">
 						<path d="M10 3v14M3 10h14" stroke-linecap="round" />
@@ -382,7 +382,7 @@
 												objectId: detail.objectId,
 												artifactId: artifact.id
 											})}
-											class="text-[11px] text-blue-slate underline-offset-2 hover:underline"
+											class="text-xs text-blue-slate underline-offset-2 hover:underline"
 										>
 											{t('objects.detail.artifacts.download')}
 										</a>
@@ -439,7 +439,7 @@
 											<button
 												type="submit"
 												disabled={!file.isAvailable}
-												class="text-[11px] text-blue-slate underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+												class="text-xs text-blue-slate underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-40"
 											>
 												{t('objects.detail.availableFiles.requestDownload')}
 											</button>
@@ -538,7 +538,7 @@
 					onclick={() => {
 						showRawManifest = !showRawManifest;
 					}}
-					class="mt-4 text-[11px] text-blue-slate underline-offset-2 hover:underline"
+					class="mt-4 text-xs text-blue-slate underline-offset-2 hover:underline"
 				>
 					{showRawManifest ? t('objects.detail.manifest.hide') : t('objects.detail.manifest.show')}
 				</button>

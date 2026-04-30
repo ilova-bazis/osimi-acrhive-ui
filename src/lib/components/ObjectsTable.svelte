@@ -113,21 +113,9 @@
 <svelte:window onclick={handleWindowClick} onkeydown={handleWindowKeydown} />
 
 <section class="rounded-2xl border border-border-soft bg-surface-white">
-	<div class="overflow-x-auto">
-		<div class="min-w-[1120px]">
-			<div class="grid grid-cols-[36px_64px_2fr_1fr_1.2fr_0.9fr_1fr_1fr_1fr_84px] gap-3 border-b border-border-soft px-6 py-3 text-xs uppercase tracking-[0.2em] text-text-muted">
-				<span></span>
-				<span>{t('objects.table.headers.preview')}</span>
-				<span>{t('objects.table.headers.title')}</span>
-				<span>{t('objects.table.headers.type')}</span>
-				<span>{t('objects.table.headers.processing')}</span>
-				<span>{t('objects.table.headers.indicators')}</span>
-				<span>{t('objects.table.headers.access')}</span>
-				<span>{t('objects.table.headers.updated')}</span>
-				<span>{t('objects.table.headers.batch')}</span>
-				<span>{t('objects.table.headers.actions')}</span>
-			</div>
+
 	{#if rows.length === 0}
+		<!-- Empty state -->
 		<div class="flex flex-col items-center justify-center px-6 py-16 text-center">
 			<div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-alabaster-grey/70 text-text-muted">
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="h-6 w-6" aria-hidden="true">
@@ -146,72 +134,50 @@
 				<a href={resolve('/objects')} class="mt-4 inline-flex rounded-full border border-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate transition-colors hover:bg-pale-sky/20">{t('objects.filters.clearFilters')}</a>
 			{/if}
 		</div>
+
 	{:else}
-			<div class="divide-y divide-border-soft">
+
+		<!-- Compact card list (shown below md) -->
+		<div class="divide-y divide-border-soft md:hidden">
 			{#each rows as row (row.id)}
 				{@const reasonCode = row.accessReasonCode as AccessReasonCode}
 				{@const menuHint = menuHintLabel(reasonCode)}
-				<div class="group grid grid-cols-[36px_64px_2fr_1fr_1.2fr_0.9fr_1fr_1fr_1fr_84px] items-center gap-3 px-6 py-4 transition-colors hover:bg-alabaster-grey/35">
+				<div class="flex items-center gap-3 px-4 py-3">
 					<input
 						type="checkbox"
-						class="h-4 w-4 rounded border-border-soft text-blue-slate"
+						class="h-4 w-4 shrink-0 rounded border-border-soft text-blue-slate"
 						checked={selectedIds.includes(row.id)}
 						onchange={() => onToggleSelection(row.id)}
 					/>
-					<a
-						href={resolve('/objects/[objectId]', { objectId: row.objectId })}
-						class="transition hover:opacity-90"
-					>
+					<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} class="shrink-0 transition hover:opacity-90">
 						<ObjectThumbnail
 							objectId={row.objectId}
 							thumbnailArtifactId={row.thumbnailArtifactId}
 							objectType={row.type}
-							class="h-12 w-12"
+							class="h-10 w-10"
 						/>
 					</a>
-					<div>
-						<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} class="text-sm font-medium text-text-ink underline-offset-2 hover:text-blue-slate hover:underline">
+					<div class="min-w-0 flex-1">
+						<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} class="block truncate text-sm font-medium text-text-ink hover:text-blue-slate">
 							{row.title ?? titleFallback(row)}
 						</a>
-						<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} class="block text-[11px] text-text-muted underline-offset-2 hover:text-blue-slate hover:underline">{row.objectId}</a>
+						<div class="mt-1 flex flex-wrap items-center gap-2">
+							<span class="text-xs text-text-muted">{row.type}</span>
+							<StatusBadge status={toBadgeStatus(row)} label={processingLabel(row.processingState)} />
+						</div>
 						{#if !row.canDownload}
-							<p class="mt-1 text-[11px] text-burnt-peach">{reasonLabel(reasonCode)}</p>
-							{@const action = reasonActionLabel(reasonCode)}
-							{#if action}
-								<Chip class="mt-1 border-burnt-peach/30 bg-pearl-beige text-[10px] uppercase tracking-[0.18em] text-burnt-peach">
-									{action}
-								</Chip>
-							{/if}
+							<p class="mt-1 text-xs text-burnt-peach">{reasonLabel(reasonCode)}</p>
 						{/if}
 					</div>
-					<span class="text-xs text-text-muted">{row.type}</span>
-					<StatusBadge status={toBadgeStatus(row)} label={processingLabel(row.processingState)} />
-					<div class="flex flex-wrap items-center gap-1">
-						{#if row.indicators.accessPdf}
-							<Chip class="border-blue-slate/30 bg-pale-sky/25 text-[10px] text-blue-slate">PDF</Chip>
-						{/if}
-						{#if row.indicators.ocr}
-							<Chip class="border-blue-slate/30 bg-pale-sky/25 text-[10px] text-blue-slate">OCR</Chip>
-						{/if}
-						{#if row.indicators.index}
-							<Chip class="border-blue-slate/30 bg-pale-sky/25 text-[10px] text-blue-slate">IDX</Chip>
-						{/if}
-						{#if !row.indicators.accessPdf && !row.indicators.ocr && !row.indicators.index}
-							<span class="text-[11px] text-text-muted">-</span>
-						{/if}
-					</div>
-					<span class="text-xs text-text-muted">{accessLevelLabel(row.accessLevel)}</span>
-					<span class="text-xs text-text-muted">{formatDate(row.updatedAt)}</span>
-					<span class="text-xs text-blue-slate" title={availabilityLabel(row.availabilityState)}>{row.sourceBatchLabel ?? '-'}</span>
-					<div class="flex justify-end" data-row-menu-root>
+					<div class="shrink-0" data-row-menu-root>
 						<div class="relative">
 							<button
 								type="button"
 								onclick={() => toggleMenu(row.id)}
-								class={`flex h-7 w-7 items-center justify-center rounded-full border transition-all hover:border-blue-slate/35 hover:text-blue-slate focus:opacity-100 ${openMenuRowId === row.id ? 'border-blue-slate/35 text-blue-slate opacity-100' : 'border-transparent text-text-muted opacity-0 group-hover:opacity-100'}`}
+								class={`flex h-7 w-7 items-center justify-center rounded-full border transition-all hover:border-blue-slate/35 hover:text-blue-slate ${openMenuRowId === row.id ? 'border-blue-slate/35 text-blue-slate' : 'border-border-soft text-text-muted'}`}
 								aria-label={t('objects.table.rowActions')}
 								aria-expanded={openMenuRowId === row.id}
-								aria-controls={`row-actions-${row.id}`}
+								aria-controls={`row-actions-mobile-${row.id}`}
 							>
 								<svg viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4" aria-hidden="true">
 									<circle cx="4" cy="10" r="1.5" />
@@ -221,34 +187,31 @@
 							</button>
 							{#if openMenuRowId === row.id}
 								<div
-									id={`row-actions-${row.id}`}
+									id={`row-actions-mobile-${row.id}`}
 									class="absolute right-0 z-10 mt-2 w-44 rounded-xl border border-border-soft bg-surface-white p-2 shadow-[0_16px_36px_rgba(31,47,56,0.18)]"
 								>
 									<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} onclick={closeMenu} class="block rounded-lg px-3 py-2 text-xs text-text-ink hover:bg-alabaster-grey/70">
-									{t('objects.table.open')}
-								</a>
-								<button
-									type="button"
-									onclick={() => {
-										closeMenu();
-										void copyObjectId(row);
-									}}
-									class="block w-full rounded-lg px-3 py-2 text-left text-xs text-text-ink hover:bg-alabaster-grey/70"
-								>
-									{copiedRowId === row.id ? t('objects.table.copied') : t('objects.table.copyId')}
-								</button>
-								{#if row.sourceIngestionId}
-									<a
-										href={resolve('/ingestion/[batchId]', { batchId: row.sourceIngestionId })}
-										onclick={closeMenu}
-										class="block rounded-lg px-3 py-2 text-xs text-text-ink hover:bg-alabaster-grey/70"
-									>
-										{t('objects.table.batchLink')}
+										{t('objects.table.open')}
 									</a>
-								{/if}
-								{#if menuHint}
-									<p class="mt-1 border-t border-border-soft px-3 pt-2 text-[11px] text-burnt-peach">{menuHint}</p>
-								{/if}
+									<button
+										type="button"
+										onclick={() => { closeMenu(); void copyObjectId(row); }}
+										class="block w-full rounded-lg px-3 py-2 text-left text-xs text-text-ink hover:bg-alabaster-grey/70"
+									>
+										{copiedRowId === row.id ? t('objects.table.copied') : t('objects.table.copyId')}
+									</button>
+									{#if row.sourceIngestionId}
+										<a
+											href={resolve('/ingestion/[batchId]', { batchId: row.sourceIngestionId })}
+											onclick={closeMenu}
+											class="block rounded-lg px-3 py-2 text-xs text-text-ink hover:bg-alabaster-grey/70"
+										>
+											{t('objects.table.batchLink')}
+										</a>
+									{/if}
+									{#if menuHint}
+										<p class="mt-1 border-t border-border-soft px-3 pt-2 text-xs text-burnt-peach">{menuHint}</p>
+									{/if}
 								</div>
 							{/if}
 						</div>
@@ -256,9 +219,224 @@
 				</div>
 			{/each}
 		</div>
-	{/if}
+
+		<!-- Intermediate list (shown md to xl — more detail than mobile cards, narrower than full table) -->
+		<div class="hidden divide-y divide-border-soft md:block xl:hidden">
+			{#each rows as row (row.id)}
+				{@const reasonCode = row.accessReasonCode as AccessReasonCode}
+				{@const menuHint = menuHintLabel(reasonCode)}
+				<div class="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-alabaster-grey/25">
+					<input
+						type="checkbox"
+						class="h-4 w-4 shrink-0 rounded border-border-soft text-blue-slate"
+						checked={selectedIds.includes(row.id)}
+						onchange={() => onToggleSelection(row.id)}
+					/>
+					<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} class="shrink-0 transition hover:opacity-90">
+						<ObjectThumbnail
+							objectId={row.objectId}
+							thumbnailArtifactId={row.thumbnailArtifactId}
+							objectType={row.type}
+							class="h-12 w-12"
+						/>
+					</a>
+					<div class="min-w-0 flex-1">
+						<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} class="block truncate text-sm font-medium text-text-ink hover:text-blue-slate">
+							{row.title ?? titleFallback(row)}
+						</a>
+						<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} class="block truncate text-xs text-text-muted hover:text-blue-slate">{row.objectId}</a>
+						<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+							<span class="text-xs text-text-muted">{row.type}</span>
+							<StatusBadge status={toBadgeStatus(row)} label={processingLabel(row.processingState)} />
+							{#if !row.canDownload}
+								<span class="text-xs text-burnt-peach">{reasonLabel(reasonCode)}</span>
+							{/if}
+						</div>
+					</div>
+					<div class="hidden shrink-0 flex-col items-end gap-0.5 lg:flex">
+						<span class="text-xs text-text-muted">{accessLevelLabel(row.accessLevel)}</span>
+						<span class="text-xs text-text-muted">{formatDate(row.updatedAt)}</span>
+					</div>
+					<div class="shrink-0" data-row-menu-root>
+						<div class="relative">
+							<button
+								type="button"
+								onclick={() => toggleMenu(row.id)}
+								class={`flex h-7 w-7 items-center justify-center rounded-full border transition-all hover:border-blue-slate/35 hover:text-blue-slate ${openMenuRowId === row.id ? 'border-blue-slate/35 text-blue-slate' : 'border-border-soft text-text-muted'}`}
+								aria-label={t('objects.table.rowActions')}
+								aria-expanded={openMenuRowId === row.id}
+								aria-controls={`row-actions-mid-${row.id}`}
+							>
+								<svg viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4" aria-hidden="true">
+									<circle cx="4" cy="10" r="1.5" />
+									<circle cx="10" cy="10" r="1.5" />
+									<circle cx="16" cy="10" r="1.5" />
+								</svg>
+							</button>
+							{#if openMenuRowId === row.id}
+								<div
+									id={`row-actions-mid-${row.id}`}
+									class="absolute right-0 z-10 mt-2 w-44 rounded-xl border border-border-soft bg-surface-white p-2 shadow-[0_16px_36px_rgba(31,47,56,0.18)]"
+								>
+									<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} onclick={closeMenu} class="block rounded-lg px-3 py-2 text-xs text-text-ink hover:bg-alabaster-grey/70">
+										{t('objects.table.open')}
+									</a>
+									<button
+										type="button"
+										onclick={() => { closeMenu(); void copyObjectId(row); }}
+										class="block w-full rounded-lg px-3 py-2 text-left text-xs text-text-ink hover:bg-alabaster-grey/70"
+									>
+										{copiedRowId === row.id ? t('objects.table.copied') : t('objects.table.copyId')}
+									</button>
+									{#if row.sourceIngestionId}
+										<a
+											href={resolve('/ingestion/[batchId]', { batchId: row.sourceIngestionId })}
+											onclick={closeMenu}
+											class="block rounded-lg px-3 py-2 text-xs text-text-ink hover:bg-alabaster-grey/70"
+										>
+											{t('objects.table.batchLink')}
+										</a>
+									{/if}
+									{#if menuHint}
+										<p class="mt-1 border-t border-border-soft px-3 pt-2 text-xs text-burnt-peach">{menuHint}</p>
+									{/if}
+								</div>
+							{/if}
+						</div>
+					</div>
+				</div>
+			{/each}
 		</div>
-	</div>
+
+		<!-- Full table (shown on xl+ where content area comfortably fits 1120px) -->
+		<div class="hidden overflow-x-auto xl:block">
+			<div class="min-w-[1120px]">
+				<div class="grid grid-cols-[36px_64px_2fr_1fr_1.2fr_0.9fr_1fr_1fr_1fr_84px] gap-3 border-b border-border-soft px-6 py-3 text-xs uppercase tracking-[0.2em] text-text-muted">
+					<span></span>
+					<span>{t('objects.table.headers.preview')}</span>
+					<span>{t('objects.table.headers.title')}</span>
+					<span>{t('objects.table.headers.type')}</span>
+					<span>{t('objects.table.headers.processing')}</span>
+					<span>{t('objects.table.headers.indicators')}</span>
+					<span>{t('objects.table.headers.access')}</span>
+					<span>{t('objects.table.headers.updated')}</span>
+					<span>{t('objects.table.headers.batch')}</span>
+					<span>{t('objects.table.headers.actions')}</span>
+				</div>
+				<div class="divide-y divide-border-soft">
+					{#each rows as row (row.id)}
+						{@const reasonCode = row.accessReasonCode as AccessReasonCode}
+						{@const menuHint = menuHintLabel(reasonCode)}
+						<div class="group grid grid-cols-[36px_64px_2fr_1fr_1.2fr_0.9fr_1fr_1fr_1fr_84px] items-center gap-3 px-6 py-4 transition-colors hover:bg-alabaster-grey/35">
+							<input
+								type="checkbox"
+								class="h-4 w-4 rounded border-border-soft text-blue-slate"
+								checked={selectedIds.includes(row.id)}
+								onchange={() => onToggleSelection(row.id)}
+							/>
+							<a
+								href={resolve('/objects/[objectId]', { objectId: row.objectId })}
+								class="transition hover:opacity-90"
+							>
+								<ObjectThumbnail
+									objectId={row.objectId}
+									thumbnailArtifactId={row.thumbnailArtifactId}
+									objectType={row.type}
+									class="h-12 w-12"
+								/>
+							</a>
+							<div>
+								<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} class="text-sm font-medium text-text-ink underline-offset-2 hover:text-blue-slate hover:underline">
+									{row.title ?? titleFallback(row)}
+								</a>
+								<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} class="block text-xs text-text-muted underline-offset-2 hover:text-blue-slate hover:underline">{row.objectId}</a>
+								{#if !row.canDownload}
+									<p class="mt-1 text-xs text-burnt-peach">{reasonLabel(reasonCode)}</p>
+									{@const action = reasonActionLabel(reasonCode)}
+									{#if action}
+										<Chip class="mt-1 border-burnt-peach/30 bg-pearl-beige text-xs uppercase tracking-[0.2em] text-burnt-peach">
+											{action}
+										</Chip>
+									{/if}
+								{/if}
+							</div>
+							<span class="text-xs text-text-muted">{row.type}</span>
+							<StatusBadge status={toBadgeStatus(row)} label={processingLabel(row.processingState)} />
+							<div class="flex flex-wrap items-center gap-1">
+								{#if row.indicators.accessPdf}
+									<Chip class="border-blue-slate/30 bg-pale-sky/25 text-xs text-blue-slate">PDF</Chip>
+								{/if}
+								{#if row.indicators.ocr}
+									<Chip class="border-blue-slate/30 bg-pale-sky/25 text-xs text-blue-slate">OCR</Chip>
+								{/if}
+								{#if row.indicators.index}
+									<Chip class="border-blue-slate/30 bg-pale-sky/25 text-xs text-blue-slate">IDX</Chip>
+								{/if}
+								{#if !row.indicators.accessPdf && !row.indicators.ocr && !row.indicators.index}
+									<span class="text-xs text-text-muted">-</span>
+								{/if}
+							</div>
+							<span class="text-xs text-text-muted">{accessLevelLabel(row.accessLevel)}</span>
+							<span class="text-xs text-text-muted">{formatDate(row.updatedAt)}</span>
+							<span class="text-xs text-blue-slate" title={availabilityLabel(row.availabilityState)}>{row.sourceBatchLabel ?? '-'}</span>
+							<div class="flex justify-end" data-row-menu-root>
+								<div class="relative">
+									<button
+										type="button"
+										onclick={() => toggleMenu(row.id)}
+										class={`flex h-7 w-7 items-center justify-center rounded-full border transition-all hover:border-blue-slate/35 hover:text-blue-slate focus:opacity-100 ${openMenuRowId === row.id ? 'border-blue-slate/35 text-blue-slate opacity-100' : 'border-transparent text-text-muted opacity-0 group-hover:opacity-100'}`}
+										aria-label={t('objects.table.rowActions')}
+										aria-expanded={openMenuRowId === row.id}
+										aria-controls={`row-actions-${row.id}`}
+									>
+										<svg viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4" aria-hidden="true">
+											<circle cx="4" cy="10" r="1.5" />
+											<circle cx="10" cy="10" r="1.5" />
+											<circle cx="16" cy="10" r="1.5" />
+										</svg>
+									</button>
+									{#if openMenuRowId === row.id}
+										<div
+											id={`row-actions-${row.id}`}
+											class="absolute right-0 z-10 mt-2 w-44 rounded-xl border border-border-soft bg-surface-white p-2 shadow-[0_16px_36px_rgba(31,47,56,0.18)]"
+										>
+											<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} onclick={closeMenu} class="block rounded-lg px-3 py-2 text-xs text-text-ink hover:bg-alabaster-grey/70">
+											{t('objects.table.open')}
+										</a>
+										<button
+											type="button"
+											onclick={() => {
+												closeMenu();
+												void copyObjectId(row);
+											}}
+											class="block w-full rounded-lg px-3 py-2 text-left text-xs text-text-ink hover:bg-alabaster-grey/70"
+										>
+											{copiedRowId === row.id ? t('objects.table.copied') : t('objects.table.copyId')}
+										</button>
+										{#if row.sourceIngestionId}
+											<a
+												href={resolve('/ingestion/[batchId]', { batchId: row.sourceIngestionId })}
+												onclick={closeMenu}
+												class="block rounded-lg px-3 py-2 text-xs text-text-ink hover:bg-alabaster-grey/70"
+											>
+												{t('objects.table.batchLink')}
+											</a>
+										{/if}
+										{#if menuHint}
+											<p class="mt-1 border-t border-border-soft px-3 pt-2 text-xs text-burnt-peach">{menuHint}</p>
+										{/if}
+										</div>
+									{/if}
+								</div>
+							</div>
+						</div>
+					{/each}
+				</div>
+			</div>
+		</div>
+
+	{/if}
+
 </section>
 
 <footer class="flex flex-wrap items-center justify-between gap-4">

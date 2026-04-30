@@ -535,3 +535,152 @@ Props:
 | mediaType | `document` \\| `image` \\| `audio` \\| `video` | yes | Tunes the visual treatment to the media being requested |
 | access | object | yes | Current request state, helper text, preview artifacts, and optional pending request metadata |
 | onRequest | () => void | yes | Prototype callback used to simulate requesting source media |
+
+---
+
+## Shell & Layout Components (v2 Sidebar Layout)
+
+These components support the full-width persistent sidebar layout introduced in the UI/UX overhaul.
+
+### AppSidebar
+
+Purpose: Persistent 232px sidebar replacing the old top-bar. Renders brand mark, primary navigation, active batch progress, and user profile.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| currentPath | string | yes | Used to compute active nav state |
+| username | string | yes | Displayed in the user strip |
+| role | string | yes | Shown beneath username |
+| activeBatches | `{id, name, done, total, status}[]` | no | Drives the mini progress list; defaults to `[]` |
+| onLogout | () => void | yes | Logout callback |
+
+Nav uses `base` from `$app/paths` (not `resolve`) so dynamic string paths are safe.
+
+---
+
+## Primitive Components (v2)
+
+### Icon
+
+Purpose: Inline SVG icon set rendered via `{#if}` blocks. All icons share the same `stroke`, `fill: none` SVG defaults.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| name | string | yes | Icon identifier (see list below) |
+| size | number | no | Width and height in px; default `16` |
+| stroke | number | no | `stroke-width`; default `1.4` |
+
+Available names: `archive`, `plus`, `search`, `arrow-r`, `arrow-l`, `check`, `x`, `upload`, `file`, `image`, `audio`, `video`, `book`, `manuscript`, `eye`, `pencil`, `trash`, `cog`, `chevron-r`, `chevron-d`, `info`, `warn`, `sparkle`, `lock`, `users`, `pages`, `clock`, `globe`, `folder`, `grip`.
+
+**Note:** `Icon` does not forward extra props such as `class`. Wrap in a `<span>` to apply color utilities.
+
+### Stepper
+
+Purpose: Horizontal step indicator for multi-step flows. Completed steps are clickable to jump back.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| steps | `{id: string, label: string}[]` | yes | Step definitions |
+| current | number | yes | Zero-based index of the active step |
+| onJump | (index: number) => void | no | Called when a completed step bubble is clicked |
+
+States: `done` (filled `bg-text-ink`, checkmark, clickable), `current` (`bg-burnt-peach`), `todo` (outline, opacity-45, non-interactive).
+
+### ChoiceCard
+
+Purpose: Toggle-style card button for pickers (kind, language, preset, visibility).
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| title | string | yes | Card label |
+| selected | boolean | yes | Drives selected ring style |
+| onclick | () => void | yes | Toggle handler |
+| icon | string | no | Icon name (uses `Icon` component) |
+| sub | string | no | Subtitle / description text |
+| native | string | no | Native-script label (RTL-friendly) |
+| badge | string | no | Optional badge text rendered via `Chip` |
+| compact | boolean | no | Reduces padding for dense grids |
+| disabled | boolean | no | Disables interaction; card dims via global `disabled:opacity-60` |
+
+Uses `aria-pressed={selected}` and `type="button"`.
+
+### Segmented
+
+Purpose: Pill-style segmented control for switching between mutually exclusive options.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| options | `{id: string, label: string}[]` | yes | Option list |
+| value | string | yes | Active option id |
+| onchange | (id: string) => void | yes | Change handler |
+
+### ThinProgress
+
+Purpose: 2px progress bar for sidebar batch list and other compact contexts.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| value | number | yes | Completed count |
+| total | number | yes | Total count |
+| tone | `'ink' \| 'peach' \| 'sky'` | no | Fill color; default `'ink'` |
+
+Track: `bg-alabaster-grey`. Fill colors: `ink` → `bg-blue-slate-deep`, `peach` → `bg-burnt-peach`, `sky` → `bg-blue-slate`. Width transitions at 400ms.
+
+### StripedPlaceholder
+
+Purpose: Dashed striped placeholder area for unloaded media previews.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| width | string | no | CSS width; default `'100%'` |
+| height | number | no | Height in px; default `80` |
+| label | string | no | Centered mono label text |
+
+### Stamp
+
+Purpose: Small inline status badge in burnt-peach mono style. Accepts a `children` snippet.
+
+```svelte
+<Stamp>Draft · not yet submitted</Stamp>
+<Stamp>Ready to submit</Stamp>
+```
+
+### FootnoteBar
+
+Purpose: Sticky bottom bar for multi-step flows. Holds back/forward navigation and step progress.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| left | snippet | no | Left slot — typically step counter + `Stepper` |
+| right | snippet | no | Right slot — typically navigation buttons |
+
+```svelte
+<FootnoteBar>
+  {#snippet left()}
+    <span>Step 1 of 3</span>
+    <Stepper steps={STEPS} current={0} />
+  {/snippet}
+  {#snippet right()}
+    <a href="…">Cancel</a>
+    <button type="submit" form="form-id">Continue</button>
+  {/snippet}
+</FootnoteBar>
+```
+
+**Note:** Submit buttons inside `FootnoteBar` that target a `<form>` elsewhere in the DOM must use the `form="form-id"` attribute pattern.

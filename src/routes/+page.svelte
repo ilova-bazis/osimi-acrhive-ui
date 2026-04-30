@@ -14,23 +14,26 @@
 	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
 </script>
 
-<main class="mx-auto flex min-h-[80vh] max-w-6xl flex-col gap-6 px-6 py-10">
-	<section class="rounded-2xl border border-border-soft bg-surface-white px-6 py-6">
-		<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('dashboard.title')}</p>
-		<h2 class="mt-3 font-display text-2xl text-text-ink">{formatTemplate(t('dashboard.welcome'), { name: displayName })}</h2>
-		<p class="mt-2 text-sm text-text-muted">{summary.roleTagline}</p>
-		<div class="mt-5 flex flex-wrap gap-3">
+<main class="page-container">
+<div class="page-inner">
+	<div class="flex items-start justify-between gap-6">
+		<div>
+			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate font-medium">{t('dashboard.title')}</p>
+			<h1 class="mt-1 font-display text-2xl text-text-ink leading-tight">{formatTemplate(t('dashboard.welcome'), { name: displayName })}</h1>
+			<p class="mt-1 text-sm text-text-muted">{summary.roleTagline}</p>
+		</div>
+		<div class="flex shrink-0 items-center gap-3 pt-1">
 			<a
 				href={resolve('/ingestion')}
-				class="rounded-full bg-blue-slate px-5 py-2 text-xs uppercase tracking-[0.2em] text-surface-white"
+				class="rounded-full bg-blue-slate px-5 py-2 text-xs uppercase tracking-[0.2em] text-surface-white transition-colors hover:bg-blue-slate-mid-dark"
 			>
 				{t('dashboard.ingestion')}
 			</a>
-			<button class="rounded-full border border-blue-slate px-5 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate">
+			<button class="rounded-full border border-blue-slate px-5 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate transition-colors hover:bg-pale-sky/20">
 				{summary.secondaryAction}
 			</button>
 		</div>
-	</section>
+	</div>
 
 	<section class="grid gap-4 md:grid-cols-3">
 		<div class="rounded-2xl border border-border-soft bg-surface-white px-5 py-5">
@@ -72,4 +75,5 @@
 		<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('dashboard.intentTitle')}</p>
 		<p class="mt-2 text-sm text-text-muted">{t('dashboard.intentBody')}</p>
 	</section>
+</div>
 </main>

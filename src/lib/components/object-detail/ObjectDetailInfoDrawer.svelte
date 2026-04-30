@@ -66,7 +66,7 @@
 			<section class="grid gap-3 sm:grid-cols-2">
 				{#each details as detail (detail.label)}
 					<div class="rounded-2xl border border-border-soft bg-alabaster-grey/40 px-4 py-3">
-						<p class="text-[10px] uppercase tracking-[0.2em] text-text-muted">{detail.label}</p>
+						<p class="text-xs uppercase tracking-[0.2em] text-text-muted">{detail.label}</p>
 						<p class="mt-2 break-words text-sm text-text-ink">{detail.value}</p>
 					</div>
 				{/each}
@@ -74,30 +74,30 @@
 
 			{#if tags.length > 0}
 				<section>
-					<p class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">Tags</p>
+					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Tags</p>
 					<div class="mt-3 flex flex-wrap gap-2">
 						{#each tags as tag (tag)}
-							<Chip class="border-blue-slate/20 bg-pale-sky/25 text-[10px] uppercase tracking-[0.16em] text-blue-slate">{tag}</Chip>
+							<Chip class="border-blue-slate/20 bg-pale-sky/25 text-xs uppercase tracking-[0.2em] text-blue-slate">{tag}</Chip>
 						{/each}
 					</div>
 				</section>
 			{/if}
 
 			<section>
-				<p class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">Description</p>
+				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Description</p>
 				<p class="mt-3 text-sm leading-relaxed text-text-ink">{description ?? 'No description available.'}</p>
 			</section>
 
 			{#if rightsNote}
 				<section>
-					<p class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">Rights note</p>
+					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Rights note</p>
 					<p class="mt-3 rounded-2xl border border-pearl-beige bg-pearl-beige/45 px-4 py-4 text-sm leading-relaxed text-text-ink">{rightsNote}</p>
 				</section>
 			{/if}
 
 			{#if sensitivityNote}
 				<section>
-					<p class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">Sensitivity note</p>
+					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Sensitivity note</p>
 					<p class="mt-3 rounded-2xl border border-burnt-peach/25 bg-pearl-beige/40 px-4 py-4 text-sm leading-relaxed text-text-ink">{sensitivityNote}</p>
 				</section>
 			{/if}

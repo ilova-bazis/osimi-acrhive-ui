@@ -30,7 +30,7 @@
 		{#each recent as item (item.id)}
 			<a
 				href={resolve('/objects/[objectId]', { objectId: item.objectId })}
-				class="min-w-[220px] rounded-xl border border-border-soft bg-alabaster-grey/60 p-3 shadow-[0_10px_20px_rgba(79,109,122,0.08)] transition hover:-translate-y-0.5 hover:border-blue-slate/45 hover:shadow-[0_14px_28px_rgba(79,109,122,0.14)]"
+				class="min-w-[220px] rounded-2xl border border-border-soft bg-alabaster-grey/60 p-3 shadow-[0_10px_20px_rgba(79,109,122,0.08)] transition hover:-translate-y-0.5 hover:border-blue-slate/45 hover:shadow-[0_14px_28px_rgba(79,109,122,0.14)]"
 			>
 				<ObjectThumbnail
 					objectId={item.objectId}
@@ -41,11 +41,11 @@
 				<p class="mt-3 line-clamp-2 text-sm font-medium text-text-ink">{item.title ?? titleFallback(item)}</p>
 				<p class="mt-1 text-xs text-text-muted">{item.type}</p>
 				<div class="mt-2 flex items-center gap-2">
-					<Chip class="border-blue-slate/30 bg-pale-sky/20 text-[10px] text-blue-slate">
+					<Chip class="border-blue-slate/30 bg-pale-sky/20 text-xs text-blue-slate">
 						{availabilityLabel(item.availabilityState)}
 					</Chip>
 					{#if !item.canDownload}
-						<Chip class="border-burnt-peach/30 bg-pearl-beige text-[10px] text-burnt-peach">{t('objects.recent.restricted')}</Chip>
+						<Chip class="border-burnt-peach/30 bg-pearl-beige text-xs text-burnt-peach">{t('objects.recent.restricted')}</Chip>
 					{/if}
 				</div>
 			</a>

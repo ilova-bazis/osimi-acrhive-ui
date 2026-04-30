@@ -27,6 +27,8 @@
 	--border-strong: rgb(var(--palette-blue-slate) / 0.45);
 	--font-display: 'Fraunces', serif;
 	--font-body: 'Manrope', sans-serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
+	--font-farsi: 'Vazirmatn', 'Iranian Sans', sans-serif;
 	--font-scale: 1;
 }
 
@@ -56,4 +58,41 @@
 	.font-body {
 		font-family: var(--font-body);
 	}
+	.font-mono {
+		font-family: var(--font-mono);
+		font-feature-settings: 'zero' 1, 'cv11' 1;
+	}
+	.farsi {
+		font-family: var(--font-farsi);
+		direction: rtl;
+	}
+}
+
+/* Outer shell: full-width, consistent padding — same on all four primary pages */
+.page-container {
+	@apply w-full px-4 py-8 sm:px-6 sm:py-10;
+}
+/* Inner constraint: max-width + centering — mirrors the inner div pattern used by New Batch */
+.page-inner {
+	@apply mx-auto w-full max-w-6xl flex flex-col gap-6 min-h-[80vh];
+}
+
+.machine-region {
+	background: rgb(var(--palette-pale-sky) / 0.18);
+	border-left: 2px solid rgb(var(--palette-blue-slate) / 0.25);
+}
+
+.machine-region--explicit::before {
+	content: 'machine-generated';
+	display: inline-block;
+	font-family: var(--font-mono);
+	font-size: 9.5px;
+	text-transform: lowercase;
+	letter-spacing: 0.04em;
+	color: rgb(var(--palette-blue-slate));
+	padding: 2px 6px;
+	background: rgb(var(--palette-surface-white));
+	border: 1px solid rgb(var(--palette-blue-slate) / 0.2);
+	border-radius: 2px;
+	margin-bottom: 8px;
 }

@@ -230,7 +230,18 @@
 	const hasActiveFilters = () => activeChips().length > 0;
 </script>
 
-<main class="mx-auto flex min-h-[80vh] max-w-6xl flex-col gap-6 px-6 py-10">
+<main class="page-container">
+<div class="page-inner">
+	<div class="flex items-start justify-between gap-6">
+		<div>
+			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate font-medium">Catalog</p>
+			<h1 class="mt-1 font-display text-2xl text-text-ink leading-tight">Objects</h1>
+			{#if hasActiveFilters()}
+				<p class="mt-1 text-sm text-text-muted">{data.list.filteredCount.toLocaleString()} matching · {data.list.totalCount.toLocaleString()} total</p>
+			{/if}
+		</div>
+		<p class="shrink-0 pt-1 font-mono text-xs text-text-muted">{data.list.totalCount.toLocaleString()} total</p>
+	</div>
 	<ObjectsFilterPanel
 		filters={data.filters}
 		availabilityOptions={availabilityOptions}
@@ -241,7 +252,7 @@
 
 	<ObjectsRecentStrip recent={data.recent} />
 
-	<div class="flex items-center justify-between gap-3 rounded-2xl border border-border-soft bg-surface-white px-4 py-2.5">
+	<div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border-soft bg-surface-white px-4 py-2.5">
 		<div class="flex items-center gap-3">
 			{#if selectedIds.length > 0}
 				<span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-slate text-[10px] font-semibold text-surface-white">
@@ -259,7 +270,7 @@
 				type="button"
 				onclick={selectVisible}
 				disabled={data.list.rows.length === 0 || selectedIds.length === data.list.rows.length}
-				class="rounded-full border border-blue-slate px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition-colors hover:bg-pale-sky/20 disabled:cursor-not-allowed disabled:opacity-40"
+				class="rounded-full border border-blue-slate px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-blue-slate transition-colors hover:bg-pale-sky/20 disabled:cursor-not-allowed disabled:opacity-40"
 			>
 				{t('objects.header.selectVisible')}
 			</button>
@@ -267,14 +278,14 @@
 				<button
 					type="button"
 					onclick={clearSelection}
-					class="rounded-full border border-border-soft px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-text-muted transition-colors hover:border-blue-slate/35 hover:text-blue-slate"
+					class="rounded-full border border-border-soft px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-text-muted transition-colors hover:border-blue-slate/35 hover:text-blue-slate"
 				>
 					{t('objects.header.clearSelection')}
 				</button>
 				<button
 					type="button"
 					onclick={copySelectionIds}
-					class="rounded-full border border-border-soft px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-text-muted transition-colors hover:border-blue-slate/35 hover:text-blue-slate"
+					class="rounded-full border border-border-soft px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-text-muted transition-colors hover:border-blue-slate/35 hover:text-blue-slate"
 				>
 					{selectionCopied ? t('objects.header.copiedSelection') : t('objects.header.copySelectionIds')}
 				</button>
@@ -282,7 +293,7 @@
 					type="button"
 					onclick={() => (showResyncConfirm = true)}
 					disabled={resyncRunning}
-					class="rounded-full bg-blue-slate px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-surface-white transition-colors hover:bg-blue-slate-mid-dark disabled:cursor-not-allowed disabled:opacity-50"
+					class="rounded-full bg-blue-slate px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-surface-white transition-colors hover:bg-blue-slate-mid-dark disabled:cursor-not-allowed disabled:opacity-50"
 				>
 					{resyncRunning ? '…' : t('objects.resync.resyncSelected')}
 				</button>
@@ -307,6 +318,7 @@
 		filteredCount={data.list.filteredCount}
 		totalCount={data.list.totalCount}
 	/>
+</div>
 </main>
 
 {#if showResyncConfirm}

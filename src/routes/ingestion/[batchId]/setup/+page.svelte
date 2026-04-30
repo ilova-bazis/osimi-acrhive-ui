@@ -13,6 +13,10 @@
 	import ObjectMetadataPanel from '$lib/components/ObjectMetadataPanel.svelte';
 	import type { ObjectGroup, ObjectItemMetadata } from '$lib/models';
 	import type { IngestionDetailItem } from '$lib/services/ingestionDetail';
+	import Icon from '$lib/components/Icon.svelte';
+	import Stepper from '$lib/components/Stepper.svelte';
+	import Stamp from '$lib/components/Stamp.svelte';
+	import FootnoteBar from '$lib/components/FootnoteBar.svelte';
 
 	let {
 		data
@@ -1924,7 +1928,7 @@
 
 	// --- Step 1 (Organize) ---
 	let selectedFileIds = $state<number[]>([]);
-	let dragOverLeftPanel = $state(false);
+	let dragOverUngroupedSection = $state(false);
 	let validationDismissed = $state(false);
 	let step1DragSourceId = $state<number | null>(null);
 	let step1DragTargetFileId = $state<number | null>(null);
@@ -1935,22 +1939,11 @@
 	);
 	const organizeObjectCount = $derived(objectGroups.length + standaloneFiles.length);
 
-	const fileKindEmoji = (mediaType: BatchMediaType): string => {
-		if (mediaType === 'audio') return '🎵';
-		if (mediaType === 'document') return '📄';
-		if (mediaType === 'video') return '🎬';
-		return '🖼';
-	};
-	const fileKindLabel = (mediaType: BatchMediaType): string => {
-		if (mediaType === 'audio') return 'AUD';
-		if (mediaType === 'document') return 'DOC';
-		if (mediaType === 'video') return 'VID';
-		return 'IMG';
-	};
-	const fileKindLabelClasses = (mediaType: BatchMediaType): string => {
-		if (mediaType === 'audio') return 'bg-alabaster-grey text-blue-slate';
-		if (mediaType === 'document') return 'bg-pearl-beige text-blue-slate';
-		return 'bg-pale-sky/50 text-blue-slate';
+	const fileKindIcon = (mediaType: BatchMediaType): string => {
+		if (mediaType === 'audio') return 'audio';
+		if (mediaType === 'document') return 'book';
+		if (mediaType === 'video') return 'video';
+		return 'image';
 	};
 
 	const revokePreviewUrl = (fileId: number): void => {
@@ -2038,7 +2031,7 @@
 		step1DragSourceId = null;
 		step1DragTargetFileId = null;
 		listDragTargetGroupId = null;
-		dragOverLeftPanel = false;
+		dragOverUngroupedSection = false;
 	};
 
 	const onStep1GroupDragOver = (e: DragEvent, groupId: string) => {
@@ -2065,14 +2058,14 @@
 		if (!hasProtoFileDragType(e)) return;
 		e.preventDefault();
 		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-		dragOverLeftPanel = true;
+		dragOverUngroupedSection = true;
 	};
 
 	const onStep1LeftPanelDrop = (e: DragEvent) => {
 		if (!hasProtoFileDragType(e)) return;
 		e.preventDefault();
 		const srcId = step1DragSourceId;
-		dragOverLeftPanel = false;
+		dragOverUngroupedSection = false;
 		if (srcId === null) return;
 		objectGroups = dissolveSmallGroups(
 			objectGroups.map((g) => ({ ...g, fileIds: g.fileIds.filter((fid) => fid !== srcId) }))
@@ -2184,44 +2177,58 @@
 	};
 </script>
 
+<div class="flex flex-col min-h-screen">
+
+<!-- Sticky top-bar -->
+<header class="sticky top-0 z-20 border-b border-border-soft bg-alabaster-grey px-6 py-4 flex items-start justify-between gap-6">
+	<div class="flex flex-col gap-1">
+		<div class="flex items-center gap-2 text-xs text-text-muted">
+			<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">Ingestion</span>
+			<Icon name="chevron-r" size={12} />
+			<span class="font-mono text-xs">{batchId}</span>
+		</div>
+		<h1 class="font-display text-2xl text-text-ink m-0 leading-tight">
+			{batchDefaults.title || batchId}
+		</h1>
+	</div>
+	<div class="flex items-center gap-3 pt-1 flex-shrink-0">
+		<Stamp>Draft · not yet submitted</Stamp>
+		<a
+			href={resolve('/ingestion')}
+			class="inline-flex items-center gap-2 rounded-full border border-border-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:bg-pale-sky/20 hover:text-text-ink transition-all"
+		>
+			<Icon name="x" size={13} /> Discard
+		</a>
+	</div>
+</header>
+
 <main
-	class="mx-auto flex min-h-[80vh] max-w-6xl flex-col gap-6 px-6 pb-28 pt-10"
+	class="flex-1 flex flex-col gap-6 px-6 pb-4 pt-8"
 	ondragenter={handleGlobalDragEnter}
 	ondragleave={handleGlobalDragLeave}
 	ondrop={handleGlobalDrop}
 >
-	<!-- Page header with step indicator -->
+	<!-- Sub-step indicator + actions -->
 	<section class="flex flex-wrap items-center justify-between gap-4">
-		<div>
-			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionSetup.header.kicker')}</p>
-			<h2 class="mt-2 font-display text-2xl text-text-ink">{t('ingestionSetup.header.title')}</h2>
-			<p class="mt-2 text-sm text-text-muted">
-				{format(t('ingestionSetup.header.subtitle'), { batchId })}
-			</p>
-		</div>
-		<!-- Step indicator -->
-		<nav class="flex items-center gap-2 text-xs uppercase tracking-[0.2em]">
+		<nav class="flex items-center gap-3 text-xs uppercase tracking-[0.2em]">
 			<button
-				class={step === 'organize' ? 'font-semibold text-blue-slate' : 'text-text-muted hover:text-blue-slate'}
+				class={step === 'organize' ? 'font-semibold text-blue-slate' : 'text-text-muted hover:text-blue-slate transition-colors'}
 				onclick={() => { if (step === 'metadata') step = 'organize'; }}
 			>
-				Step 1: Organize
+				1 · Organize
 			</button>
-			<span class="text-text-muted">→</span>
+			<Icon name="chevron-r" size={12} />
 			<span class={step === 'metadata' ? 'font-semibold text-blue-slate' : 'text-text-muted'}>
-				Step 2: Metadata
+				2 · Metadata
 			</span>
 		</nav>
 		{#if step === 'organize'}
-			<div class="flex items-center gap-2">
-				<button
-					onclick={() => autoGroupByFilename(standaloneFiles)}
-					class="rounded-full border border-blue-slate/50 px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20 active:scale-[0.99]"
-				>
-					Auto-group by filename
-				</button>
-
-			</div>
+			<button
+				onclick={() => autoGroupByFilename(standaloneFiles)}
+				class="rounded-full border border-border-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted transition hover:bg-pale-sky/20 hover:text-text-ink active:scale-[0.99]"
+			>
+				Auto-group by filename
+			</button>
 		{/if}
 	</section>
 
@@ -2275,43 +2282,30 @@
 			</div>
 		{/if}
 
-		<!-- Two-column work area -->
-		<div class="grid grid-cols-[minmax(280px,2fr)_3fr] gap-6">
-			<!-- LEFT: Unassigned files + upload zone -->
+		<!-- Unified file list -->
+		<section class="flex flex-col gap-4">
+
+			<!-- Upload zone: full card when empty, compact strip when files exist -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<aside
-				class={[
-					'rounded-2xl border-2 transition',
-					dragOverLeftPanel
-						? 'border-blue-slate bg-pale-sky/10'
-						: standaloneFiles.length === 0 && files.length > 0
-							? 'border-dashed border-border-soft bg-surface-white/60'
-							: 'border-border-soft bg-surface-white'
-				].join(' ')}
-				ondragover={onStep1LeftPanelDragOver}
-				ondragleave={() => { dragOverLeftPanel = false; }}
-				ondrop={onStep1LeftPanelDrop}
-			>
-				<!-- Compact upload zone -->
+			{#if files.length === 0}
 				<div
 					class={[
-						'rounded-t-2xl border-b px-5 py-5 text-center transition',
+						'rounded-2xl border-2 px-8 py-16 text-center transition',
 						isDragging || isGlobalDragging
 							? 'border-blue-slate bg-pearl-beige/70 shadow-[0_0_0_4px_rgba(79,109,122,0.25)]'
-							: 'border-border-soft bg-pearl-beige/40 [outline:2px_dashed_rgba(79,109,122,0.2)] [outline-offset:-8px]'
+							: 'border-dashed border-border-soft bg-pearl-beige/30 [outline:2px_dashed_rgba(79,109,122,0.15)] [outline-offset:-10px]'
 					].join(' ')}
 					ondragenter={handleDragEnter}
 					ondragover={handleDragOver}
 					ondragleave={handleDragLeave}
 					ondrop={handleDrop}
 				>
-					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionSetup.dropzone.label')}</p>
-					<p class="mt-2 font-display text-base text-text-ink">
+					<p class="font-display text-xl text-text-ink">
 						{isDragging || isGlobalDragging
 							? t('ingestionSetup.dropzone.headlineDragging')
 							: t('ingestionSetup.dropzone.headline')}
 					</p>
-					<p class="mt-1 text-[11px] text-text-muted">
+					<p class="mt-2 text-sm text-text-muted">
 						{#if batchMediaType}
 							{format(t('ingestionSetup.dropzone.lockedType'), {
 								mediaType: mediaTypeLabel(batchMediaType),
@@ -2324,213 +2318,212 @@
 						{/if}
 					</p>
 					{#if addFilesError}
-						<p class="mt-2 text-xs text-burnt-peach">{addFilesError}</p>
+						<p class="mt-3 text-xs text-burnt-peach">{addFilesError}</p>
 					{/if}
 					<button
 						onclick={() => fileInput?.click()}
-						class="mt-3 rounded-full border border-blue-slate px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-blue-slate"
+						class="mt-5 rounded-full border border-blue-slate px-5 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate hover:bg-pale-sky/20 transition"
 					>
 						{t('ingestionSetup.dropzone.browse')}
 					</button>
 					<input bind:this={fileInput} type="file" multiple class="hidden" onchange={handleFileInput} />
 				</div>
-
-				<!-- Unassigned files header -->
-				<div class="border-b border-border-soft px-5 py-3">
-					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Unassigned Files</p>
-					<p class="mt-1 text-xs text-text-muted">
-						{standaloneFiles.length === 0 && files.length > 0
-							? 'All files assigned — ready to continue!'
-							: `${standaloneFiles.length} ${standaloneFiles.length === 1 ? 'file' : 'files'} not yet grouped`}
-					</p>
-				</div>
-
-				{#if selectedFileIds.length > 0}
-					<div class="border-b border-border-soft bg-pale-sky/10 px-5 py-2.5">
-						<div class="flex flex-wrap items-center gap-2">
-							<p class="text-xs text-text-muted">{selectedFileIds.length} {selectedFileIds.length === 1 ? 'file' : 'files'} selected</p>
-							<button
-								disabled={selectedFileIds.length < 2}
-								onclick={organizeGroupSelected}
-								class="rounded-full border border-blue-slate px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20 disabled:cursor-not-allowed disabled:opacity-40"
-							>
-								Merge
-							</button>
-							<button
-								onclick={organizeSplitSelected}
-								class="rounded-full border border-blue-slate/50 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate/75 transition hover:border-blue-slate hover:text-blue-slate"
-							>
-								Split
-							</button>
-							<button
-								onclick={() => { selectedFileIds = []; }}
-								class="ml-auto text-xs text-text-muted hover:text-text-ink"
-							>
-								Clear
-							</button>
-						</div>
-					</div>
-				{/if}
-
-				<!-- Unassigned file rows -->
-				<div class="divide-y divide-border-soft">
-					{#if files.length === 0}
-						<div class="px-5 py-8 text-center text-sm text-text-muted">
-							{t('ingestionSetup.files.empty')}
-						</div>
-					{:else if standaloneFiles.length === 0}
-						<div class="px-5 py-10 text-center text-sm italic text-text-muted">
-							All files have been assigned to groups.
-						</div>
+			{:else}
+				<div
+					class={[
+						'flex items-center gap-4 rounded-2xl border px-5 py-3 transition',
+						isDragging || isGlobalDragging
+							? 'border-blue-slate bg-pearl-beige/70 shadow-[0_0_0_3px_rgba(79,109,122,0.2)]'
+							: 'border-border-soft bg-pearl-beige/30 [outline:1px_dashed_rgba(79,109,122,0.25)] [outline-offset:-5px]'
+					].join(' ')}
+					ondragenter={handleDragEnter}
+					ondragover={handleDragOver}
+					ondragleave={handleDragLeave}
+					ondrop={handleDrop}
+				>
+					<span class="text-text-muted/60"><Icon name="upload" size={15} /></span>
+					<span class="flex-1 text-sm text-text-muted">
+						{isDragging || isGlobalDragging ? t('ingestionSetup.dropzone.headlineDragging') : 'Drop files to add more'}
+					</span>
+					{#if addFilesError}
+						<span class="text-xs text-burnt-peach">{addFilesError}</span>
 					{/if}
-					{#each standaloneFiles as file (file.id)}
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						{@const itemState = getItemCompletenessState(`file:${file.id}`)}
-						<div
-							class={[
-								'flex cursor-grab items-center gap-3 px-5 py-3 transition hover:bg-pale-sky/15',
-								step1DragSourceId === file.id ? 'opacity-40' : '',
-								step1DragTargetFileId === file.id ? 'ring-1 ring-inset ring-blue-slate/40' : '',
-								selectedFileIds.includes(file.id) ? 'bg-pale-sky/10' : ''
-							].join(' ')}
-							draggable="true"
-							ondragstart={(e) => onStep1FileDragStart(e, file.id)}
-							ondragend={onStep1FileDragEnd}
-							onclick={() => toggleFileSelection(file.id)}
-						>
-							<span class="select-none text-text-muted/60" title="Drag to assign to a group">⠿</span>
-							<input
-								type="checkbox"
-								checked={selectedFileIds.includes(file.id)}
-								onclick={(e) => e.stopPropagation()}
-								onchange={() => toggleFileSelection(file.id)}
-								class="h-4 w-4 shrink-0 cursor-pointer rounded border-border-soft accent-blue-slate"
-							/>
-							<span class="shrink-0 text-lg leading-none">{fileKindEmoji(file.mediaType)}</span>
-							<div class="min-w-0 flex-1">
-								<p class="truncate text-sm font-medium text-text-ink">{file.name}</p>
-								<p class="text-[10px] text-text-muted">{file.size}</p>
-							</div>
-							<StatusBadge status={file.status} label={statusLabel(file.status)} />
-							{#if itemState === 'complete'}
-								<span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" title="Metadata complete"></span>
-							{:else if itemState === 'partial'}
-								{@const missing = getItemMissingFields(`file:${file.id}`)}
-								<span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-burnt-peach" title="Missing: {missing.join(', ')}"></span>
-							{/if}
-							<span class={`shrink-0 rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.12em] ${fileKindLabelClasses(file.mediaType)}`}>
-								{fileKindLabel(file.mediaType)}
-							</span>
-							<button
-								type="button"
-								class="shrink-0 rounded-full p-1 text-text-muted/50 transition hover:text-burnt-peach disabled:opacity-30"
-								disabled={removingIds.includes(file.id)}
-								onclick={(e) => { e.stopPropagation(); removeFile(file.id); }}
-								title="Remove file"
-								aria-label="Remove {file.name}"
-							>✕</button>
-						</div>
-					{/each}
+					<button
+						onclick={() => fileInput?.click()}
+						class="shrink-0 rounded-full border border-blue-slate/60 px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-blue-slate hover:bg-pale-sky/20 transition"
+					>
+						{t('ingestionSetup.dropzone.browse')}
+					</button>
+					<input bind:this={fileInput} type="file" multiple class="hidden" onchange={handleFileInput} />
 				</div>
+			{/if}
 
-				{#if step1DragSourceId !== null && dragOverLeftPanel}
-					<div class="px-5 py-3 text-center text-xs text-blue-slate">
-						Drop here to unassign from group
-					</div>
-				{/if}
-			</aside>
-
-			<!-- RIGHT: Object groups -->
-			<section class="space-y-4">
+			<!-- Object groups -->
 				{#each objectGroups as group (group.id)}
 					<div class="overflow-hidden rounded-2xl border border-border-soft bg-surface-white">
-					<ObjectGroupRow
-						groupId={group.id}
-						label={group.label}
-						fileCount={group.fileIds.length}
-						collapsed={collapsedGroups.includes(group.id)}
-						dragOver={listDragTargetGroupId === group.id}
-						active={false}
-						ungroupDisabled={Boolean(group.serverId)}
-						incomplete={getItemCompletenessState(group.id) === 'partial'}
-						onToggleCollapse={() => toggleGroupCollapse(group.id)}
-						onUngroup={() => ungroupFiles(group.id)}
-						onLabelChange={(label: string) => renameGroup(group.id, label)}
-						onDragOver={(e: DragEvent) => onStep1GroupDragOver(e, group.id)}
-						onDragLeave={(_e: DragEvent) => onStep1GroupDragLeave(group.id)}
-						onDrop={(e: DragEvent) => onStep1GroupDrop(e, group.id)}
-					>
-						<div class="divide-y divide-border-soft bg-surface-white">
-							{#if group.fileIds.length === 0}
-								<div class="px-6 py-6 text-center text-xs italic text-text-muted">
-									Drop files here to add them to this group
-								</div>
-							{/if}
-							{#each group.fileIds as fileId, index (fileId)}
-								{@const file = filesById.get(fileId)}
-								{#if file}
-									<!-- svelte-ignore a11y_no_static_element_interactions -->
-									<div
-										class={[
-											'flex items-center gap-3 px-6 py-2.5 transition hover:bg-pale-sky/10',
-											step1DragSourceId === fileId ? 'opacity-40' : '',
-											step1DragTargetFileId === fileId ? 'ring-1 ring-inset ring-blue-slate/35' : ''
-										].join(' ')}
-										draggable="true"
-										ondragstart={(e) => onStep1FileDragStart(e, fileId)}
-										ondragend={onStep1FileDragEnd}
-										ondragover={(e) => onStep1GroupFileDragOver(e, fileId)}
-										ondrop={(e) => onStep1GroupFileDrop(e, fileId, group.id)}
-									>
-										<span class="w-5 shrink-0 text-center text-[10px] text-text-muted">{index + 1}</span>
-										<span class="shrink-0 cursor-grab select-none text-text-muted/60" title="Drag to reorder">⠿</span>
-										<div class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border-soft bg-alabaster-grey/50">
-											{#if previewUrls[fileId] && file.mediaType === 'image'}
-												<img src={previewUrls[fileId]} alt={file.name} class="h-full w-full object-cover" />
-											{:else}
-												<span class="text-sm leading-none">{fileKindEmoji(file.mediaType)}</span>
-											{/if}
-										</div>
-										<div class="min-w-0 flex-1">
-											<p class="truncate text-sm text-text-ink">{file.name}</p>
-											<p class="text-[10px] text-text-muted">{file.size}</p>
-										</div>
-										<StatusBadge status={file.status} label={statusLabel(file.status)} />
-										<button
-											type="button"
-											class="shrink-0 rounded-full p-1 text-text-muted/50 transition hover:text-burnt-peach disabled:opacity-30"
-											disabled={removingIds.includes(fileId)}
-											onclick={(e) => { e.stopPropagation(); removeFile(fileId); }}
-											title="Remove file"
-											aria-label="Remove {file.name}"
-										>✕</button>
+						<ObjectGroupRow
+							groupId={group.id}
+							label={group.label}
+							fileCount={group.fileIds.length}
+							collapsed={collapsedGroups.includes(group.id)}
+							dragOver={listDragTargetGroupId === group.id}
+							active={false}
+							ungroupDisabled={Boolean(group.serverId)}
+							incomplete={getItemCompletenessState(group.id) === 'partial'}
+							onToggleCollapse={() => toggleGroupCollapse(group.id)}
+							onUngroup={() => ungroupFiles(group.id)}
+							onLabelChange={(label: string) => renameGroup(group.id, label)}
+							onDragOver={(e: DragEvent) => onStep1GroupDragOver(e, group.id)}
+							onDragLeave={(_e: DragEvent) => onStep1GroupDragLeave(group.id)}
+							onDrop={(e: DragEvent) => onStep1GroupDrop(e, group.id)}
+						>
+							<div class="divide-y divide-border-soft bg-surface-white">
+								{#if group.fileIds.length === 0}
+									<div class="px-6 py-6 text-center text-xs italic text-text-muted">
+										Drop files here to add them to this group
 									</div>
 								{/if}
-							{/each}
-						</div>
-					</ObjectGroupRow>
+								{#each group.fileIds as fileId, index (fileId)}
+									{@const file = filesById.get(fileId)}
+									{#if file}
+										<!-- svelte-ignore a11y_no_static_element_interactions -->
+										<div
+											class={[
+												'flex items-center gap-3 px-6 py-2.5 transition hover:bg-pale-sky/10',
+												step1DragSourceId === fileId ? 'opacity-40' : '',
+												step1DragTargetFileId === fileId ? 'ring-1 ring-inset ring-blue-slate/35' : ''
+											].join(' ')}
+											draggable="true"
+											ondragstart={(e) => onStep1FileDragStart(e, fileId)}
+											ondragend={onStep1FileDragEnd}
+											ondragover={(e) => onStep1GroupFileDragOver(e, fileId)}
+											ondrop={(e) => onStep1GroupFileDrop(e, fileId, group.id)}
+										>
+											<span class="w-5 shrink-0 text-center text-[10px] text-text-muted">{index + 1}</span>
+											<span class="shrink-0 cursor-grab select-none text-text-muted/60" title="Drag to reorder">⠿</span>
+											<div class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border-soft bg-alabaster-grey/50">
+												{#if previewUrls[fileId] && file.mediaType === 'image'}
+													<img src={previewUrls[fileId]} alt={file.name} class="h-full w-full object-cover" />
+												{:else}
+													<span class="text-text-muted/60">
+														<Icon name={fileKindIcon(file.mediaType)} size={14} />
+													</span>
+												{/if}
+											</div>
+											<div class="min-w-0 flex-1">
+												<p class="truncate text-sm text-text-ink">{file.name}</p>
+												<p class="text-[10px] text-text-muted">{file.size}</p>
+											</div>
+											<StatusBadge status={file.status} label={statusLabel(file.status)} />
+											<button
+												type="button"
+												class="shrink-0 rounded-full p-1 text-text-muted/50 transition hover:text-burnt-peach disabled:opacity-30"
+												disabled={removingIds.includes(fileId)}
+												onclick={(e) => { e.stopPropagation(); removeFile(fileId); }}
+												title="Remove file"
+												aria-label="Remove {file.name}"
+											>✕</button>
+										</div>
+									{/if}
+								{/each}
+							</div>
+						</ObjectGroupRow>
 					</div>
 				{/each}
 
-				{#if objectGroups.length === 0}
-					<div class="rounded-2xl border-2 border-dashed border-border-soft px-8 py-16 text-center">
-						<p class="font-display text-xl text-text-muted">No groups yet</p>
-						<p class="mt-2 text-sm text-text-muted">
-							Click <strong>Auto-group by filename</strong> above, or drag files here from the left panel.
-						</p>
+				<!-- Ungrouped section -->
+				{#if standaloneFiles.length > 0}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div
+						class={[
+							'overflow-hidden rounded-2xl border-2 border-dashed transition',
+							dragOverUngroupedSection ? 'border-blue-slate bg-pale-sky/5' : 'border-border-soft'
+						].join(' ')}
+						ondragover={onStep1LeftPanelDragOver}
+						ondragleave={() => { dragOverUngroupedSection = false; }}
+						ondrop={onStep1LeftPanelDrop}
+					>
+						<!-- Section header -->
+						<div class="flex items-center gap-3 border-b border-border-soft bg-alabaster-grey/40 px-5 py-3">
+							<span class="text-xs font-medium uppercase tracking-[0.2em] text-text-muted">Ungrouped</span>
+							<span class="font-mono text-xs text-text-muted">
+								{standaloneFiles.length} {standaloneFiles.length === 1 ? 'file' : 'files'} · each becomes its own object
+							</span>
+							{#if selectedFileIds.length > 0}
+								<div class="ml-auto flex items-center gap-2">
+									<span class="text-xs text-text-muted">{selectedFileIds.length} selected</span>
+									<button
+										disabled={selectedFileIds.length < 2}
+										onclick={organizeGroupSelected}
+										class="rounded-full border border-blue-slate px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20 disabled:cursor-not-allowed disabled:opacity-40"
+									>Merge</button>
+									<button
+										onclick={organizeSplitSelected}
+										class="rounded-full border border-blue-slate/50 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate/75 transition hover:border-blue-slate hover:text-blue-slate"
+									>Split</button>
+									<button
+										onclick={() => { selectedFileIds = []; }}
+										class="text-xs text-text-muted hover:text-text-ink transition"
+									>Clear</button>
+								</div>
+							{/if}
+						</div>
+
+						<!-- Ungrouped file rows -->
+						<div class="divide-y divide-border-soft">
+							{#each standaloneFiles as file (file.id)}
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<div
+									class={[
+										'grid cursor-grab items-center gap-x-3 px-5 py-2.5 transition hover:bg-pale-sky/15',
+										step1DragSourceId === file.id ? 'opacity-40' : '',
+										step1DragTargetFileId === file.id ? 'ring-1 ring-inset ring-blue-slate/40' : '',
+										selectedFileIds.includes(file.id) ? 'bg-pale-sky/10' : ''
+									].join(' ')}
+									style="grid-template-columns: 16px 16px 16px 1fr 64px auto 24px"
+									draggable="true"
+									ondragstart={(e) => onStep1FileDragStart(e, file.id)}
+									ondragend={onStep1FileDragEnd}
+									onclick={() => toggleFileSelection(file.id)}
+								>
+									<span class="select-none text-text-muted/50" title="Drag to a group above">⠿</span>
+									<input
+										type="checkbox"
+										checked={selectedFileIds.includes(file.id)}
+										onclick={(e) => e.stopPropagation()}
+										onchange={() => toggleFileSelection(file.id)}
+										class="h-4 w-4 shrink-0 cursor-pointer rounded border-border-soft accent-blue-slate"
+									/>
+									<span class="text-text-muted/70">
+										<Icon name={fileKindIcon(file.mediaType)} size={14} />
+									</span>
+									<p class="truncate text-sm text-text-ink">{file.name}</p>
+									<span class="text-right font-mono text-xs text-text-muted">{file.size}</span>
+									<StatusBadge status={file.status} label={statusLabel(file.status)} />
+									<button
+										type="button"
+										class="shrink-0 rounded-full p-1 text-text-muted/50 transition hover:text-burnt-peach disabled:opacity-30"
+										disabled={removingIds.includes(file.id)}
+										onclick={(e) => { e.stopPropagation(); removeFile(file.id); }}
+										title="Remove file"
+										aria-label="Remove {file.name}"
+									>✕</button>
+								</div>
+							{/each}
+						</div>
 					</div>
 				{/if}
-			</section>
-		</div>
+
+		</section>
 
 	{:else}
 		<!-- ══════════════ STEP 2: METADATA ══════════════ -->
 
-		<!-- Batch defaults (dark card) -->
-		<div class="rounded-2xl border border-border-strong bg-blue-slate-deep px-6 py-6 text-pale-sky">
-			<p class="text-xs uppercase tracking-[0.2em] text-burnt-peach">{t('ingestionSetup.batchIntent.title')}</p>
-			<p class="mt-2 text-sm text-pale-sky">{t('ingestionSetup.batchIntent.description')}</p>
-			<p class="mt-3 text-[11px] uppercase tracking-[0.16em] text-pale-sky/80">
+		<!-- Batch defaults -->
+		<div class="rounded-2xl border border-border-soft bg-surface-white px-6 py-6">
+			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionSetup.batchIntent.title')}</p>
+			<p class="mt-2 text-sm text-text-muted">{t('ingestionSetup.batchIntent.description')}</p>
+			<p class="mt-3 text-xs uppercase tracking-[0.16em] text-text-muted">
 				{#if metadataSaveState === 'saving' || metadataSaveState === 'pending'}
 					{t('ingestionSetup.batchIntent.saveStateSaving')}
 				{:else if metadataSaveState === 'saved'}
@@ -2542,21 +2535,21 @@
 				{/if}
 			</p>
 			{#if metadataSaveError}
-				<p class="mt-3 rounded-xl border border-burnt-peach/45 bg-pearl-beige/20 px-3 py-2 text-xs text-burnt-peach">
+				<p class="mt-3 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach">
 					{metadataSaveError}
 				</p>
 			{/if}
 			<div class="mt-4 text-sm">
 				<details open class="py-2">
-					<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-burnt-peach">
+					<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-blue-slate">
 						{t('ingestionSetup.batchIntent.sections.coreMetadata')}
 					</summary>
 					<div class="mt-3 grid gap-3 md:grid-cols-2">
 						<div class="md:col-span-2">
-							<label for="intent-title" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.titleLabel')}</label>
+							<label for="intent-title" class="text-xs uppercase tracking-[0.2em] text-text-muted">{t('ingestionSetup.batchIntent.titleLabel')}</label>
 							<input
 								id="intent-title"
-								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 								value={batchDefaults.title}
 								oninput={(event) => {
 									batchDefaults.title = event.currentTarget.value;
@@ -2565,10 +2558,10 @@
 							/>
 						</div>
 						<div>
-							<label for="intent-language" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.language')}</label>
+							<label for="intent-language" class="text-xs uppercase tracking-[0.2em] text-text-muted">{t('ingestionSetup.batchIntent.language')}</label>
 							<select
 								id="intent-language"
-								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 								value={batchDefaults.language}
 								onchange={(event) => {
 									batchDefaults.language = event.currentTarget.value;
@@ -2582,10 +2575,10 @@
 							</select>
 						</div>
 						<div>
-							<label for="intent-item-kind" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.itemKind')}</label>
+							<label for="intent-item-kind" class="text-xs uppercase tracking-[0.2em] text-text-muted">{t('ingestionSetup.batchIntent.itemKind')}</label>
 							<select
 								id="intent-item-kind"
-								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 								value={batchDefaults.itemKind}
 								onchange={(event) =>
 									setItemKind(
@@ -2607,10 +2600,10 @@
 							</select>
 						</div>
 						<div>
-							<label for="intent-classification-type" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.classificationType')}</label>
+							<label for="intent-classification-type" class="text-xs uppercase tracking-[0.2em] text-text-muted">{t('ingestionSetup.batchIntent.classificationType')}</label>
 							<select
 								id="intent-classification-type"
-								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 								value={batchDefaults.classificationType}
 								onchange={(event) => {
 									batchDefaults.classificationType = event.currentTarget.value;
@@ -2622,7 +2615,7 @@
 									<option value={type}>{t(`ingestionSetup.classificationTypes.${type}`)}</option>
 								{/each}
 							</select>
-							<p class="mt-1 text-[11px] text-pale-sky/75">
+							<p class="mt-1 text-xs text-text-muted">
 								{#if batchDefaults.itemKind === 'document' || batchDefaults.itemKind === 'scanned_document'}
 									{t('ingestionSetup.batchIntent.classificationHintDocument')}
 								{:else}
@@ -2633,17 +2626,17 @@
 					</div>
 				</details>
 
-				<details class="border-t border-pale-sky/20 py-3">
-					<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-burnt-peach">
+				<details class="border-t border-border-soft py-3">
+					<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-blue-slate">
 						{t('ingestionSetup.batchIntent.sections.summaryContext')}
 					</summary>
 					<div class="mt-3 space-y-3">
 						<div>
-							<label for="intent-tags" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.tags')}</label>
+							<label for="intent-tags" class="text-xs uppercase tracking-[0.2em] text-text-muted">{t('ingestionSetup.batchIntent.tags')}</label>
 							<div class="mt-2 flex items-center gap-2">
 								<input
 									id="intent-tags"
-									class="w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+									class="w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 									placeholder={t('ingestionSetup.batchIntent.tagsPlaceholder')}
 									value={summaryTagInput}
 									oninput={(event) => (summaryTagInput = event.currentTarget.value)}
@@ -2657,7 +2650,7 @@
 								<button
 									type="button"
 									onclick={addSummaryTag}
-									class="rounded-full border border-pale-sky/40 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-pale-sky"
+									class="rounded-full border border-border-soft px-3 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate"
 								>
 									{t('ingestionSetup.batchIntent.addTag')}
 								</button>
@@ -2668,7 +2661,7 @@
 										<button
 											type="button"
 											onclick={() => removeSummaryTag(tag)}
-											class="rounded-full border border-pale-sky/35 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-pale-sky"
+											class="rounded-full border border-border-soft px-3 py-1 text-xs uppercase tracking-[0.18em] text-blue-slate"
 										>
 											{tag} ×
 										</button>
@@ -2677,11 +2670,11 @@
 							{/if}
 						</div>
 						<div>
-							<label for="intent-summary" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.summary')}</label>
+							<label for="intent-summary" class="text-xs uppercase tracking-[0.2em] text-text-muted">{t('ingestionSetup.batchIntent.summary')}</label>
 							<textarea
 								id="intent-summary"
 								rows="2"
-								class="mt-2 w-full resize-none rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								class="mt-2 w-full resize-none rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 								value={batchDefaults.summaryText}
 								oninput={(event) => {
 									batchDefaults.summaryText = event.currentTarget.value;
@@ -2692,19 +2685,19 @@
 					</div>
 				</details>
 
-				<details open class="border-t border-pale-sky/20 py-3">
-					<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-burnt-peach">
+				<details open class="border-t border-border-soft py-3">
+					<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-blue-slate">
 						{t('ingestionSetup.batchIntent.sections.dates')}
 					</summary>
-					<p class="mt-2 text-[11px] text-pale-sky/80">{t('ingestionSetup.batchIntent.dateHint')}</p>
+					<p class="mt-2 text-xs text-text-muted">{t('ingestionSetup.batchIntent.dateHint')}</p>
 					<div class="mt-3 space-y-4">
 						{#each summaryDateSections as section, index (section.key)}
 							{@const editor = summaryDateEditors[section.key]}
-							<div class={index === 0 ? 'space-y-2' : 'space-y-2 border-t border-pale-sky/20 pt-4'}>
-								<p class="text-xs uppercase tracking-[0.18em] text-pale-sky">{t(section.labelKey)}</p>
+							<div class={index === 0 ? 'space-y-2' : 'space-y-2 border-t border-border-soft pt-4'}>
+								<p class="text-xs uppercase tracking-[0.18em] text-text-muted">{t(section.labelKey)}</p>
 								<div class="grid gap-2 md:grid-cols-2">
 									<select
-										class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+										class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 										value={editor.precision}
 										onchange={(event) =>
 											updateSummaryDatePrecision(section.key, event.currentTarget.value as SummaryDatePrecision)}
@@ -2715,28 +2708,28 @@
 										<option value="day">{t('ingestionSetup.batchIntent.precisionDay')}</option>
 									</select>
 									{#if editor.precision === 'none'}
-										<div class="px-1 py-2 text-xs text-pale-sky/75">{t('ingestionSetup.batchIntent.noDateSelected')}</div>
+										<div class="px-1 py-2 text-xs text-text-muted">{t('ingestionSetup.batchIntent.noDateSelected')}</div>
 									{:else if editor.precision === 'year'}
 										<input
 											type="number"
 											min="1000"
 											max="2999"
 											placeholder={t('ingestionSetup.batchIntent.yearPlaceholder')}
-											class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+											class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 											value={editor.year}
 											oninput={(event) => updateSummaryDateValue(section.key, event.currentTarget.value)}
 										/>
 									{:else if editor.precision === 'month'}
 										<input
 											type="month"
-											class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+											class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 											value={editor.month}
 											onchange={(event) => updateSummaryDateValue(section.key, event.currentTarget.value)}
 										/>
 									{:else}
 										<input
 											type="date"
-											class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+											class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 											value={editor.day}
 											onchange={(event) => updateSummaryDateValue(section.key, event.currentTarget.value)}
 										/>
@@ -2745,7 +2738,7 @@
 								{#if editor.precision !== 'none'}
 									<div class="grid gap-2 md:grid-cols-3">
 										<select
-											class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+											class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 											value={editor.confidence}
 											onchange={(event) =>
 												updateSummaryDateConfidence(section.key, event.currentTarget.value as 'low' | 'medium' | 'high')}
@@ -2754,7 +2747,7 @@
 											<option value="medium">{t('ingestionSetup.batchIntent.confidenceMedium')}</option>
 											<option value="high">{t('ingestionSetup.batchIntent.confidenceHigh')}</option>
 										</select>
-										<label class="flex items-center gap-2 rounded-xl border border-pale-sky/25 px-3 py-2 text-xs text-pale-sky">
+										<label class="flex items-center gap-2 rounded-xl border border-border-soft px-3 py-2 text-xs text-text-muted">
 											<input
 												type="checkbox"
 												checked={editor.approximate}
@@ -2763,7 +2756,7 @@
 											{t('ingestionSetup.batchIntent.approximateDate')}
 										</label>
 										<input
-											class="rounded-xl border border-pale-sky/35 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+											class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 											placeholder={t('ingestionSetup.batchIntent.dateNotePlaceholder')}
 											value={editor.note}
 											oninput={(event) => updateSummaryDateNote(section.key, event.currentTarget.value)}
@@ -2775,16 +2768,16 @@
 					</div>
 				</details>
 
-				<details class="border-t border-pale-sky/20 py-3">
-					<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-burnt-peach">
+				<details class="border-t border-border-soft py-3">
+					<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-blue-slate">
 						{t('ingestionSetup.batchIntent.sections.accessPolicy')}
 					</summary>
 					<div class="mt-3 grid gap-3 md:grid-cols-2">
 						<div>
-							<label for="intent-pipeline-preset" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.pipelinePreset')}</label>
+							<label for="intent-pipeline-preset" class="text-xs uppercase tracking-[0.2em] text-text-muted">{t('ingestionSetup.batchIntent.pipelinePreset')}</label>
 							<select
 								id="intent-pipeline-preset"
-								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 								value={batchDefaults.pipelinePreset}
 								onchange={(event) => {
 									batchDefaults.pipelinePreset = event.currentTarget.value;
@@ -2797,10 +2790,10 @@
 							</select>
 						</div>
 						<div>
-							<label for="intent-access-level" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.accessLevel')}</label>
+							<label for="intent-access-level" class="text-xs uppercase tracking-[0.2em] text-text-muted">{t('ingestionSetup.batchIntent.accessLevel')}</label>
 							<select
 								id="intent-access-level"
-								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 								value={batchDefaults.accessLevel}
 								onchange={(event) => {
 									batchDefaults.accessLevel = event.currentTarget.value as 'private' | 'family' | 'public';
@@ -2813,11 +2806,11 @@
 							</select>
 						</div>
 						<div>
-							<label for="intent-embargo-until" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.embargoUntil')}</label>
+							<label for="intent-embargo-until" class="text-xs uppercase tracking-[0.2em] text-text-muted">{t('ingestionSetup.batchIntent.embargoUntil')}</label>
 							<input
 								id="intent-embargo-until"
 								type="datetime-local"
-								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 								value={batchDefaults.embargoUntil}
 								onchange={(event) => {
 									batchDefaults.embargoUntil = event.currentTarget.value;
@@ -2826,10 +2819,10 @@
 							/>
 						</div>
 						<div>
-							<label for="intent-rights-note" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.rightsNote')}</label>
+							<label for="intent-rights-note" class="text-xs uppercase tracking-[0.2em] text-text-muted">{t('ingestionSetup.batchIntent.rightsNote')}</label>
 							<input
 								id="intent-rights-note"
-								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 								value={batchDefaults.rightsNote}
 								oninput={(event) => {
 									batchDefaults.rightsNote = event.currentTarget.value;
@@ -2838,10 +2831,10 @@
 							/>
 						</div>
 						<div class="md:col-span-2">
-							<label for="intent-sensitivity-note" class="text-xs uppercase tracking-[0.2em] text-pale-sky">{t('ingestionSetup.batchIntent.sensitivityNote')}</label>
+							<label for="intent-sensitivity-note" class="text-xs uppercase tracking-[0.2em] text-text-muted">{t('ingestionSetup.batchIntent.sensitivityNote')}</label>
 							<input
 								id="intent-sensitivity-note"
-								class="mt-2 w-full rounded-xl border border-pale-sky/30 bg-blue-slate-deep px-3 py-2 text-sm text-surface-white"
+								class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 								value={batchDefaults.sensitivityNote}
 								oninput={(event) => {
 									batchDefaults.sensitivityNote = event.currentTarget.value;
@@ -2911,7 +2904,9 @@
 						onclick={() => toggleMetadataCard(key)}
 					>
 						<span class="text-xs text-blue-slate/60 transition-transform" style={expandedMetadataKeys.includes(key) ? '' : 'transform: rotate(-90deg)'}>▾</span>
-						<span class="shrink-0 text-base leading-none">{fileKindEmoji(file.mediaType)}</span>
+						<span class="text-text-muted/60">
+							<Icon name={fileKindIcon(file.mediaType)} size={14} />
+						</span>
 						<span class="min-w-0 flex-1 truncate text-sm font-medium text-text-ink">{file.name}</span>
 						<span class="shrink-0 text-xs text-text-muted">{file.size}</span>
 						{#if !isItemMetadataComplete(key)}
@@ -3100,69 +3095,76 @@
 
 	<!-- Item save error toast -->
 	{#if itemSaveError}
-		<div class="fixed bottom-24 right-6 z-50 flex items-center gap-3 rounded-xl border border-burnt-peach/40 bg-pearl-beige px-4 py-3 shadow-lg">
-			<span class="text-burnt-peach">⚠</span>
+		<div class="fixed bottom-24 right-6 z-50 flex items-center gap-3 rounded-sm border border-burnt-peach/40 bg-pearl-beige px-4 py-3 shadow-lg">
+			<Icon name="warn" size={14} />
 			<p class="text-xs text-burnt-peach">A change failed to save — check your connection.</p>
 			<button
 				type="button"
 				onclick={() => { itemSaveError = false; }}
 				class="ml-2 text-burnt-peach/50 hover:text-burnt-peach"
 				aria-label="Dismiss"
-			>✕</button>
+			><Icon name="x" size={12} /></button>
 		</div>
 	{/if}
 </main>
 
-<!-- Sticky footer -->
-<footer class="fixed bottom-0 left-0 right-0 border-t border-border-soft bg-surface-white px-6 py-4 shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
-	<div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
+<FootnoteBar>
+	{#snippet left()}
+		<span class="whitespace-nowrap text-xs uppercase tracking-[0.2em] text-text-muted">Step 2 of 3</span>
+		<Stepper
+			steps={[
+				{ id: 'describe', label: 'Describe' },
+				{ id: 'setup', label: 'Upload & tune' },
+				{ id: 'review', label: 'Review' },
+			]}
+			current={1}
+			onJump={(i) => { if (i === 0) goto(resolve('/ingestion/new')); }}
+		/>
+	{/snippet}
+	{#snippet right()}
 		{#if step === 'organize'}
-			<p class="text-sm text-text-muted">
+			<span class="text-sm text-text-muted">
 				{organizeObjectCount} {organizeObjectCount === 1 ? 'object' : 'objects'} ready
 				{#if standaloneFiles.length > 0}
-					· <span class="text-blue-slate/70">{standaloneFiles.length} unassigned (will become individual objects)</span>
+					· <span class="text-blue-slate/70">{standaloneFiles.length} unassigned</span>
 				{/if}
-			</p>
-			<div class="flex items-center gap-3">
-				<a
-					href="/ingestion"
-					class="rounded-full border border-blue-slate/40 px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20"
-				>
-					Back
-				</a>
-				<button
-					disabled={hasPendingUploads}
-					onclick={() => { step = 'metadata'; }}
-					class="rounded-full bg-blue-slate px-5 py-2 text-xs uppercase tracking-[0.2em] text-surface-white transition hover:bg-blue-slate/80 disabled:cursor-not-allowed disabled:opacity-50"
-				>
-					Continue →
-				</button>
-			</div>
+			</span>
+			<a
+				href={resolve('/ingestion')}
+				class="inline-flex items-center gap-2 rounded-full border border-border-soft px-5 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:bg-pale-sky/20 hover:text-text-ink transition-all"
+			>
+				<Icon name="arrow-l" size={13} /> Back
+			</a>
+			<button
+				disabled={hasPendingUploads}
+				onclick={() => { step = 'metadata'; }}
+				class="inline-flex items-center gap-2 rounded-full bg-blue-slate-deep text-surface-white px-5 py-2 text-xs uppercase tracking-[0.2em] border border-blue-slate-deep hover:bg-blue-slate transition-all disabled:opacity-40 disabled:pointer-events-none"
+			>
+				Continue <Icon name="arrow-r" size={13} />
+			</button>
 		{:else}
-			<p class="text-sm text-text-muted">
+			<span class="text-sm text-text-muted">
 				{canStartIngestion
 					? t('ingestionSetup.readiness.ready')
 					: hasPendingUploads
 						? t('ingestionSetup.readiness.uploading')
 						: t('ingestionSetup.readiness.missingItemMetadata')}
-			</p>
-			<div class="flex items-center gap-3">
-				<button
-					onclick={() => { step = 'organize'; }}
-					class="rounded-full border border-blue-slate/40 px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20"
-				>
-					← Back
-				</button>
-				<button
-					disabled={!canStartIngestion}
-					onclick={() => (showConfirm = true)}
-					class={`rounded-full px-5 py-2 text-xs uppercase tracking-[0.2em] text-surface-white ${
-						canStartIngestion ? 'bg-blue-slate' : 'bg-blue-slate/40 text-surface-white/70'
-					}`}
-				>
-					{t('common.startIngestion')}
-				</button>
-			</div>
+			</span>
+			<button
+				onclick={() => { step = 'organize'; }}
+				class="inline-flex items-center gap-2 rounded-full border border-border-soft px-5 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:bg-pale-sky/20 hover:text-text-ink transition-all"
+			>
+				<Icon name="arrow-l" size={13} /> Back
+			</button>
+			<button
+				disabled={!canStartIngestion}
+				onclick={() => (showConfirm = true)}
+				class="inline-flex items-center gap-2 rounded-full bg-burnt-peach text-surface-white px-5 py-2 text-xs uppercase tracking-[0.2em] border border-burnt-peach transition-all disabled:opacity-40 disabled:pointer-events-none"
+			>
+				{t('common.startIngestion')} <Icon name="arrow-r" size={13} />
+			</button>
 		{/if}
-	</div>
-</footer>
+	{/snippet}
+</FootnoteBar>
+
+</div>
