@@ -37,7 +37,7 @@
 					{String(i + 1).padStart(2, '0')}
 				{/if}
 			</button>
-			<span class={`text-xs uppercase tracking-[0.2em] whitespace-nowrap
+			<span class={`hidden sm:inline text-xs uppercase tracking-[0.2em] whitespace-nowrap
 				${state === 'current' ? 'font-medium text-text-ink' : 'text-text-muted'}
 			`}>
 				{step.label}

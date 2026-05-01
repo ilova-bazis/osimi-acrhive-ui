@@ -1,0 +1,13 @@
+{
+  "id": "UM-2",
+  "title": "check typography",
+  "description": "check typography on all pages, and make sure they are following design convention and patter established in the codebase.",
+  "priority": "medium",
+  "status": "done",
+  "assignee": null,
+  "parent_id": null,
+  "created_at": "2026-05-01T02:13:03Z",
+  "updated_at": "2026-05-01T02:23:51Z",
+  "created_by": "human",
+  "updated_by": "claude"
+}

@@ -1,0 +1,13 @@
+{
+  "id": "UM-1",
+  "title": "New Batch layout is not uniform across all steps",
+  "description": "We have styled container around the contents of the screens in objects, dashboard, overview, and new batch first step initial setup is showing corectly, but when you continue futher with the steps the screens are no longer styled accordingly with the rest of the design. this container should be put in place as a parent for all other components that switch inside during the steps.",
+  "priority": "high",
+  "status": "done",
+  "assignee": null,
+  "parent_id": null,
+  "created_at": "2026-05-01T02:08:18Z",
+  "updated_at": "2026-05-01T02:19:00Z",
+  "created_by": "human",
+  "updated_by": "claude"
+}

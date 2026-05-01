@@ -186,7 +186,7 @@
 									type="button"
 									onclick={() => askConfirmation(action)}
 									disabled={runningAction !== null}
-									class="rounded-lg px-3 py-2 text-left text-xs uppercase tracking-[0.18em] text-blue-slate hover:bg-pale-sky/25 disabled:opacity-50"
+									class="rounded-lg px-3 py-2 text-left text-xs uppercase tracking-[0.2em] text-blue-slate hover:bg-pale-sky/25 disabled:opacity-50"
 								>
 									{actionLabel(action)}
 								</button>
@@ -298,7 +298,7 @@
 							{/if}
 						</div>
 						<details class="mt-2">
-							<summary class="cursor-pointer text-xs uppercase tracking-[0.18em] text-blue-slate">
+							<summary class="cursor-pointer text-xs uppercase tracking-[0.2em] text-blue-slate">
 								{t('ingestionDetail.logs.payload')}
 							</summary>
 							<pre class="mt-2 overflow-x-auto rounded-xl border border-border-soft bg-surface-white p-3 text-[11px] text-text-muted">{stringifyPayload(event.payload)}</pre>

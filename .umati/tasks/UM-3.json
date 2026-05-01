@@ -1,0 +1,13 @@
+{
+  "id": "UM-3",
+  "title": "Search screen is not present",
+  "description": "Currenly there is not separate search screen, and i don't know why it is required as of now, searching for objects are already present in the objects, if we will need search for ingestions we will include that into ingestions screen, as of now separate search screen is not needed. hence we should remove search link as a saparate menu item on the left panel.",
+  "priority": "medium",
+  "status": "done",
+  "assignee": null,
+  "parent_id": null,
+  "created_at": "2026-05-01T02:48:46Z",
+  "updated_at": "2026-05-01T02:49:33Z",
+  "created_by": "human",
+  "updated_by": "claude"
+}

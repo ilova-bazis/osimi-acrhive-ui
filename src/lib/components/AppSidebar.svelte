@@ -25,7 +25,6 @@
 		{ label: 'Overview', icon: 'archive', href: '/ingestion', matchPrefix: '/ingestion' },
 		{ label: 'New Batch', icon: 'plus', href: '/ingestion/new' },
 		{ label: 'Objects', icon: 'pages', href: '/objects', matchPrefix: '/objects' },
-		{ label: 'Search', icon: 'search', href: '/search' },
 	];
 
 	const isActive = (item: NavItem) => {

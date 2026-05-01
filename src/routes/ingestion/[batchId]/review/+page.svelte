@@ -22,8 +22,8 @@
 	let submitError = $state('');
 
 	const STEPS = [
-		{ id: 'describe', label: 'Describe' },
-		{ id: 'setup', label: 'Upload & tune' },
+		{ id: 'configure', label: 'Configure' },
+		{ id: 'upload', label: 'Upload' },
 		{ id: 'review', label: 'Review' },
 	];
 
@@ -92,30 +92,32 @@
 <div class="flex flex-col min-h-screen">
 
 <!-- Sticky top-bar -->
-<header class="sticky top-0 z-20 border-b border-border-soft bg-alabaster-grey px-6 py-4 flex items-start justify-between gap-6">
-	<div class="flex flex-col gap-1">
-		<div class="flex items-center gap-2 text-xs text-text-muted">
-			<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">Ingestion</span>
-			<Icon name="chevron-r" size={12} />
-			<span class="font-mono text-xs">{batchId}</span>
-			<Icon name="chevron-r" size={12} />
-			<span>Review</span>
+<header class="sticky top-0 z-20 border-b border-border-soft bg-alabaster-grey px-4 sm:px-6 py-4">
+	<div class="mx-auto flex w-full max-w-6xl items-start justify-between gap-6">
+		<div class="flex flex-col gap-1">
+			<div class="flex items-center gap-2 text-xs text-text-muted">
+				<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">Ingestion</span>
+				<Icon name="chevron-r" size={12} />
+				<span class="font-mono text-xs">{batchId}</span>
+				<Icon name="chevron-r" size={12} />
+				<span>Review</span>
+			</div>
+			<h1 class="font-display text-2xl text-text-ink m-0 leading-tight">{batchTitle}</h1>
 		</div>
-		<h1 class="font-display text-2xl text-text-ink m-0 leading-tight">{batchTitle}</h1>
-	</div>
-	<div class="flex items-center gap-3 pt-1 flex-shrink-0">
-		<Stamp>Ready to submit</Stamp>
-		<a
-			href={resolve('/ingestion')}
-			class="inline-flex items-center gap-2 rounded-full border border-border-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:bg-pale-sky/20 hover:text-text-ink transition-all"
-		>
-			<Icon name="x" size={13} /> Discard
-		</a>
+		<div class="flex items-center gap-3 pt-1 flex-shrink-0">
+			<Stamp>Ready to submit</Stamp>
+			<a
+				href={resolve('/ingestion')}
+				class="inline-flex items-center gap-2 rounded-full border border-border-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:bg-pale-sky/20 hover:text-text-ink transition-all"
+			>
+				<Icon name="x" size={13} /> Discard
+			</a>
+		</div>
 	</div>
 </header>
 
 <!-- Body: 2-column -->
-<div class="flex-1 grid overflow-hidden" style="grid-template-columns: 1fr 380px">
+<div class="flex-1 grid overflow-hidden mx-auto w-full max-w-6xl" style="grid-template-columns: 1fr 380px">
 
 	<!-- Left: main review content -->
 	<div class="overflow-y-auto px-6 py-8 flex flex-col gap-6 border-r border-border-soft">
@@ -258,7 +260,7 @@
 				{ label: 'Visibility', value: visibilityLabel(data.accessLevel) },
 			] as row (row.label)}
 				<div class="flex items-center justify-between gap-3">
-					<span class="text-xs uppercase tracking-[0.16em] text-text-muted">{row.label}</span>
+					<span class="text-xs uppercase tracking-[0.2em] text-text-muted">{row.label}</span>
 					<span class="text-sm text-text-ink font-medium">{row.value}</span>
 				</div>
 			{/each}
@@ -311,15 +313,17 @@
 <!-- Footer -->
 <FootnoteBar>
 	{#snippet left()}
-		<span class="text-xs uppercase tracking-[0.2em] text-text-muted">Step 3 of 3</span>
-		<Stepper
-			steps={STEPS}
-			current={2}
-			onJump={(i) => {
-				if (i === 0) goto(resolve('/ingestion/new'));
-				else if (i === 1) goto(resolve('/ingestion/[batchId]/setup', { batchId }));
-			}}
-		/>
+		<span class="whitespace-nowrap text-xs uppercase tracking-[0.2em] text-text-muted">Step 3 of 3</span>
+		<span class="hidden sm:flex">
+			<Stepper
+				steps={STEPS}
+				current={2}
+				onJump={(i) => {
+					if (i === 0) goto(resolve('/ingestion/new'));
+					else if (i === 1) goto(resolve('/ingestion/[batchId]/setup', { batchId }));
+				}}
+			/>
+		</span>
 	{/snippet}
 	{#snippet right()}
 		<a

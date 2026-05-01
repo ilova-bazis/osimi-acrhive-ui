@@ -198,6 +198,15 @@ Ingestion response shapes in this section are authoritative with `src/validation
 - `storage_key` (string)
 - `status` (`PENDING|UPLOADED|VALIDATED|FAILED`)
 - `checksum_sha256` (string, nullable)
+- `preview` (object)
+  - `status` (`pending|ready|failed|unsupported`)
+  - `content_type` (string, nullable)
+  - `size_bytes` (number, nullable)
+  - `width` (number, nullable)
+  - `height` (number, nullable)
+  - `url` (string, nullable)
+  - `error` (JSON object, nullable)
+  - note: internal worker claim state is normalized back to `pending` in client-facing ingestion responses
 - `processing_overrides` (strict object):
   - optional keys: `ocr_text`, `audio_transcript`, `video_transcript`
   - each value: `{ enabled: boolean, language?: string }`
@@ -303,11 +312,116 @@ Ingestion response shapes in this section are authoritative with `src/validation
 - 200 response:
   - `ingestion` (Ingestion Schema)
   - `files[]` (array of Ingestion File Schema)
+  - preview behavior:
+    - image and video uploads return `preview.status = pending` after commit until a worker-generated preview is uploaded back to VPS staging
+    - unsupported media return `preview.status = unsupported`
+    - `preview.url` is populated only when `preview.status = ready`
 - Error behavior:
   - `400 BAD_REQUEST` for invalid `:id` format
   - `401 UNAUTHORIZED` for missing/invalid/expired session token
   - `403 FORBIDDEN` when authenticated role is not allowed
   - `404 NOT_FOUND` when ingestion does not exist in tenant scope
+
+### GET `/api/ingestions/:id/files/:fileId/preview`
+
+- Auth: Bearer token
+- Roles: `viewer`, `archiver`, `admin`
+- Purpose: stream a committed ingestion file preview from temporary VPS staging.
+- Preconditions:
+  - ingestion file exists in tenant scope
+  - `preview.status = ready`
+- 200 response:
+  - raw preview bytes with preview `Content-Type`
+- Notes:
+  - preview bytes are served from temporary VPS staging storage
+  - preview availability follows ingestion staging retention and cleanup rules
+- Error behavior:
+  - `400 BAD_REQUEST` for invalid path params
+  - `401 UNAUTHORIZED` for missing/invalid/expired session token
+  - `403 FORBIDDEN` when authenticated role is not allowed
+  - `404 NOT_FOUND` when ingestion/file does not exist in tenant scope or preview is not ready
+
+### POST `/api/worker/ingestion-previews/claim`
+
+- Auth: worker token (`x-worker-auth-token`)
+- Purpose: claim one committed ingestion file whose preview is pending so a worker can generate a temporary upload preview before final ingestion submission.
+- Behavior:
+  - returns at most one file per call
+  - only considers committed files with `status = UPLOADED`
+  - only considers ingestions still in upload-editable states (`DRAFT`, `UPLOADING`, `CANCELED`)
+  - may reclaim a stale in-progress preview job after the claim timeout elapses
+- 200 response:
+  - `preview` (`null` when no work available) or:
+    - `ingestion_id`
+    - `file_id`
+    - `tenant_id`
+    - `batch_label`
+    - `filename`
+    - `content_type`
+    - `size_bytes`
+    - `download_url` (short-lived worker download URL for the committed staged original)
+    - `claimed_by` (string, nullable)
+    - `claimed_at` (ISO timestamp string, nullable)
+- Error behavior:
+  - `401 UNAUTHORIZED` for missing/invalid worker token
+
+### POST `/api/worker/ingestion-previews/:id/files/:fileId/presign`
+
+- Auth: worker token (`x-worker-auth-token`)
+- Purpose: obtain a signed upload URL for a generated preview file belonging to a claimed ingestion preview job.
+- Body:
+  - `content_type` (string)
+  - `size_bytes` (number)
+  - `extension` (optional string)
+- 200 response:
+  - `upload_token`
+  - `upload_url`
+  - `storage_key`
+  - `expires_at`
+  - `headers { content-type, content-length }`
+- Notes:
+  - `upload_url` uses the normal staged upload transport (`PUT /api/uploads/:token`)
+- Error behavior:
+  - `400 BAD_REQUEST` for invalid path/body shape
+  - `401 UNAUTHORIZED` for missing/invalid worker token
+  - `409 CONFLICT` when the preview is not currently claimed by that worker or upload preparation cannot be recorded
+
+### POST `/api/worker/ingestion-previews/:id/files/:fileId/complete`
+
+- Auth: worker token (`x-worker-auth-token`)
+- Purpose: mark a claimed preview job ready after uploading preview bytes.
+- Body:
+  - `upload_token` (string)
+  - `width` (optional number)
+  - `height` (optional number)
+- 200 response:
+  - `status = ready`
+  - `ingestion_id`
+  - `file_id`
+- Error behavior:
+  - `400 BAD_REQUEST` for invalid path/body shape or mismatched upload token context
+  - `401 UNAUTHORIZED` for missing/invalid worker token
+  - `404 NOT_FOUND` when uploaded preview bytes are missing from staging
+  - `409 CONFLICT` when the preview is not currently claimed by that worker or completion cannot be recorded
+
+### POST `/api/worker/ingestion-previews/:id/files/:fileId/fail`
+
+- Auth: worker token (`x-worker-auth-token`)
+- Purpose: mark a claimed preview job failed with structured error details.
+- Body:
+  - `error`
+    - `message` (string)
+    - `code` (optional string)
+    - `retryable` (optional boolean)
+    - `details` (optional object)
+- 200 response:
+  - `status = failed`
+  - `ingestion_id`
+  - `file_id`
+- Error behavior:
+  - `400 BAD_REQUEST` for invalid path/body shape
+  - `401 UNAUTHORIZED` for missing/invalid worker token
+  - `409 CONFLICT` when the preview is not currently claimed by that worker or failure cannot be recorded
 
 ### POST `/api/ingestions/:id/items`
 
@@ -491,6 +605,8 @@ Ingestion response shapes in this section are authoritative with `src/validation
 - Preconditions:
   - ingestion is in `DRAFT` or `UPLOADING`
   - if ingestion is `CANCELED`, backend reopens it first (`DRAFT` or `UPLOADING`), then applies delete
+- Behavior:
+  - deleting a file also deletes any temporary preview derivative stored for that ingestion file
 - 200 response:
   - `status` = `deleted`
   - `file_id`
@@ -533,6 +649,9 @@ Ingestion response shapes in this section are authoritative with `src/validation
   - each file `content_type` must map to a supported media kind from ingestion capabilities
 - 200 response:
   - `file` (Ingestion File Schema)
+  - preview behavior:
+    - committed image/video files are marked `preview.status = pending`
+    - committed unsupported media are marked `preview.status = unsupported`
 - Error behavior:
   - `400 BAD_REQUEST` for invalid path/body shape
     - includes unsupported ingestion file `content_type` values
@@ -1782,13 +1901,14 @@ Worker-only object endpoints are documented in `## Worker APIs`:
 - `POST /api/archive-requests/:id/lease/release`
 - `POST /api/archive-requests/:id/complete`
 - `POST /api/archive-requests/:id/fail`
-- `POST /api/object-download-requests/lease`
-- `POST /api/object-download-requests/:id/lease/heartbeat`
-- `POST /api/object-download-requests/:id/lease/release`
-- `POST /api/object-download-requests/:id/artifacts/presign`
-- `PUT /api/object-download-requests/uploads/:token`
-- `POST /api/object-download-requests/:id/complete`
-- `POST /api/object-download-requests/:id/fail`
+- `POST /api/object-download-requests/lease` (deprecated compatibility route)
+- `POST /api/object-download-requests/:id/lease/heartbeat` (deprecated compatibility route)
+- `POST /api/object-download-requests/:id/lease/release` (deprecated compatibility route)
+- `POST /api/object-download-requests/:id/artifacts/presign` (deprecated compatibility route)
+- `PUT /api/archive-requests/uploads/:token`
+- `PUT /api/object-download-requests/uploads/:token` (deprecated compatibility route)
+- `POST /api/object-download-requests/:id/complete` (deprecated compatibility route)
+- `POST /api/object-download-requests/:id/fail` (deprecated compatibility route)
 
 ### GET `/api/objects/:object_id/artifacts/:artifact_id/download`
 
@@ -2199,7 +2319,11 @@ Integration guides for archive worker teams:
 - Auth: `x-worker-auth-token`
 - Body:
   - `lease_token` (required non-empty string)
+  - `upload_token` (optional non-empty string)
 - `tenant_id` is not accepted in request body
+- Behavior:
+  - for `artifact_fetch`, `upload_token` is required
+  - for non-`artifact_fetch` actions, `upload_token` is ignored when present
 - 200 response:
   - `status: "completed"`
   - `request` (`id`, `tenant_id`, `target_type`, `target_id`, `action_type`, `action_payload`, `requested_by`, `dedupe_key`, `status`, `failure_reason`, `failure_details`, `created_at`, `updated_at`, `completed_at`)
@@ -2207,6 +2331,29 @@ Integration guides for archive worker teams:
   - `400 BAD_REQUEST` for invalid path/body
   - `401 UNAUTHORIZED` for missing/invalid worker auth token or invalid/expired lease token
   - `409 CONFLICT` when lease is no longer active
+  - `500 CONFIGURATION_ERROR` when worker auth token is not configured server-side
+
+### POST `/api/archive-requests/:id/artifacts/presign`
+
+- Auth: `x-worker-auth-token`
+- Body:
+  - `lease_token` (required non-empty string)
+  - `content_type` (required non-empty string)
+  - `size_bytes` (required integer >= 0)
+  - `extension` (required non-empty string)
+- Behavior:
+  - supported for `artifact_fetch` requests only
+  - upload token TTL is 15 minutes
+- 200 response:
+  - `upload_token`
+  - `upload_url` (for `PUT` upload)
+  - `storage_key`
+  - `expires_at`
+  - `headers` (`content-type`, `content-length` where `content-length` is a JSON number)
+- Error behavior:
+  - `400 BAD_REQUEST` for invalid path/body
+  - `401 UNAUTHORIZED` for missing/invalid worker auth token or invalid/expired lease token
+  - `409 CONFLICT` when lease is no longer active or request action is not `artifact_fetch`
   - `500 CONFIGURATION_ERROR` when worker auth token is not configured server-side
 
 ### POST `/api/archive-requests/:id/fail`
@@ -2305,6 +2452,8 @@ Integration guides for archive worker teams:
 
 ### POST `/api/object-download-requests/lease`
 
+Deprecated compatibility route. New archive workers should use `POST /api/archive-requests/lease` with `{"action_type":"artifact_fetch"}`.
+
 - Auth: `x-worker-auth-token`
 - Optional: `x-worker-id`
 - Behavior:
@@ -2323,6 +2472,8 @@ Integration guides for archive worker teams:
 
 ### POST `/api/object-download-requests/:id/lease/heartbeat`
 
+Deprecated compatibility route. New archive workers should use `POST /api/archive-requests/:id/lease/heartbeat`.
+
 - Auth: `x-worker-auth-token`
 - Body:
   - `lease_token` (required non-empty string)
@@ -2338,6 +2489,8 @@ Integration guides for archive worker teams:
 
 ### POST `/api/object-download-requests/:id/lease/release`
 
+Deprecated compatibility route. New archive workers should use `POST /api/archive-requests/:id/lease/release`.
+
 - Auth: `x-worker-auth-token`
 - Body:
   - `lease_token` (required non-empty string)
@@ -2350,6 +2503,8 @@ Integration guides for archive worker teams:
   - `500 CONFIGURATION_ERROR` when worker auth token is not configured server-side
 
 ### POST `/api/object-download-requests/:id/artifacts/presign`
+
+Deprecated compatibility route. New archive workers should use `POST /api/archive-requests/:id/artifacts/presign`.
 
 - Auth: `x-worker-auth-token`
 - Body:
@@ -2371,7 +2526,7 @@ Integration guides for archive worker teams:
   - `409 CONFLICT` when lease is no longer active
   - `500 CONFIGURATION_ERROR` when worker auth token is not configured server-side
 
-### PUT `/api/object-download-requests/uploads/:token`
+### PUT `/api/archive-requests/uploads/:token`
 
 - Auth: none (signed token in path)
 - Required headers:
@@ -2384,7 +2539,13 @@ Integration guides for archive worker teams:
   - `400 BAD_REQUEST` for header/body constraint mismatch
   - `401 UNAUTHORIZED` for invalid/expired signed token
 
+### PUT `/api/object-download-requests/uploads/:token`
+
+Deprecated compatibility route. New archive workers should use `PUT /api/archive-requests/uploads/:token`.
+
 ### POST `/api/object-download-requests/:id/complete`
+
+Deprecated compatibility route. New archive workers should use `POST /api/archive-requests/:id/complete` with both `lease_token` and `upload_token` for `artifact_fetch`.
 
 - Auth: `x-worker-auth-token`
 - Body:

@@ -41,14 +41,16 @@
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>
 
 {#if showSidebar}
-	<div class="grid min-h-screen" style="grid-template-columns: 232px 1fr">
-		<AppSidebar
-			currentPath={$page.url.pathname}
-			username={data.session!.username}
-			role={data.session!.role}
-			activeBatches={data.activeBatches}
-			onLogout={handleLogout}
-		/>
+	<div class="min-h-screen lg:grid lg:grid-cols-[232px_1fr]">
+		<div class="hidden lg:block">
+			<AppSidebar
+				currentPath={$page.url.pathname}
+				username={data.session!.username}
+				role={data.session!.role}
+				activeBatches={data.activeBatches}
+				onLogout={handleLogout}
+			/>
+		</div>
 		<div class="flex flex-col min-h-screen min-w-0">
 			{@render children()}
 		</div>

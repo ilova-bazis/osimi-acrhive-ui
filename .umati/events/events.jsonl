@@ -1,0 +1,12 @@
+{"task_id":"UM-1","type":"created","actor":"human","timestamp":"2026-05-01T02:08:18Z","meta":{}}
+{"task_id":"UM-2","type":"created","actor":"human","timestamp":"2026-05-01T02:13:03Z","meta":{}}
+{"task_id":"UM-1","type":"updated","actor":"claude","timestamp":"2026-05-01T02:13:38Z","meta":{}}
+{"task_id":"UM-1","type":"started","actor":"claude","timestamp":"2026-05-01T02:13:43Z","meta":{}}
+{"task_id":"UM-1","type":"completed","actor":"claude","timestamp":"2026-05-01T02:19:00Z","meta":{}}
+{"task_id":"UM-2","type":"updated","actor":"claude","timestamp":"2026-05-01T02:19:28Z","meta":{}}
+{"task_id":"UM-2","type":"started","actor":"claude","timestamp":"2026-05-01T02:19:28Z","meta":{}}
+{"task_id":"UM-2","type":"completed","actor":"claude","timestamp":"2026-05-01T02:23:51Z","meta":{}}
+{"task_id":"UM-3","type":"created","actor":"human","timestamp":"2026-05-01T02:48:46Z","meta":{}}
+{"task_id":"UM-3","type":"updated","actor":"claude","timestamp":"2026-05-01T02:49:08Z","meta":{}}
+{"task_id":"UM-3","type":"started","actor":"claude","timestamp":"2026-05-01T02:49:08Z","meta":{}}
+{"task_id":"UM-3","type":"completed","actor":"claude","timestamp":"2026-05-01T02:49:33Z","meta":{}}

@@ -12,7 +12,7 @@
 	import ObjectGroupRow from '$lib/components/ObjectGroupRow.svelte';
 	import ObjectMetadataPanel from '$lib/components/ObjectMetadataPanel.svelte';
 	import type { ObjectGroup, ObjectItemMetadata } from '$lib/models';
-	import type { IngestionDetailItem } from '$lib/services/ingestionDetail';
+	import type { IngestionDetailItem, IngestionDetailItemFile } from '$lib/services/ingestionDetail';
 	import Icon from '$lib/components/Icon.svelte';
 	import Stepper from '$lib/components/Stepper.svelte';
 	import Stamp from '$lib/components/Stamp.svelte';
@@ -1162,6 +1162,29 @@
 
 			objectGroups = hydratedGroups;
 		}
+
+		// Restore per-object metadata saved before navigating to the review step.
+		// Keys: 'file:N' for standalone files (stable), 'srv:<serverId>' for groups (remapped
+		// to the new UUID assigned above, since UUIDs regenerate on every remount).
+		const snapshot = sessionStorage.getItem(`objmeta:${batchId}`);
+		if (snapshot) {
+			try {
+				const parsed = JSON.parse(snapshot) as Record<string, ObjectItemMetadata>;
+				const restored: Record<string, ObjectItemMetadata> = {};
+				for (const [savedKey, meta] of Object.entries(parsed)) {
+					if (savedKey.startsWith('file:')) {
+						restored[savedKey] = meta;
+					} else if (savedKey.startsWith('srv:')) {
+						const serverId = savedKey.slice(4);
+						const grp = objectGroups.find((g) => g.serverId === serverId);
+						if (grp) restored[grp.id] = meta;
+					}
+				}
+				objectMetadata = restored;
+			} catch {
+				// Ignore parse errors — fall back to empty metadata
+			}
+		}
 	});
 
 	const addFiles = (incoming: FileList | File[]) => {
@@ -2132,8 +2155,16 @@
 				}
 			}
 
-			// Auto-create items for standalone files (files not in any group)
-			const standalonesToCreate = standaloneFiles.filter((f) => f.backendFileId);
+			// Auto-create items for standalone files (files not in any group).
+			// Skip files that already have a server item — single-file items are not hydrated
+			// as groups on remount, so without this check a second Continue click re-creates
+			// them and hits the unique constraint on (ingestion_id, item_index).
+			const fileIdsInServerItems = new Set(
+				(data.items ?? []).flatMap((item: IngestionDetailItem) => item.files.map((f: IngestionDetailItemFile) => f.ingestionFileId))
+			);
+			const standalonesToCreate = standaloneFiles.filter(
+				(f) => f.backendFileId && !fileIdsInServerItems.has(f.backendFileId)
+			);
 
 			for (const standaloneFile of standalonesToCreate) {
 				const createResponse = await postSetupAction({
@@ -2156,18 +2187,21 @@
 				}
 			}
 
-			const submitResponse = await postSetupAction({ action: 'submit' });
-
-			if (submitResponse.status === 401) {
-				await goto(resolve('/login'));
-				return;
+			// Snapshot objectMetadata to sessionStorage so it can be restored if the user
+			// navigates back from review. Group UUIDs regenerate on remount, so we key
+			// multi-file groups by serverId and standalone files by their stable file: key.
+			const snapshot: Record<string, ObjectItemMetadata> = {};
+			for (const [key, meta] of Object.entries(objectMetadata)) {
+				if (key.startsWith('file:')) {
+					snapshot[key] = meta;
+				} else {
+					const grp = objectGroups.find((g) => g.id === key);
+					if (grp?.serverId) snapshot[`srv:${grp.serverId}`] = meta;
+				}
 			}
+			sessionStorage.setItem(`objmeta:${batchId}`, JSON.stringify(snapshot));
 
-			if (!submitResponse.ok) {
-				throw new Error(await readErrorMessage(submitResponse, 'Failed to submit ingestion.'));
-			}
-
-			await goto(resolve('/ingestion'));
+			await goto(resolve('/ingestion/[batchId]/review', { batchId }));
 		} catch (error) {
 			submitError = error instanceof Error ? error.message : 'Failed to submit ingestion.';
 		} finally {
@@ -2180,30 +2214,32 @@
 <div class="flex flex-col min-h-screen">
 
 <!-- Sticky top-bar -->
-<header class="sticky top-0 z-20 border-b border-border-soft bg-alabaster-grey px-6 py-4 flex items-start justify-between gap-6">
-	<div class="flex flex-col gap-1">
-		<div class="flex items-center gap-2 text-xs text-text-muted">
-			<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">Ingestion</span>
-			<Icon name="chevron-r" size={12} />
-			<span class="font-mono text-xs">{batchId}</span>
+<header class="sticky top-0 z-20 border-b border-border-soft bg-alabaster-grey px-4 sm:px-6 py-4">
+	<div class="mx-auto flex w-full max-w-6xl items-start justify-between gap-6">
+		<div class="flex flex-col gap-1">
+			<div class="flex items-center gap-2 text-xs text-text-muted">
+				<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">Ingestion</span>
+				<Icon name="chevron-r" size={12} />
+				<span class="font-mono text-xs">{batchId}</span>
+			</div>
+			<h1 class="font-display text-2xl text-text-ink m-0 leading-tight">
+				{batchDefaults.title || batchId}
+			</h1>
 		</div>
-		<h1 class="font-display text-2xl text-text-ink m-0 leading-tight">
-			{batchDefaults.title || batchId}
-		</h1>
-	</div>
-	<div class="flex items-center gap-3 pt-1 flex-shrink-0">
-		<Stamp>Draft · not yet submitted</Stamp>
-		<a
-			href={resolve('/ingestion')}
-			class="inline-flex items-center gap-2 rounded-full border border-border-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:bg-pale-sky/20 hover:text-text-ink transition-all"
-		>
-			<Icon name="x" size={13} /> Discard
-		</a>
+		<div class="flex items-center gap-3 pt-1 flex-shrink-0">
+			<Stamp>Draft · not yet submitted</Stamp>
+			<a
+				href={resolve('/ingestion')}
+				class="inline-flex items-center gap-2 rounded-full border border-border-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:bg-pale-sky/20 hover:text-text-ink transition-all"
+			>
+				<Icon name="x" size={13} /> Discard
+			</a>
+		</div>
 	</div>
 </header>
 
 <main
-	class="flex-1 flex flex-col gap-6 px-6 pb-4 pt-8"
+	class="flex-1 flex flex-col gap-6 px-4 sm:px-6 pb-4 pt-8 mx-auto w-full max-w-6xl"
 	ondragenter={handleGlobalDragEnter}
 	ondragleave={handleGlobalDragLeave}
 	ondrop={handleGlobalDrop}
@@ -2523,7 +2559,7 @@
 		<div class="rounded-2xl border border-border-soft bg-surface-white px-6 py-6">
 			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionSetup.batchIntent.title')}</p>
 			<p class="mt-2 text-sm text-text-muted">{t('ingestionSetup.batchIntent.description')}</p>
-			<p class="mt-3 text-xs uppercase tracking-[0.16em] text-text-muted">
+			<p class="mt-3 text-xs uppercase tracking-[0.2em] text-text-muted">
 				{#if metadataSaveState === 'saving' || metadataSaveState === 'pending'}
 					{t('ingestionSetup.batchIntent.saveStateSaving')}
 				{:else if metadataSaveState === 'saved'}
@@ -2661,7 +2697,7 @@
 										<button
 											type="button"
 											onclick={() => removeSummaryTag(tag)}
-											class="rounded-full border border-border-soft px-3 py-1 text-xs uppercase tracking-[0.18em] text-blue-slate"
+											class="rounded-full border border-border-soft px-3 py-1 text-xs uppercase tracking-[0.2em] text-blue-slate"
 										>
 											{tag} ×
 										</button>
@@ -2694,7 +2730,7 @@
 						{#each summaryDateSections as section, index (section.key)}
 							{@const editor = summaryDateEditors[section.key]}
 							<div class={index === 0 ? 'space-y-2' : 'space-y-2 border-t border-border-soft pt-4'}>
-								<p class="text-xs uppercase tracking-[0.18em] text-text-muted">{t(section.labelKey)}</p>
+								<p class="text-xs uppercase tracking-[0.2em] text-text-muted">{t(section.labelKey)}</p>
 								<div class="grid gap-2 md:grid-cols-2">
 									<select
 										class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
@@ -3111,15 +3147,17 @@
 <FootnoteBar>
 	{#snippet left()}
 		<span class="whitespace-nowrap text-xs uppercase tracking-[0.2em] text-text-muted">Step 2 of 3</span>
-		<Stepper
-			steps={[
-				{ id: 'describe', label: 'Describe' },
-				{ id: 'setup', label: 'Upload & tune' },
-				{ id: 'review', label: 'Review' },
-			]}
-			current={1}
-			onJump={(i) => { if (i === 0) goto(resolve('/ingestion/new')); }}
-		/>
+		<span class="hidden sm:flex">
+			<Stepper
+				steps={[
+					{ id: 'configure', label: 'Configure' },
+					{ id: 'upload', label: 'Upload' },
+					{ id: 'review', label: 'Review' },
+				]}
+				current={1}
+				onJump={(i) => { if (i === 0) goto(resolve('/ingestion/new')); }}
+			/>
+		</span>
 	{/snippet}
 	{#snippet right()}
 		{#if step === 'organize'}
@@ -3157,11 +3195,11 @@
 				<Icon name="arrow-l" size={13} /> Back
 			</button>
 			<button
-				disabled={!canStartIngestion}
-				onclick={() => (showConfirm = true)}
-				class="inline-flex items-center gap-2 rounded-full bg-burnt-peach text-surface-white px-5 py-2 text-xs uppercase tracking-[0.2em] border border-burnt-peach transition-all disabled:opacity-40 disabled:pointer-events-none"
+				disabled={!canStartIngestion || isSubmitting}
+				onclick={startIngestion}
+				class="inline-flex items-center gap-2 rounded-full bg-blue-slate text-surface-white px-5 py-2 text-xs uppercase tracking-[0.2em] border border-blue-slate hover:bg-blue-slate-mid-dark transition-all disabled:opacity-40 disabled:pointer-events-none"
 			>
-				{t('common.startIngestion')} <Icon name="arrow-r" size={13} />
+				{isSubmitting ? 'Preparing…' : 'Continue'} <Icon name="arrow-r" size={13} />
 			</button>
 		{/if}
 	{/snippet}

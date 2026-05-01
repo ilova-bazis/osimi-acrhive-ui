@@ -116,9 +116,9 @@
 	});
 
 	const STEPS = [
-		{ id: 'describe', label: 'Describe' },
-		{ id: 'setup',    label: 'Upload & tune' },
-		{ id: 'review',   label: 'Review' },
+		{ id: 'configure', label: 'Configure' },
+		{ id: 'upload',    label: 'Upload' },
+		{ id: 'review',    label: 'Review' },
 	];
 
 	const addTag = () => {
@@ -134,25 +134,26 @@
 <div class="flex flex-col min-h-screen">
 
 	<!-- Sticky top-bar -->
-	<header class="sticky top-0 z-20 border-b border-border-soft bg-alabaster-grey px-4 py-4 sm:px-6">
-		<div class="mx-auto flex w-full max-w-6xl items-start justify-between gap-6">
-			<div class="flex flex-col gap-1">
+	<header class="sticky top-0 z-20 border-b border-border-soft bg-alabaster-grey px-4 py-3 sm:py-4 sm:px-6">
+		<div class="mx-auto flex w-full max-w-6xl items-start justify-between gap-3 sm:gap-6">
+			<div class="flex flex-col gap-1 min-w-0">
 				<div class="flex items-center gap-2 text-xs text-text-muted">
 					<span class="text-xs uppercase tracking-[0.2em] text-blue-slate">Ingestion</span>
 					<Icon name="chevron-r" size={12} />
 					<span>New batch</span>
 				</div>
-				<h1 class="font-display text-2xl text-text-ink m-0 leading-tight">
+				<h1 class="font-display text-xl sm:text-2xl text-text-ink m-0 leading-tight truncate">
 					{name.trim() || 'Bring new material into the archive'}
 				</h1>
 			</div>
-			<div class="flex flex-shrink-0 items-center gap-3 pt-1">
-				<Stamp>Draft · not yet submitted</Stamp>
+			<div class="flex flex-shrink-0 items-center gap-2 sm:gap-3 pt-1">
+				<span class="hidden sm:flex"><Stamp>Draft · not yet submitted</Stamp></span>
 				<a
 					href={resolve('/ingestion')}
-					class="inline-flex items-center gap-2 rounded-full border border-border-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:bg-pale-sky/20 hover:text-text-ink transition-all"
+					class="inline-flex items-center gap-2 rounded-full border border-border-soft px-3 sm:px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:bg-pale-sky/20 hover:text-text-ink transition-all"
 				>
-					<Icon name="x" size={13} /> Discard
+					<Icon name="x" size={13} />
+					<span class="hidden sm:inline">Discard</span>
 				</a>
 			</div>
 		</div>
@@ -194,7 +195,7 @@
 			<!-- Kind -->
 			<div class="flex flex-col gap-3">
 				<span class="text-xs uppercase tracking-[0.2em] text-blue-slate font-medium">What kind of material is this?</span>
-				<div class="grid grid-cols-3 gap-3 md:grid-cols-4">
+				<div class="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
 					{#each kinds as kind (kind.id)}
 						<ChoiceCard
 							icon={kind.icon}
@@ -210,7 +211,7 @@
 			<!-- Language -->
 			<div class="flex flex-col gap-3">
 				<span class="text-xs uppercase tracking-[0.2em] text-blue-slate font-medium">Primary language</span>
-				<div class="grid grid-cols-3 gap-3 md:grid-cols-6">
+				<div class="grid grid-cols-3 gap-2 md:grid-cols-6">
 					{#each languages as lang (lang.id)}
 						<ChoiceCard
 							title={lang.label}
@@ -228,7 +229,7 @@
 					<span class="text-xs uppercase tracking-[0.2em] text-blue-slate font-medium">Processing pipeline</span>
 					<span class="text-xs text-text-muted">— {suggestedPresetLabel} suggested</span>
 				</div>
-				<div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+				<div class="grid grid-cols-2 gap-2 md:grid-cols-4">
 					{#each presets as preset (preset.id)}
 						<ChoiceCard
 							title={preset.label}
@@ -317,7 +318,7 @@
 	<FootnoteBar>
 		{#snippet left()}
 			<span class="whitespace-nowrap text-xs uppercase tracking-[0.2em] text-text-muted">Step 1 of 3</span>
-			<Stepper steps={STEPS} current={0} />
+			<span class="hidden sm:flex"><Stepper steps={STEPS} current={0} /></span>
 		{/snippet}
 		{#snippet right()}
 			<a
