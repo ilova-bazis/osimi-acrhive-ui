@@ -1,4 +1,5 @@
 import { AUTH_COOKIE_NAME } from '$lib/server/auth';
+import { defaultItemKindForClassification } from '$lib/ingestion/kindMappings';
 import { ingestionDetailService } from '$lib/services';
 import { isUnauthorizedError } from '$lib/server/apiClient';
 import { redirect } from '@sveltejs/kit';
@@ -31,7 +32,7 @@ export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) =
 			batchId: params.batchId,
 			batchLabel: detail.batchLabel,
 			classificationType: detail.classificationType,
-			itemKind: detail.itemKind,
+			itemKind: detail.itemKind ?? defaultItemKindForClassification(detail.classificationType),
 			languageCode: detail.languageCode,
 			pipelinePreset: detail.pipelinePreset,
 			accessLevel: detail.accessLevel,

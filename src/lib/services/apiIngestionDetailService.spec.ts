@@ -15,7 +15,7 @@ describe('apiIngestionDetailService', () => {
 		backendRequestMock.mockReset();
 	});
 
-	it('maps legacy document_type and missing item_kind from detail response', async () => {
+	it('maps legacy document_type without inventing a missing item_kind', async () => {
 		backendRequestMock.mockResolvedValue({
 			ingestion: {
 				ingestion_id: 'ing-1',
@@ -38,7 +38,7 @@ describe('apiIngestionDetailService', () => {
 		});
 
 		expect(detail.classificationType).toBe('image');
-		expect(detail.itemKind).toBe('document');
+		expect(detail.itemKind).toBeUndefined();
 	});
 
 	it('keeps new classification_type and item_kind values from detail response', async () => {
@@ -67,4 +67,5 @@ describe('apiIngestionDetailService', () => {
 		expect(detail.classificationType).toBe('manuscript');
 		expect(detail.itemKind).toBe('scanned_document');
 	});
+
 });

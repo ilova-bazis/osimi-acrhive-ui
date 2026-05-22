@@ -548,6 +548,8 @@ export const translations = {
 				saveStateSaving: 'Saving changes',
 				saveStateSaved: 'All changes saved',
 				saveStateError: 'Save failed',
+				intentSaveRollback:
+					'We could not save that classification and item kind change. Restored the last saved values.',
 				accessLevels: {
 					private: 'Private',
 					family: 'Family',
@@ -1256,6 +1258,8 @@ export const translations = {
 				saveStateSaving: 'Сохранение изменений',
 				saveStateSaved: 'Все изменения сохранены',
 				saveStateError: 'Ошибка сохранения',
+				intentSaveRollback:
+					'Не удалось сохранить изменение типа классификации и вида элемента. Восстановлены последние сохраненные значения.',
 				accessLevels: {
 					private: 'Приватный',
 					family: 'Семейный',

@@ -1,4 +1,4 @@
-import { ingestionSetupService } from '$lib/services';
+import { ingestionSetupService, ingestionDetailService } from '$lib/services';
 import { AUTH_COOKIE_NAME, clearSessionCookie } from '$lib/server/auth';
 import { isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
 import { json } from '@sveltejs/kit';
@@ -81,7 +81,8 @@ const setupActionSchema = z.discriminatedUnion('action', [
 				z.object({ fileId: z.string().min(1), sortOrder: z.number().int().min(1) }).strict()
 			)
 		})
-		.strict()
+		.strict(),
+	z.object({ action: z.literal('delete_batch') }).strict()
 ]);
 
 const mapApiErrorStatus = (status: number): number => {
@@ -194,6 +195,11 @@ export const POST: RequestHandler = async ({ request, params, cookies, locals, f
 				context
 			});
 
+			return json({ ok: true });
+		}
+
+		if (parsed.data.action === 'delete_batch') {
+			await ingestionDetailService.delete({ fetchFn: fetch, token, batchId: params.batchId });
 			return json({ ok: true });
 		}
 

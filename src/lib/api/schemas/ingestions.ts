@@ -282,7 +282,19 @@ export const ingestionFileDtoSchema = z.object({
 	status: z.string().min(1).optional(),
 	content_type: z.string().min(1).nullable().optional(),
 	size_bytes: z.number().int().nonnegative().nullable().optional(),
-	created_at: z.string().min(1).nullable().optional()
+	created_at: z.string().min(1).nullable().optional(),
+	preview: z
+		.object({
+			status: z.enum(['pending', 'ready', 'failed', 'unsupported']),
+			content_type: z.string().nullable().optional(),
+			size_bytes: z.number().nullable().optional(),
+			width: z.number().nullable().optional(),
+			height: z.number().nullable().optional(),
+			url: z.string().nullable().optional(),
+			error: z.record(z.string(), z.unknown()).nullable().optional()
+		})
+		.nullable()
+		.optional()
 });
 
 export const ingestionDetailResponseSchema = z.object({

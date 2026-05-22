@@ -24,7 +24,8 @@ export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) =
 	let items: IngestionDetailItem[] = [];
 	let metadata = {
 		classificationType: 'document',
-		itemKind: 'document' as
+		itemKind: undefined as
+			| undefined
 			| 'photo'
 			| 'audio'
 			| 'video'
@@ -67,9 +68,20 @@ export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) =
 			createdAt: file.createdAt
 		}));
 
+		const cookieItemKind = cookies.get(`ingestion-item-kind:${params.batchId}`);
+		const fallbackItemKind =
+			cookieItemKind === 'photo' ||
+			cookieItemKind === 'audio' ||
+			cookieItemKind === 'video' ||
+			cookieItemKind === 'scanned_document' ||
+			cookieItemKind === 'document' ||
+			cookieItemKind === 'other'
+				? cookieItemKind
+				: null;
+
 		metadata = {
 			classificationType: detail.classificationType,
-			itemKind: detail.itemKind,
+			itemKind: fallbackItemKind ?? detail.itemKind,
 			languageCode: detail.languageCode,
 			pipelinePreset: detail.pipelinePreset,
 			accessLevel: detail.accessLevel,
@@ -78,6 +90,11 @@ export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) =
 			sensitivityNote: detail.sensitivityNote,
 			summary: detail.summary
 		};
+		if (fallbackItemKind) {
+			cookies.delete(`ingestion-item-kind:${params.batchId}`, {
+				path: `/ingestion/${params.batchId}`
+			});
+		}
 		items = detail.items;
 	} catch (cause) {
 		if (isUnauthorizedError(cause)) {

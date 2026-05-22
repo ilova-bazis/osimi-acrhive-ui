@@ -84,8 +84,6 @@ const defaultSummary = (title: string) => ({
 });
 
 const DEFAULT_CLASSIFICATION_TYPE = 'document' as const;
-const DEFAULT_ITEM_KIND = 'document' as const;
-
 const normalizeClassificationType = (
 	value: string | undefined
 ):
@@ -118,13 +116,14 @@ const normalizeClassificationType = (
 
 const normalizeItemKind = (
 	value: string | undefined
-): 'photo' | 'audio' | 'video' | 'scanned_document' | 'document' | 'other' => {
+): 'photo' | 'audio' | 'video' | 'scanned_document' | 'document' | 'other' | undefined => {
 	if (value === 'photo') return value;
 	if (value === 'audio') return value;
 	if (value === 'video') return value;
 	if (value === 'scanned_document') return value;
+	if (value === 'document') return value;
 	if (value === 'other') return value;
-	return DEFAULT_ITEM_KIND;
+	return undefined;
 };
 
 	const toAccessLevel = (value: string | undefined): 'private' | 'family' | 'public' => {
@@ -138,7 +137,16 @@ const mapFile = (dto: IngestionFileDto, index: number): IngestionDetailFile => (
 	status: dto.status ?? 'UNKNOWN',
 	contentType: dto.content_type ?? null,
 	sizeBytes: dto.size_bytes ?? null,
-	createdAt: dto.created_at ?? null
+	createdAt: dto.created_at ?? null,
+	preview: dto.preview
+		? {
+				status: dto.preview.status,
+				contentType: dto.preview.content_type ?? null,
+				width: dto.preview.width ?? null,
+				height: dto.preview.height ?? null,
+				url: dto.preview.url ?? null
+			}
+		: null
 });
 
 const mapItemFile = (dto: IngestionItemFileDto): IngestionDetailItemFile => ({

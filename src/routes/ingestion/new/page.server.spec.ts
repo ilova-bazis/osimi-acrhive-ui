@@ -45,7 +45,7 @@ describe('/ingestion/new +page.server', () => {
 			actions.default({
 				request,
 				locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
-				cookies: { get: () => 'token-1', delete: vi.fn() },
+				cookies: { get: () => 'token-1', set: vi.fn(), delete: vi.fn() },
 				fetch: vi.fn()
 			} as never)
 		).rejects.toMatchObject({
@@ -82,7 +82,7 @@ describe('/ingestion/new +page.server', () => {
 			actions.default({
 				request,
 				locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
-				cookies: { get: () => 'token-1', delete: vi.fn() },
+				cookies: { get: () => 'token-1', set: vi.fn(), delete: vi.fn() },
 				fetch: vi.fn()
 			} as never)
 		).rejects.toMatchObject({
@@ -103,7 +103,7 @@ describe('/ingestion/new +page.server', () => {
 			actions.default({
 				request,
 				locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
-				cookies: { get: () => 'token-1', delete: vi.fn() },
+				cookies: { get: () => 'token-1', set: vi.fn(), delete: vi.fn() },
 				fetch: vi.fn()
 			} as never)
 		).rejects.toMatchObject({
@@ -118,6 +118,43 @@ describe('/ingestion/new +page.server', () => {
 					classificationType: 'image'
 				})
 			})
+		);
+	});
+
+	it('stores scanned document item kind for setup redirect', async () => {
+		const form = new FormData();
+		form.set('name', 'Magazine scans');
+		form.set('classificationType', 'magazine_article');
+		form.set('itemKind', 'scanned_document');
+		const request = new Request('https://example.test/ingestion/new', { method: 'POST', body: form });
+		const setCookie = vi.fn();
+
+		createDraftMock.mockResolvedValue({ batchId: 'batch-magazine' });
+
+		await expect(
+			actions.default({
+				request,
+				locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
+				cookies: { get: () => 'token-1', set: setCookie, delete: vi.fn() },
+				fetch: vi.fn()
+			} as never)
+		).rejects.toMatchObject({
+			status: 303,
+			location: '/ingestion/batch-magazine/setup'
+		});
+
+		expect(createDraftMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				payload: expect.objectContaining({
+					classificationType: 'magazine_article',
+					itemKind: 'scanned_document'
+				})
+			})
+		);
+		expect(setCookie).toHaveBeenCalledWith(
+			'ingestion-item-kind:batch-magazine',
+			'scanned_document',
+			expect.objectContaining({ path: '/ingestion/batch-magazine' })
 		);
 	});
 
@@ -137,7 +174,7 @@ describe('/ingestion/new +page.server', () => {
 		const result = await actions.default({
 			request,
 			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
-			cookies: { get: () => 'token-1', delete: vi.fn() },
+			cookies: { get: () => 'token-1', set: vi.fn(), delete: vi.fn() },
 			fetch: vi.fn()
 		} as never);
 

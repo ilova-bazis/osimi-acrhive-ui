@@ -173,6 +173,13 @@ export const actions: Actions = {
 			throw cause;
 		}
 
+		cookies.set(`ingestion-item-kind:${result.batchId}`, itemKind, {
+			path: `/ingestion/${result.batchId}`,
+			httpOnly: true,
+			sameSite: 'lax',
+			maxAge: 60 * 30
+		});
+
 		throw redirect(303, `/ingestion/${result.batchId}/setup`);
 	}
 };

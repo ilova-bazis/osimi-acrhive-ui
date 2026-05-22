@@ -16,6 +16,13 @@ export type IngestionDetailFile = {
 	contentType: string | null;
 	sizeBytes: number | null;
 	createdAt: string | null;
+	preview: {
+		status: 'pending' | 'ready' | 'failed' | 'unsupported';
+		contentType: string | null;
+		width: number | null;
+		height: number | null;
+		url: string | null;
+	} | null;
 };
 
 export type IngestionDetailItemFile = {
@@ -38,7 +45,7 @@ export type IngestionDetail = {
 	batchLabel: string;
 	status: IngestionStatus;
 	classificationType: ClassificationType;
-	itemKind: ItemKind;
+	itemKind?: ItemKind;
 	languageCode: string;
 	pipelinePreset: string;
 	accessLevel: 'private' | 'family' | 'public';
