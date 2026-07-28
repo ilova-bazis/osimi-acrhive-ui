@@ -14,6 +14,7 @@
 		reviewLabel,
 		onInfoToggle,
 		onResync,
+		canRequestResync = false,
 		resyncRunning = false,
 		resyncMessage = null
 	} = $props<{
@@ -27,6 +28,7 @@
 		reviewLabel: string;
 		onInfoToggle: () => void;
 		onResync: () => void;
+		canRequestResync?: boolean;
 		resyncRunning?: boolean;
 		resyncMessage?: { type: 'success' | 'error'; text: string } | null;
 	}>();
@@ -75,18 +77,20 @@
 					</svg>
 					<span class="hidden sm:inline">Info</span>
 				</button>
-				<button
-					type="button"
-					onclick={onResync}
-					disabled={resyncRunning}
-					class="inline-flex items-center gap-1.5 rounded-full border border-border-soft bg-surface-white px-2 py-2 text-xs uppercase tracking-[0.2em] text-text-muted transition hover:bg-pale-sky/25 hover:text-blue-slate disabled:cursor-not-allowed disabled:opacity-40 sm:px-3"
-				>
-					<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" class="h-4 w-4 shrink-0" aria-hidden="true">
-						<path d="M3.5 12A7 7 0 1 0 5 7" stroke-linecap="round" stroke-linejoin="round"/>
-						<path d="M3.5 4v3.5H7" stroke-linecap="round" stroke-linejoin="round"/>
-					</svg>
-					<span class="hidden sm:inline">{resyncRunning ? 'Resyncing' : 'Resync'}</span>
-				</button>
+				{#if canRequestResync}
+					<button
+						type="button"
+						onclick={onResync}
+						disabled={resyncRunning}
+						class="inline-flex items-center gap-1.5 rounded-full border border-border-soft bg-surface-white px-2 py-2 text-xs uppercase tracking-[0.2em] text-text-muted transition hover:bg-pale-sky/25 hover:text-blue-slate disabled:cursor-not-allowed disabled:opacity-40 sm:px-3"
+					>
+						<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" class="h-4 w-4 shrink-0" aria-hidden="true">
+							<path d="M3.5 12A7 7 0 1 0 5 7" stroke-linecap="round" stroke-linejoin="round"/>
+							<path d="M3.5 4v3.5H7" stroke-linecap="round" stroke-linejoin="round"/>
+						</svg>
+						<span class="hidden sm:inline">{resyncRunning ? 'Resyncing' : 'Resync'}</span>
+					</button>
+				{/if}
 			</div>
 		</div>
 

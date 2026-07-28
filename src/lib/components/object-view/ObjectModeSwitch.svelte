@@ -1,5 +1,7 @@
 <script lang="ts">
-	let { editHref = '#', editDisabled = false } = $props<{ editHref?: string; editDisabled?: boolean }>();
+	import { resolve } from '$app/paths';
+
+	let { editHref = '', editDisabled = true } = $props<{ editHref?: string; editDisabled?: boolean }>();
 </script>
 
 <div class="inline-flex items-center rounded-full border border-border-soft bg-surface-white/90 p-1 text-[10px] uppercase tracking-[0.2em] shadow-sm backdrop-blur">
@@ -15,7 +17,7 @@
 		</button>
 	{:else}
 		<a
-			href={editHref}
+			href={resolve(editHref)}
 			title={editHref}
 			class="rounded-full px-3 py-1.5 text-blue-slate hover:bg-pale-sky/35"
 		>

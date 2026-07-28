@@ -14,6 +14,9 @@ import {
     type Actions,
     type RequestEvent,
 } from "@sveltejs/kit";
+import { z } from "zod";
+
+const availableFileIdSchema = z.uuid();
 
 export const load = async ({
     params,
@@ -164,6 +167,9 @@ export const actions: Actions = {
         ).trim();
         if (!availableFileId) {
             return fail(400, { error: "Missing available file id." });
+        }
+        if (!availableFileIdSchema.safeParse(availableFileId).success) {
+            return fail(400, { error: "Invalid available file id." });
         }
 
         try {

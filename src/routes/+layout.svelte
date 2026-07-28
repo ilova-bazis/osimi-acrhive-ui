@@ -3,7 +3,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/stores';
 	import AppSidebar from '$lib/components/AppSidebar.svelte';
-	import { session, setSession } from '$lib/auth/session';
+	import { setSession } from '$lib/auth/session';
 	import type { Session } from '$lib/auth/types';
 	import { locale } from '$lib/i18n/locale';
 	import { onMount } from 'svelte';

@@ -73,8 +73,8 @@ const toObjectRow = (item: ObjectListItemDto): ObjectRow => ({
 const toObjectDetail = (item: ObjectDetailItemDto): ObjectDetail => ({
 	...toObjectRow(item),
 	ingestManifest: item.ingest_manifest ?? null,
-	isAuthorized: item.is_authorized ?? true,
-	isDeliverable: item.is_deliverable ?? item.can_download
+	isAuthorized: item.is_authorized ?? false,
+	isDeliverable: item.is_deliverable ?? false
 });
 
 const toObjectViewerArtifactRef = (item: NonNullable<ObjectViewerDto['preview_artifacts']['thumbnail']>): ObjectViewerArtifactRef => ({

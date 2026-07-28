@@ -195,6 +195,7 @@
 		viewer?.mediaType === 'document' ? 'text-blue-slate' : 'text-white/45'
 	);
 	const requestableAvailableFileId = $derived(viewer?.primarySource.availableFileId ?? '');
+	const canRequestResync = $derived(data.session?.role === 'archiver' || data.session?.role === 'admin');
 	const requestPrimaryMedia = (): void => {
 		(requestForm as HTMLFormElement | null)?.requestSubmit();
 	};
@@ -240,6 +241,7 @@
 	reviewLabel={reviewLabel}
 	onInfoToggle={() => (infoOpen = !infoOpen)}
 	onResync={() => (showResyncConfirm = true)}
+	{canRequestResync}
 	{resyncRunning}
 	{resyncMessage}
 />

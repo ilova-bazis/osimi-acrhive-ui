@@ -14,8 +14,8 @@
 	let tagInput = $state('');
 	let personInput = $state('');
 
-	let localDatePrecision = $state<DatePrecision>(metadata.datePrecision);
-	let localDateApproximate = $state(metadata.dateApproximate);
+	let localDatePrecision = $state<DatePrecision>('none');
+	let localDateApproximate = $state(false);
 
 	$effect(() => {
 		localDatePrecision = metadata.datePrecision;

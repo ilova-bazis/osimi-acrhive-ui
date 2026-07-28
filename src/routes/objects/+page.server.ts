@@ -111,7 +111,8 @@ export const load: PageServerLoad = async ({ locals, cookies, fetch, url }) => {
 		return {
 			recent,
 			list,
-			filters
+			filters,
+			session: locals.session
 		};
 	} catch (cause) {
 		if (isUnauthorizedError(cause)) {

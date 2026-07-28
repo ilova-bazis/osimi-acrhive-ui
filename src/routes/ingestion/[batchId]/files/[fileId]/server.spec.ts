@@ -13,6 +13,8 @@ vi.mock('$lib/services', () => ({
 
 import { DELETE } from './+server';
 
+const request = new Request('https://example.test/ingestion/batch-1/files/file-1', { method: 'DELETE' });
+
 describe('/ingestion/[batchId]/files/[fileId] +server', () => {
 	beforeEach(() => {
 		deleteFileMock.mockReset();
@@ -20,6 +22,7 @@ describe('/ingestion/[batchId]/files/[fileId] +server', () => {
 
 	it('returns 401 when auth is missing', async () => {
 		const response = await DELETE({
+			request,
 			params: { batchId: 'batch-1', fileId: 'file-1' },
 			locals: { session: null },
 			cookies: { get: () => undefined, delete: vi.fn() },
@@ -33,6 +36,7 @@ describe('/ingestion/[batchId]/files/[fileId] +server', () => {
 		deleteFileMock.mockResolvedValue(undefined);
 
 		const response = await DELETE({
+			request,
 			params: { batchId: 'batch-1', fileId: 'file-1' },
 			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'archiver' } },
 			cookies: { get: () => 'token-1', delete: vi.fn() },
@@ -55,6 +59,7 @@ describe('/ingestion/[batchId]/files/[fileId] +server', () => {
 		);
 
 		const response = await DELETE({
+			request,
 			params: { batchId: 'batch-1', fileId: 'file-1' },
 			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'archiver' } },
 			cookies: { get: () => 'token-1', delete: vi.fn() },

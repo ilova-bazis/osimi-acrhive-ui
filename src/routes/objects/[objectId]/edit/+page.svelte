@@ -17,20 +17,52 @@
 	}>();
 
 	const payload = $derived(data.editPayload);
+	type PageEdit = { pageNumber: number; machineText: string; curatedText: string };
+
+	const toPageEdits = (editPayload: ObjectEditPayload): PageEdit[] =>
+		editPayload.curation.kind === 'document'
+			? editPayload.curation.pages.map((page: ObjectEditDocumentPage) => ({
+					pageNumber: page.pageNumber,
+					machineText: page.machineText,
+					curatedText: page.curatedText,
+				}))
+			: [];
+
+	const toSnapshot = (editPayload: ObjectEditPayload): string =>
+		JSON.stringify({
+			title: editPayload.metadata.title,
+			publicationDate: editPayload.metadata.publicationDate,
+			datePrecision: editPayload.metadata.datePrecision,
+			dateApproximate: editPayload.metadata.dateApproximate,
+			language: editPayload.metadata.language ?? '',
+			description: editPayload.metadata.description ?? '',
+			tags: [...editPayload.metadata.tags],
+			people: [...editPayload.metadata.people],
+			rightsNote: editPayload.rights.rightsNote ?? '',
+			sensitivityNote: editPayload.rights.sensitivityNote ?? '',
+			pages: toPageEdits(editPayload).map((page) => ({
+				pageNumber: page.pageNumber,
+				curatedText: page.curatedText,
+			})),
+		});
+
+	const payloadResetKey = $derived(
+		`${payload.objectId}:${payload.draft?.updatedAt ?? 'none'}:${payload.curationState}`
+	);
 
 	// Editable metadata state
-	let title = $state(data.editPayload.metadata.title);
-	let publicationDate = $state(data.editPayload.metadata.publicationDate);
-	let datePrecision = $state<'none' | 'year' | 'month' | 'day'>(data.editPayload.metadata.datePrecision);
-	let dateApproximate = $state(data.editPayload.metadata.dateApproximate);
-	let language = $state(data.editPayload.metadata.language ?? '');
-	let description = $state(data.editPayload.metadata.description ?? '');
-	let tags = $state<string[]>([...data.editPayload.metadata.tags]);
-	let people = $state<string[]>([...data.editPayload.metadata.people]);
+	let title = $state('');
+	let publicationDate = $state('');
+	let datePrecision = $state<'none' | 'year' | 'month' | 'day'>('none');
+	let dateApproximate = $state(false);
+	let language = $state('');
+	let description = $state('');
+	let tags = $state<string[]>([]);
+	let people = $state<string[]>([]);
 
 	// Rights notes
-	let rightsNote = $state(data.editPayload.rights.rightsNote ?? '');
-	let sensitivityNote = $state(data.editPayload.rights.sensitivityNote ?? '');
+	let rightsNote = $state('');
+	let sensitivityNote = $state('');
 
 	// Tag / person input helpers
 	let tagInput = $state('');
@@ -50,17 +82,7 @@
 	const removePerson = (p: string): void => { people = people.filter((x) => x !== p); };
 
 	// OCR page state (document objects only)
-	type PageEdit = { pageNumber: number; machineText: string; curatedText: string };
-	const initialCuration = payload.curation;
-	let pages = $state<PageEdit[]>(
-		initialCuration.kind === 'document'
-			? initialCuration.pages.map((p: ObjectEditDocumentPage) => ({
-					pageNumber: p.pageNumber,
-					machineText: p.machineText,
-					curatedText: p.curatedText,
-				}))
-			: []
-	);
+	let pages = $state<PageEdit[]>([]);
 	let activePageIdx = $state(0);
 
 	const handlePageCuratedChange = (idx: number, text: string): void => {
@@ -68,22 +90,8 @@
 	};
 
 	// Dirty tracking
-	const initialSnapshot = JSON.stringify({
-		title: data.editPayload.metadata.title,
-		publicationDate: data.editPayload.metadata.publicationDate,
-		datePrecision: data.editPayload.metadata.datePrecision,
-		dateApproximate: data.editPayload.metadata.dateApproximate,
-		language: data.editPayload.metadata.language ?? '',
-		description: data.editPayload.metadata.description ?? '',
-		tags: [...data.editPayload.metadata.tags],
-		people: [...data.editPayload.metadata.people],
-		rightsNote: data.editPayload.rights.rightsNote ?? '',
-		sensitivityNote: data.editPayload.rights.sensitivityNote ?? '',
-		pages:
-			initialCuration.kind === 'document'
-				? initialCuration.pages.map((p: ObjectEditDocumentPage) => ({ pageNumber: p.pageNumber, curatedText: p.curatedText }))
-				: [],
-	});
+	let initialSnapshot = $state('');
+	let activePayloadResetKey = $state<string | null>(null);
 	const isDirty = $derived(
 		JSON.stringify({ title, publicationDate, datePrecision, dateApproximate, language, description, tags, people, rightsNote, sensitivityNote, pages: pages.map((p) => ({ pageNumber: p.pageNumber, curatedText: p.curatedText })) }) !== initialSnapshot
 	);
@@ -94,6 +102,30 @@
 	let rightsOpen = $state(false);
 	let saving = $state(false);
 	let submitting = $state(false);
+
+	const resetEditState = (editPayload: ObjectEditPayload, resetKey: string): void => {
+		title = editPayload.metadata.title;
+		publicationDate = editPayload.metadata.publicationDate;
+		datePrecision = editPayload.metadata.datePrecision;
+		dateApproximate = editPayload.metadata.dateApproximate;
+		language = editPayload.metadata.language ?? '';
+		description = editPayload.metadata.description ?? '';
+		tags = [...editPayload.metadata.tags];
+		people = [...editPayload.metadata.people];
+		rightsNote = editPayload.rights.rightsNote ?? '';
+		sensitivityNote = editPayload.rights.sensitivityNote ?? '';
+		pages = toPageEdits(editPayload);
+		activePageIdx = 0;
+		tagInput = '';
+		personInput = '';
+		initialSnapshot = toSnapshot(editPayload);
+		activePayloadResetKey = resetKey;
+	};
+
+	$effect(() => {
+		if (activePayloadResetKey === payloadResetKey) return;
+		resetEditState(payload, payloadResetKey);
+	});
 
 	// Form payload builders
 	const buildMetadata = (): ObjectEditMetadata => ({

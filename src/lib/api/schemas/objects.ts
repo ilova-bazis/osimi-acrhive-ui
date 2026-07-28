@@ -250,6 +250,12 @@ export const createObjectDownloadRequestResponseSchema = z.object({
     request: objectDownloadRequestSchema.optional(),
 });
 
+export const createObjectDownloadRequestRequestSchema = z
+    .object({
+        available_file_id: z.uuid(),
+    })
+    .strict();
+
 export type ObjectsListResponseDto = z.infer<typeof objectsListResponseSchema>;
 export type ObjectListItemDto = z.infer<typeof objectListItemSchema>;
 export type ObjectDetailResponseDto = z.infer<

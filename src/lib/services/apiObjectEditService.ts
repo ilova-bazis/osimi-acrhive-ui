@@ -8,8 +8,11 @@ import {
 import {
 	objectEditPayloadSchema,
 	releaseLockResultSchema,
+	saveDocumentCurationRequestSchema,
 	saveDocumentCurationResultSchema,
+	saveMetadataRequestSchema,
 	saveMetadataResultSchema,
+	submitCurationRequestSchema,
 	submitCurationResultSchema,
 } from '$lib/api/schemas/objectEdit';
 import { ApiClientError, backendRequest } from '$lib/server/apiClient';
@@ -91,6 +94,7 @@ export const apiObjectEditService: ObjectEditService = {
 						sensitivity_note: rights.sensitivityNote,
 					},
 				},
+				requestSchema: saveMetadataRequestSchema,
 				responseSchema: saveMetadataResultSchema,
 			});
 
@@ -114,6 +118,7 @@ export const apiObjectEditService: ObjectEditService = {
 						curated_text: p.curatedText,
 					})),
 				},
+				requestSchema: saveDocumentCurationRequestSchema,
 				responseSchema: saveDocumentCurationResultSchema,
 			});
 
@@ -134,6 +139,7 @@ export const apiObjectEditService: ObjectEditService = {
 				body: {
 					review_note: reviewNote,
 				},
+				requestSchema: submitCurationRequestSchema,
 				responseSchema: submitCurationResultSchema,
 			});
 

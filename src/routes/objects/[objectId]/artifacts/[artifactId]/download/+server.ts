@@ -47,12 +47,19 @@ export const GET = async ({ params, locals, cookies, fetch }: RequestEvent) => {
 	}
 
 	const backendPath = `/api/objects/${encodeURIComponent(objectId)}/artifacts/${encodeURIComponent(artifactId)}/download`;
-	const response = await fetch(`${getApiBase()}${backendPath}`, {
-		method: 'GET',
-		headers: {
-			authorization: `Bearer ${token}`
-		}
-	});
+	let response: Response;
+	try {
+		response = await fetch(`${getApiBase()}${backendPath}`, {
+			method: 'GET',
+			headers: {
+				authorization: `Bearer ${token}`
+			}
+		});
+	} catch {
+		throw error(502, {
+			message: 'Failed to download artifact.'
+		});
+	}
 
 	if (response.status === 401) {
 		clearSessionCookie(cookies);
@@ -80,6 +87,7 @@ export const GET = async ({ params, locals, cookies, fetch }: RequestEvent) => {
 	if (contentType) headers.set('content-type', contentType);
 	if (contentLength) headers.set('content-length', contentLength);
 	if (contentDisposition) headers.set('content-disposition', contentDisposition);
+	headers.set('x-content-type-options', 'nosniff');
 
 	return new Response(response.body, {
 		status: 200,

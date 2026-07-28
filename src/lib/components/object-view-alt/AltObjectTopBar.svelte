@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import ObjectModeSwitch from '$lib/components/object-view/ObjectModeSwitch.svelte';
 	import ObjectViewStatusBadge from '$lib/components/object-view/ObjectViewStatusBadge.svelte';
 	import type { ObjectViewStatus } from '$lib/objectView/types';
@@ -26,7 +27,7 @@
 	<div class="mx-auto flex max-w-[96rem] items-center justify-between gap-4 px-4 py-2.5 sm:px-6">
 		<div class="flex min-w-0 items-center gap-3">
 			<a
-				href={backHref}
+				href={resolve(backHref)}
 				class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition {isDark
 					? 'border-white/12 text-pale-sky hover:bg-white/8'
 					: 'border-border-soft text-blue-slate hover:bg-pale-sky/20'}"

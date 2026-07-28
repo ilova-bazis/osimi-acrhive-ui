@@ -11,6 +11,12 @@
 	const errorMessage = $derived(form?.error ?? '');
 	const dictionary = $derived(translations[$locale]);
 	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
+
+	$effect(() => {
+		if (form?.error) {
+			isSubmitting = false;
+		}
+	});
 </script>
 
 <div class="min-h-screen bg-alabaster-grey text-text-ink">

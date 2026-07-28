@@ -13,6 +13,8 @@ vi.mock('$lib/services', () => ({
 
 import { POST } from './+server';
 
+const request = new Request('https://example.test/ingestion/batch-1/retry', { method: 'POST' });
+
 describe('/ingestion/[batchId]/retry +server', () => {
 	beforeEach(() => {
 		retryMock.mockReset();
@@ -20,6 +22,7 @@ describe('/ingestion/[batchId]/retry +server', () => {
 
 	it('returns 401 when auth missing', async () => {
 		const response = await POST({
+			request,
 			params: { batchId: 'batch-1' },
 			locals: { session: null },
 			cookies: { get: () => undefined, delete: vi.fn() },
@@ -33,6 +36,7 @@ describe('/ingestion/[batchId]/retry +server', () => {
 		retryMock.mockResolvedValue(undefined);
 
 		const response = await POST({
+			request,
 			params: { batchId: 'batch-1' },
 			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'archiver' } },
 			cookies: { get: () => 'token-1', delete: vi.fn() },
@@ -57,6 +61,7 @@ describe('/ingestion/[batchId]/retry +server', () => {
 		);
 
 		const response = await POST({
+			request,
 			params: { batchId: 'batch-1' },
 			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'archiver' } },
 			cookies: { get: () => 'token-1', delete: vi.fn() },

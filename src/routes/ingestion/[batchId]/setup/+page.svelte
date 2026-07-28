@@ -115,7 +115,6 @@
     let isGlobalDragging = $state(false);
     let fileInput = $state<HTMLInputElement | null>(null);
     let previewUrls = $state<Record<number, string>>({});
-    let previewFailed = $state<Record<number, boolean>>({});
 
     const languages = ["en", "ru", "fa", "tg", "mixed"] as const;
 
@@ -131,7 +130,6 @@
 
     let selectedIds = $state<number[]>([]);
     let activeFileId = $state(0);
-    let activeGroupId = $state<string | null>(null);
 
     // Object grouping state
     let objectGroups = $state<ObjectGroup[]>([]);
@@ -145,30 +143,6 @@
 
     // Per-object metadata (keyed by group.id or `file:${localId}`)
     let objectMetadata = $state<Record<string, ObjectItemMetadata>>({});
-
-    const activeObjectGroup = $derived(
-        activeFileId
-            ? objectGroups.find((g) => g.fileIds.includes(activeFileId))
-            : undefined,
-    );
-    const activeFile = $derived(files.find((f) => f.id === activeFileId));
-    const activeObjectKey = $derived<string | null>(
-        activeGroupId !== null
-            ? activeGroupId
-            : activeFileId
-              ? (activeObjectGroup?.id ?? `file:${activeFileId}`)
-              : null,
-    );
-    const activeObjectLabel = $derived<string>(
-        activeGroupId !== null
-            ? (objectGroups.find((g) => g.id === activeGroupId)?.label ?? "")
-            : activeObjectGroup
-              ? (activeObjectGroup.label ?? activeFile?.name ?? "")
-              : (activeFile?.name ?? ""),
-    );
-    const activeObjectMeta = $derived<ObjectItemMetadata>(
-        activeObjectKey ? (objectMetadata[activeObjectKey] ?? {}) : {},
-    );
 
     // Debounce timers for per-group metadata updates (keyed by group local id)
     const itemUpdateTimers: Record<string, ReturnType<typeof setTimeout>> = {};
@@ -202,9 +176,7 @@
         }
     };
 
-    // List drag-and-drop state (distinct from the file-upload DnD)
-    let listDragSourceId = $state<number | null>(null);
-    let listDragTargetFileId = $state<number | null>(null);
+    // Step 1 group drag target state (distinct from the file-upload DnD)
     let listDragTargetGroupId = $state<string | null>(null);
     const toInputDateTime = (value: string | null): string => {
         if (!value) return "";
@@ -577,6 +549,7 @@
     let metadataHydrated = $state(false);
     let confirmedBatchIntent = $state<BatchIntent | null>(null);
     let batchIntentError = $state("");
+    let createdStandaloneBackendFileIds = $state<string[]>([]);
     let mismatchDialog = $state<{
         open: boolean;
         expectedLabel: string;
@@ -684,33 +657,8 @@
             isMediaKindAllowedForItemKind(itemKind, mediaType),
         ) ?? defaultItemKindForClassification(classificationType);
 
-    const toggleSelection = (id: number) => {
-        if (selectedIds.includes(id)) {
-            selectedIds = selectedIds.filter((selected) => selected !== id);
-            if (activeFileId === id) {
-                const fallbackId = selectedIds[selectedIds.length - 1] ?? 0;
-                activeFileId = fallbackId;
-                activeGroupId = null;
-            }
-        } else {
-            selectedIds = [...selectedIds, id];
-            activeFileId = id;
-            activeGroupId = null;
-        }
-    };
-
-    const setActiveGroup = (groupId: string) => {
-        activeGroupId = groupId;
-        activeFileId = 0;
-        const group = objectGroups.find((entry) => entry.id === groupId);
-        if (group) {
-            selectedIds = [...group.fileIds];
-        }
-    };
-
     const setActiveFile = (id: number) => {
         activeFileId = id;
-        activeGroupId = null;
         if (!selectedIds.includes(id) || selectedIds.length !== 1) {
             selectedIds = [id];
         }
@@ -720,46 +668,6 @@
 
     const dissolveSmallGroups = (groups: ObjectGroup[]): ObjectGroup[] =>
         groups.filter((g) => g.fileIds.length >= 2);
-
-    const groupSelectedFiles = () => {
-        if (selectedIds.length < 2) return;
-        const idsToGroup = [...selectedIds];
-        // Remove selected files from any existing groups; dissolve groups left with < 2 files
-        const updatedGroups = dissolveSmallGroups(
-            objectGroups.map((g) => ({
-                ...g,
-                fileIds: g.fileIds.filter((fid) => !idsToGroup.includes(fid)),
-            })),
-        );
-        const firstFile = files.find((f) => f.id === idsToGroup[0]);
-        const label = firstFile
-            ? firstFile.name.replace(/\.[^.]+$/, "")
-            : undefined;
-        const localId = crypto.randomUUID();
-        const newGroup: ObjectGroup = {
-            id: localId,
-            label,
-            fileIds: idsToGroup,
-        };
-        objectGroups = [...updatedGroups, newGroup];
-        activeGroupId = localId;
-        activeFileId = idsToGroup[0] ?? 0;
-        selectedIds = idsToGroup;
-    };
-
-    const splitSelectedFiles = () => {
-        if (selectedIds.length === 0) return;
-        const splitIds = [...selectedIds];
-        objectGroups = dissolveSmallGroups(
-            objectGroups.map((g) => ({
-                ...g,
-                fileIds: g.fileIds.filter((fid) => !splitIds.includes(fid)),
-            })),
-        );
-        activeGroupId = null;
-        activeFileId = splitIds[0] ?? 0;
-        selectedIds = splitIds.length > 0 ? [splitIds[0]] : [];
-    };
 
     // Groups files by numeric filename suffix (e.g. scan_001, scan_002 → one group).
     // Creates local-only groups (no server calls); startIngestion handles server sync.
@@ -826,7 +734,6 @@
         const ungroupedFileIds = group?.fileIds ?? [];
         objectGroups = objectGroups.filter((g) => g.id !== groupId);
         collapsedGroups = collapsedGroups.filter((id) => id !== groupId);
-        activeGroupId = null;
         if (ungroupedFileIds.length > 0) {
             activeFileId = ungroupedFileIds[0];
             selectedIds = [...ungroupedFileIds];
@@ -882,45 +789,6 @@
         }
     };
 
-    const mergeFilesIntoGroup = (
-        sourceFileId: number,
-        targetFileId: number,
-    ) => {
-        // Find if target is already in a group
-        const targetGroup = objectGroups.find((g) =>
-            g.fileIds.includes(targetFileId),
-        );
-        if (targetGroup) {
-            addFileToGroup(sourceFileId, targetGroup.id);
-        } else {
-            // Create new group with both files
-            const cleaned = dissolveSmallGroups(
-                objectGroups.map((g) => ({
-                    ...g,
-                    fileIds: g.fileIds.filter((fid) => fid !== sourceFileId),
-                })),
-            );
-            const sourceFile = files.find((f) => f.id === sourceFileId);
-            const targetFile = files.find((f) => f.id === targetFileId);
-            const label =
-                targetFile?.name.replace(/\.[^.]+$/, "") ??
-                sourceFile?.name.replace(/\.[^.]+$/, "");
-            // Preserve target's position by finding target's index in files array
-            const sourceIndex = files.findIndex((f) => f.id === sourceFileId);
-            const targetIndex = files.findIndex((f) => f.id === targetFileId);
-            const orderedIds =
-                sourceIndex < targetIndex
-                    ? [sourceFileId, targetFileId]
-                    : [targetFileId, sourceFileId];
-            const newGroup: ObjectGroup = {
-                id: crypto.randomUUID(),
-                label,
-                fileIds: orderedIds,
-            };
-            objectGroups = [...cleaned, newGroup];
-        }
-    };
-
     const reorderWithinGroup = (
         groupId: string,
         sourceFileId: number,
@@ -962,150 +830,6 @@
             }
         }
     };
-
-    // --- List DnD handlers ---
-
-    const onFileRowDragStart = (event: DragEvent, fileId: number) => {
-        if (!event.dataTransfer) return;
-        event.dataTransfer.setData(
-            "application/x-list-file-id",
-            String(fileId),
-        );
-        event.dataTransfer.effectAllowed = "move";
-        listDragSourceId = fileId;
-        const file = filesById.get(fileId);
-        if (file) {
-            const label =
-                file.name.length > 32
-                    ? file.name.slice(0, 32) + "…"
-                    : file.name;
-            const ghost = document.createElement("div");
-            ghost.style.cssText =
-                "position:fixed;top:-200px;left:0;background:#fff;border:1px solid rgba(79,109,122,0.3);border-radius:8px;padding:5px 12px;font-size:11px;color:#1a2633;box-shadow:0 2px 8px rgba(0,0,0,0.12);white-space:nowrap;";
-            ghost.textContent = label;
-            document.body.appendChild(ghost);
-            event.dataTransfer.setDragImage(ghost, 16, 16);
-            setTimeout(() => ghost.remove(), 0);
-        }
-    };
-
-    const hasListDragType = (event: DragEvent): boolean => {
-        const transfer = event.dataTransfer;
-        if (!transfer) return false;
-        const types = transfer.types as unknown;
-        if (!types) return false;
-        if (
-            typeof (types as { includes?: (value: string) => boolean })
-                .includes === "function"
-        ) {
-            return (types as { includes: (value: string) => boolean }).includes(
-                "application/x-list-file-id",
-            );
-        }
-        if (
-            typeof (types as { contains?: (value: string) => boolean })
-                .contains === "function"
-        ) {
-            return (types as { contains: (value: string) => boolean }).contains(
-                "application/x-list-file-id",
-            );
-        }
-        return Array.from(types as Iterable<string>).includes(
-            "application/x-list-file-id",
-        );
-    };
-
-    const onFileRowDragEnd = () => {
-        listDragSourceId = null;
-        listDragTargetFileId = null;
-        listDragTargetGroupId = null;
-    };
-
-    const onFileRowDragOver = (event: DragEvent, fileId: number) => {
-        if (!hasListDragType(event)) return;
-        const transfer = event.dataTransfer;
-        if (!transfer) return;
-        event.preventDefault();
-        event.stopPropagation();
-        transfer.dropEffect = "move";
-        if (listDragTargetFileId !== fileId) {
-            listDragTargetFileId = fileId;
-        }
-        if (listDragTargetGroupId !== null) {
-            listDragTargetGroupId = null;
-        }
-    };
-
-    const onFileRowDragLeave = (event: DragEvent) => {
-        // Only clear if leaving to outside the row
-        const related = event.relatedTarget as Node | null;
-        if (
-            !related ||
-            !(event.currentTarget as HTMLElement).contains(related)
-        ) {
-            listDragTargetFileId = null;
-        }
-    };
-
-    const onFileRowDrop = (event: DragEvent, targetFileId: number) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const sourceId = listDragSourceId;
-        listDragTargetFileId = null;
-        listDragTargetGroupId = null;
-        listDragSourceId = null;
-        if (sourceId === null || sourceId === targetFileId) return;
-        // Check if both are in the same group → reorder
-        const sourceGroup = objectGroups.find((g) =>
-            g.fileIds.includes(sourceId),
-        );
-        const targetGroup = objectGroups.find((g) =>
-            g.fileIds.includes(targetFileId),
-        );
-        if (sourceGroup && targetGroup && sourceGroup.id === targetGroup.id) {
-            reorderWithinGroup(sourceGroup.id, sourceId, targetFileId);
-        } else {
-            mergeFilesIntoGroup(sourceId, targetFileId);
-        }
-    };
-
-    const onGroupRowDragOver = (event: DragEvent, groupId: string) => {
-        if (!hasListDragType(event)) return;
-        const transfer = event.dataTransfer;
-        if (!transfer) return;
-        event.preventDefault();
-        event.stopPropagation();
-        transfer.dropEffect = "move";
-        if (listDragTargetGroupId !== groupId) {
-            listDragTargetGroupId = groupId;
-        }
-        if (listDragTargetFileId !== null) {
-            listDragTargetFileId = null;
-        }
-    };
-
-    const onGroupRowDragLeave = (event: DragEvent) => {
-        const related = event.relatedTarget as Node | null;
-        if (
-            !related ||
-            !(event.currentTarget as HTMLElement).contains(related)
-        ) {
-            listDragTargetGroupId = null;
-        }
-    };
-
-    const onGroupRowDrop = (event: DragEvent, groupId: string) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const sourceId = listDragSourceId;
-        listDragTargetGroupId = null;
-        listDragTargetFileId = null;
-        listDragSourceId = null;
-        if (sourceId === null) return;
-        addFileToGroup(sourceId, groupId);
-    };
-
-    // --- end grouping helpers ---
 
     const toReadableSize = (bytes: number) => {
         if (bytes < 1024) return `${bytes} B`;
@@ -1303,14 +1027,19 @@
     const setClassificationType = (classificationType: ClassificationType) => {
         batchIntentError = "";
         applyBatchIntent(
-            applyClassificationSelection(currentBatchIntent(), classificationType),
+            applyClassificationSelection(
+                currentBatchIntent(),
+                classificationType,
+            ),
         );
         queueBatchMetadataSave();
     };
 
     const setItemKind = (itemKind: ItemKind) => {
         batchIntentError = "";
-        applyBatchIntent(applyItemKindSelection(currentBatchIntent(), itemKind));
+        applyBatchIntent(
+            applyItemKindSelection(currentBatchIntent(), itemKind),
+        );
         queueBatchMetadataSave();
     };
 
@@ -1407,15 +1136,19 @@
         files = mappedFiles;
 
         for (const f of mappedFiles) {
-            if (!f.backendFileId) continue;
-            if (f.preview?.status === "ready" && (f.mediaType === "image" || f.mediaType === "video")) {
-                previewUrls = { ...previewUrls, [f.id]: filePreviewEndpoint(f.backendFileId) };
-            } else if (f.preview?.status === "pending" && (f.mediaType === "image" || f.mediaType === "video")) {
+            if (
+                !f.backendFileId ||
+                (f.mediaType !== "image" && f.mediaType !== "video")
+            )
+                continue;
+            if (f.preview?.status === "ready") {
+                previewUrls = {
+                    ...previewUrls,
+                    [f.id]: filePreviewEndpoint(f.backendFileId),
+                };
+            } else if (f.preview?.status === "pending") {
                 void pollFilePreview(f.id, f.backendFileId);
-            } else if (f.preview?.status === "failed") {
-                previewFailed = { ...previewFailed, [f.id]: true };
             }
-            // unsupported: no preview generated (documents) — intentional no-op
         }
 
         nextFileId = mappedFiles.length + 1;
@@ -1498,14 +1231,12 @@
         addFilesError = "";
 
         const allowedKinds = getAllowedMediaKinds(batchDefaults.itemKind);
-        console.log(batchDefaults.itemKind, "default itemkind");
         const accepted: LocalIngestionFile[] = [];
         const rejectedMediaNames: string[] = [];
         const unsupportedNames: string[] = [];
         let mismatchIncomingType: BatchMediaType | null = null;
         let suggestedItemKind: ItemKind | null = null;
         let mismatchFiles: File[] = [];
-        console.log(allowedKinds, "allowed kinds");
         for (const file of list) {
             const parsed = parseFileType(file);
             if (!parsed.supported) {
@@ -2025,14 +1756,17 @@
     beforeNavigate(({ cancel, to }) => {
         if (abandonNavigateBypass || files.length > 0 || !to) return;
         cancel();
-        abandonDialog = { open: true, pendingUrl: to.url.href };
+        abandonDialog = {
+            open: true,
+            pendingUrl: `${to.url.pathname}${to.url.search}${to.url.hash}`,
+        };
     });
 
     const keepDraftAndLeave = () => {
-        const url = abandonDialog?.pendingUrl ?? resolve("/ingestion");
+        const url = abandonDialog?.pendingUrl ?? "/ingestion";
         abandonDialog = null;
         abandonNavigateBypass = true;
-        goto(url);
+        goto(resolve(url as "/ingestion"));
     };
 
     const deleteBatchAndLeave = async () => {
@@ -2052,7 +1786,7 @@
         }
         abandonDialog = null;
         abandonNavigateBypass = true;
-        goto(url);
+        goto(resolve(url as "/ingestion"));
     };
 
     const saveBatchMetadata = async (): Promise<BatchIntent> => {
@@ -2210,6 +1944,38 @@
             signal,
         });
 
+    const requireSetupActionOk = async (
+        response: Response,
+        fallback: string,
+    ): Promise<void> => {
+        if (response.status === 401) {
+            await goto(resolve("/login"));
+            throw new Error("Unauthorized");
+        }
+
+        if (!response.ok) {
+            throw new Error(await readErrorMessage(response, fallback));
+        }
+    };
+
+    const persistCreatedItemMetadata = async (
+        itemId: string,
+        metadataKey: string,
+    ): Promise<void> => {
+        const metadata = objectMetadata[metadataKey];
+        if (!metadata) return;
+
+        const response = await postSetupAction({
+            action: "update_item",
+            itemId,
+            metadata,
+        });
+        await requireSetupActionOk(
+            response,
+            "Failed to save object metadata.",
+        );
+    };
+
     const isAbortError = (error: unknown): boolean =>
         error instanceof DOMException
             ? error.name === "AbortError"
@@ -2227,8 +1993,6 @@
         if (!snapshot) return;
 
         revokePreviewUrl(id);
-        const { [id]: _pf, ...restFailed } = previewFailed;
-        previewFailed = restFailed;
         removingIds = [...removingIds, id];
         try {
             uploadControllers.get(id)?.abort();
@@ -2405,16 +2169,6 @@
         }
     };
 
-    const retryUpload = (fileId: number) => {
-        submitError = "";
-        const file = findFile(fileId);
-        if (!file || file.source !== "local") {
-            return;
-        }
-        setFileStatus(fileId, "queued");
-        enqueueUploads([fileId]);
-    };
-
     const hasPendingUploads = $derived(
         files.some(
             (file) => file.status === "queued" || file.status === "processing",
@@ -2464,11 +2218,6 @@
         return "image";
     };
 
-    const fileTypeLabel = (f: LocalIngestionFile | undefined): string | null => {
-        if (!f || f.mediaType !== "document") return null;
-        return f.type === "pdf" ? "PDF" : "DOC";
-    };
-
     const revokePreviewUrl = (fileId: number): void => {
         const url = previewUrls[fileId];
         if (url) {
@@ -2493,14 +2242,16 @@
         for (let i = 0; i < 10; i++) {
             await new Promise<void>((r) => setTimeout(r, 2000));
             if (!findFile(localFileId)) return;
-            const response = await fetch(url, { method: "HEAD" });
-            if (response.ok) {
-                previewUrls = { ...previewUrls, [localFileId]: url };
-                return;
+            try {
+                const response = await fetch(url, { method: "HEAD" });
+                if (response.ok) {
+                    previewUrls = { ...previewUrls, [localFileId]: url };
+                    return;
+                }
+            } catch {
+                // Keep polling; transient preview endpoint failures should not
+                // surface as unhandled promise rejections.
             }
-        }
-        if (findFile(localFileId)) {
-            previewFailed = { ...previewFailed, [localFileId]: true };
         }
     };
 
@@ -2510,6 +2261,16 @@
         } else {
             selectedFileIds = [...selectedFileIds, fileId];
         }
+    };
+
+    const handleFileRowKeydown = (
+        event: KeyboardEvent,
+        fileId: number,
+    ): void => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        toggleFileSelection(fileId);
     };
 
     const organizeGroupSelected = () => {
@@ -2540,11 +2301,6 @@
             })),
         );
         selectedFileIds = [];
-    };
-
-    const createNewGroup = () => {
-        const newId = crypto.randomUUID();
-        objectGroups = [...objectGroups, { id: newId, fileIds: [] }];
     };
 
     const toggleMetadataCard = (key: string) => {
@@ -2694,20 +2450,18 @@
                     itemIndex: nextItemIndex++,
                     ...(group.label ? { label: group.label } : {}),
                 });
-                if (createResponse.status === 401) {
-                    await goto(resolve("/login"));
-                    return;
-                }
-                if (!createResponse.ok) {
-                    throw new Error(
-                        await readErrorMessage(
-                            createResponse,
-                            "Failed to create item for grouped files.",
-                        ),
-                    );
-                }
+                await requireSetupActionOk(
+                    createResponse,
+                    "Failed to create item for grouped files.",
+                );
                 const result: { id: string; itemIndex: number } =
                     await createResponse.json();
+                objectGroups = objectGroups.map((entry) =>
+                    entry.id === group.id
+                        ? { ...entry, serverId: result.id }
+                        : entry,
+                );
+                await persistCreatedItemMetadata(result.id, group.id);
                 for (let i = 0; i < groupFilesWithBackendId.length; i++) {
                     const attachResponse = await postSetupAction({
                         action: "attach_file",
@@ -2715,7 +2469,10 @@
                         fileId: groupFilesWithBackendId[i].backendFileId!,
                         sortOrder: i + 1,
                     });
-                    if (!attachResponse.ok) break;
+                    await requireSetupActionOk(
+                        attachResponse,
+                        `Failed to attach ${groupFilesWithBackendId[i].name} to item.`,
+                    );
                 }
             }
 
@@ -2723,52 +2480,52 @@
             // Skip files that already have a server item — single-file items are not hydrated
             // as groups on remount, so without this check a second Continue click re-creates
             // them and hits the unique constraint on (ingestion_id, item_index).
-            const fileIdsInServerItems = new Set(
-                (data.items ?? []).flatMap((item: IngestionDetailItem) =>
+            const fileIdsInServerItems = [
+                ...(data.items ?? []).flatMap((item: IngestionDetailItem) =>
                     item.files.map(
                         (f: IngestionDetailItemFile) => f.ingestionFileId,
                     ),
                 ),
-            );
+                ...createdStandaloneBackendFileIds,
+            ];
             const standalonesToCreate = standaloneFiles.filter(
                 (f) =>
                     f.backendFileId &&
-                    !fileIdsInServerItems.has(f.backendFileId),
+                    !fileIdsInServerItems.includes(f.backendFileId),
             );
 
             for (const standaloneFile of standalonesToCreate) {
+                const backendFileId = standaloneFile.backendFileId;
+                if (!backendFileId) continue;
+
                 const createResponse = await postSetupAction({
                     action: "create_item",
                     itemIndex: nextItemIndex++,
                 });
-                if (createResponse.status === 401) {
-                    await goto(resolve("/login"));
-                    return;
-                }
-                if (!createResponse.ok) {
-                    throw new Error(
-                        await readErrorMessage(
-                            createResponse,
-                            "Failed to create item for standalone file.",
-                        ),
-                    );
-                }
+                await requireSetupActionOk(
+                    createResponse,
+                    "Failed to create item for standalone file.",
+                );
                 const result: { id: string; itemIndex: number } =
                     await createResponse.json();
+                await persistCreatedItemMetadata(
+                    result.id,
+                    `file:${standaloneFile.id}`,
+                );
                 const attachResponse = await postSetupAction({
                     action: "attach_file",
                     itemId: result.id,
-                    fileId: standaloneFile.backendFileId!,
+                    fileId: backendFileId,
                     sortOrder: 1,
                 });
-                if (!attachResponse.ok) {
-                    throw new Error(
-                        await readErrorMessage(
-                            attachResponse,
-                            "Failed to attach file to item.",
-                        ),
-                    );
-                }
+                await requireSetupActionOk(
+                    attachResponse,
+                    "Failed to attach file to item.",
+                );
+                createdStandaloneBackendFileIds = [
+                    ...createdStandaloneBackendFileIds,
+                    backendFileId,
+                ];
             }
 
             // Snapshot objectMetadata to sessionStorage so it can be restored if the user
@@ -3060,7 +2817,7 @@
                                 renameGroup(group.id, label)}
                             onDragOver={(e: DragEvent) =>
                                 onStep1GroupDragOver(e, group.id)}
-                            onDragLeave={(_e: DragEvent) =>
+                            onDragLeave={() =>
                                 onStep1GroupDragLeave(group.id)}
                             onDrop={(e: DragEvent) =>
                                 onStep1GroupDrop(e, group.id)}
@@ -3126,17 +2883,16 @@
                                                         class="h-full w-full object-cover"
                                                     />
                                                 {:else}
-                                                    {@const _ftLabel = fileTypeLabel(file)}
-                                                    {#if _ftLabel}
-                                                        <span class="font-mono text-[9px] font-bold tracking-wider text-blue-slate/60">{_ftLabel}</span>
-                                                    {:else}
-                                                        <span class={previewFailed[fileId] ? "text-burnt-peach/50" : "text-text-muted/60"}>
-                                                            <Icon
-                                                                name={fileKindIcon(file.mediaType)}
-                                                                size={14}
-                                                            />
-                                                        </span>
-                                                    {/if}
+                                                    <span
+                                                        class="text-text-muted/60"
+                                                    >
+                                                        <Icon
+                                                            name={fileKindIcon(
+                                                                file.mediaType,
+                                                            )}
+                                                            size={14}
+                                                        />
+                                                    </span>
                                                 {/if}
                                             </div>
                                             <div class="min-w-0 flex-1">
@@ -3237,7 +2993,6 @@
                         <!-- Ungrouped file rows -->
                         <div class="divide-y divide-border-soft">
                             {#each standaloneFiles as file (file.id)}
-                                <!-- svelte-ignore a11y_no_static_element_interactions -->
                                 <div
                                     class={[
                                         "grid cursor-grab items-center gap-x-3 px-5 py-2.5 transition hover:bg-pale-sky/15",
@@ -3257,6 +3012,10 @@
                                         onStep1FileDragStart(e, file.id)}
                                     ondragend={onStep1FileDragEnd}
                                     onclick={() => toggleFileSelection(file.id)}
+                                    onkeydown={(e) =>
+                                        handleFileRowKeydown(e, file.id)}
+                                    role="button"
+                                    tabindex="0"
                                 >
                                     <span
                                         class="select-none text-text-muted/50"
@@ -3275,24 +3034,21 @@
                                     <div
                                         class="flex h-6 w-6 items-center justify-center overflow-hidden rounded border border-border-soft bg-alabaster-grey/50"
                                     >
-                                        {#if previewUrls[file.id] && file.mediaType === "image"}
+                                        {#if previewUrls[file.id]}
                                             <img
                                                 src={previewUrls[file.id]}
                                                 alt={file.name}
                                                 class="h-full w-full object-cover"
                                             />
                                         {:else}
-                                            {@const _ftLabel = fileTypeLabel(file)}
-                                            {#if _ftLabel}
-                                                <span class="font-mono text-[8px] font-bold tracking-wider text-blue-slate/60">{_ftLabel}</span>
-                                            {:else}
-                                                <span class={previewFailed[file.id] ? "text-burnt-peach/50" : "text-text-muted/70"}>
-                                                    <Icon
-                                                        name={fileKindIcon(file.mediaType)}
-                                                        size={12}
-                                                    />
-                                                </span>
-                                            {/if}
+                                            <span class="text-text-muted/70">
+                                                <Icon
+                                                    name={fileKindIcon(
+                                                        file.mediaType,
+                                                    )}
+                                                    size={12}
+                                                />
+                                            </span>
                                         {/if}
                                     </div>
                                     <p class="truncate text-sm text-text-ink">
@@ -3927,7 +3683,9 @@
                                     ? ""
                                     : "transform: rotate(-90deg)"}>▾</span
                             >
-                            <div class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border-soft bg-alabaster-grey/50">
+                            <div
+                                class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border-soft bg-alabaster-grey/50"
+                            >
                                 {#if _firstPreviewId && previewUrls[_firstPreviewId]}
                                     <img
                                         src={previewUrls[_firstPreviewId]}
@@ -3935,17 +3693,15 @@
                                         class="h-full w-full object-cover"
                                     />
                                 {:else}
-                                    {@const _ftLabel = fileTypeLabel(_firstGroupFile)}
-                                    {#if _ftLabel}
-                                        <span class="font-mono text-[9px] font-bold tracking-wider text-blue-slate/60">{_ftLabel}</span>
-                                    {:else}
-                                        <span class={_firstGroupFile && previewFailed[_firstGroupFile.id] ? "text-burnt-peach/50" : "text-text-muted/60"}>
-                                            <Icon
-                                                name={fileKindIcon(_firstGroupFile?.mediaType ?? "document")}
-                                                size={14}
-                                            />
-                                        </span>
-                                    {/if}
+                                    <span class="text-text-muted/60">
+                                        <Icon
+                                            name={fileKindIcon(
+                                                _firstGroupFile?.mediaType ??
+                                                    "document",
+                                            )}
+                                            size={14}
+                                        />
+                                    </span>
                                 {/if}
                             </div>
                             <span
@@ -4033,7 +3789,9 @@
                                     ? ""
                                     : "transform: rotate(-90deg)"}>▾</span
                             >
-                            <div class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border-soft bg-alabaster-grey/50">
+                            <div
+                                class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border-soft bg-alabaster-grey/50"
+                            >
                                 {#if previewUrls[file.id] && file.mediaType === "image"}
                                     <img
                                         src={previewUrls[file.id]}
@@ -4041,17 +3799,12 @@
                                         class="h-full w-full object-cover"
                                     />
                                 {:else}
-                                    {@const _ftLabel = fileTypeLabel(file)}
-                                    {#if _ftLabel}
-                                        <span class="font-mono text-[9px] font-bold tracking-wider text-blue-slate/60">{_ftLabel}</span>
-                                    {:else}
-                                        <span class={previewFailed[file.id] ? "text-burnt-peach/50" : "text-text-muted/60"}>
-                                            <Icon
-                                                name={fileKindIcon(file.mediaType)}
-                                                size={14}
-                                            />
-                                        </span>
-                                    {/if}
+                                    <span class="text-text-muted/60">
+                                        <Icon
+                                            name={fileKindIcon(file.mediaType)}
+                                            size={14}
+                                        />
+                                    </span>
                                 {/if}
                             </div>
                             <span

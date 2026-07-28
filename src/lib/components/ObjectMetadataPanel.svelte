@@ -55,6 +55,8 @@
 		return 'none';
 	};
 
+	const trackObjectKeyChange = (key: string | null): string | null => key;
+
 	let tagInput = $state('');
 	let personInput = $state('');
 	let localDatePrecision = $state<DatePrecision>('none');
@@ -62,7 +64,7 @@
 
 	// Sync local state when the selected object changes
 	$effect(() => {
-		objectKey; // track objectKey changes
+		trackObjectKeyChange(objectKey);
 		untrack(() => {
 			localDatePrecision = inferPrecision(metadata.date?.value ?? null);
 			localDateApproximate = metadata.date?.approximate ?? false;

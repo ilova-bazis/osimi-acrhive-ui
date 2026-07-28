@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { mockObjectViews } from '$lib/objectView/mockObjects';
 
 	const mediaTypeIcons: Record<string, string> = {
@@ -31,7 +32,7 @@
 		<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
 			{#each mockObjectViews as object (object.id)}
 				<a
-					href="/prototype/glm/objects/{object.id}/edit"
+					href={resolve(`/prototype/glm/objects/${object.id}/edit`)}
 					class="group rounded-2xl border border-border-soft bg-surface-white/80 p-5 shadow-sm backdrop-blur transition hover:border-pearl-beige/60 hover:shadow-md"
 				>
 					<div class="mb-3 flex items-center justify-between">

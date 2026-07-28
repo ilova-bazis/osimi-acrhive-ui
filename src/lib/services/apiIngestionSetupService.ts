@@ -1,14 +1,19 @@
 import {
 	attachItemFileResponseSchema,
+	attachItemFileRequestSchema,
 	commitIngestionFileRequestSchema,
 	commitIngestionFileResponseSchema,
+	createItemRequestSchema,
 	createItemResponseSchema,
 	deleteIngestionFileResponseSchema,
 	presignIngestionFileRequestSchema,
 	presignIngestionFileResponseSchema,
+	reorderItemFilesRequestSchema,
 	reorderItemFilesResponseSchema,
+	reorderItemsRequestSchema,
 	reorderItemsResponseSchema,
 	submitIngestionResponseSchema,
+	updateItemRequestSchema,
 	updateItemResponseSchema
 } from '$lib/api/schemas/ingestions';
 import { env } from '$env/dynamic/private';
@@ -148,6 +153,7 @@ const createItem = async (request: CreateItemRequest): Promise<{ id: string; ite
 			item_index: request.itemIndex,
 			...(request.label ? { title: request.label } : {})
 		},
+		requestSchema: createItemRequestSchema,
 		responseSchema: createItemResponseSchema
 	});
 
@@ -166,6 +172,7 @@ const updateItem = async (request: UpdateItemRequest): Promise<void> => {
 		if (metadata.title !== undefined) body.title = metadata.title || null;
 		if (metadata.description !== undefined) body.description = metadata.description || null;
 		if (metadata.tags !== undefined) body.tags = metadata.tags;
+		if (metadata.people !== undefined) body.people = metadata.people;
 		if (metadata.date !== undefined) {
 			body.dates = {
 				published: {
@@ -185,6 +192,7 @@ const updateItem = async (request: UpdateItemRequest): Promise<void> => {
 		method: 'PATCH',
 		token: request.context.token,
 		body,
+		requestSchema: updateItemRequestSchema,
 		responseSchema: updateItemResponseSchema
 	});
 };
@@ -202,6 +210,7 @@ const reorderItems = async (request: ReorderItemsRequest): Promise<void> => {
 				item_index: item.itemIndex
 			}))
 		},
+		requestSchema: reorderItemsRequestSchema,
 		responseSchema: reorderItemsResponseSchema
 	});
 };
@@ -218,6 +227,7 @@ const attachFileToItem = async (request: AttachFileToItemRequest): Promise<void>
 			sort_order: request.sortOrder,
 			...(request.role ? { role: request.role } : {})
 		},
+		requestSchema: attachItemFileRequestSchema,
 		responseSchema: attachItemFileResponseSchema
 	});
 };
@@ -235,6 +245,7 @@ const reorderItemFiles = async (request: ReorderItemFilesRequest): Promise<void>
 				sort_order: f.sortOrder
 			}))
 		},
+		requestSchema: reorderItemFilesRequestSchema,
 		responseSchema: reorderItemFilesResponseSchema
 	});
 };

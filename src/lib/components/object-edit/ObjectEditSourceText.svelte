@@ -10,7 +10,7 @@
 		onEditDataChange: (patch: Partial<DocumentEditData>) => void;
 	} = $props();
 
-	let localEditMode = $state(editData.editMode);
+	let localEditMode = $derived(editData.editMode);
 	let selectedPageIndex = $state(0);
 
 	const currentPage = $derived(editData.pages[selectedPageIndex] ?? editData.pages[0]);

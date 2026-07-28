@@ -2,7 +2,7 @@ import { AUTH_COOKIE_NAME } from '$lib/server/auth';
 import { ingestionCapabilitiesService, ingestionDetailService } from '$lib/services';
 import { DEFAULT_INGESTION_CAPABILITIES } from '$lib/services/ingestionCapabilities';
 import { isUnauthorizedError } from '$lib/server/apiClient';
-import { redirect } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { IngestionDetailItem } from '$lib/services/ingestionDetail';
 import type { PageServerLoad } from './$types';
 
@@ -100,6 +100,8 @@ export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) =
 		if (isUnauthorizedError(cause)) {
 			throw redirect(303, '/login');
 		}
+
+		throw error(502, 'Failed to load ingestion setup details.');
 	}
 
 	return {

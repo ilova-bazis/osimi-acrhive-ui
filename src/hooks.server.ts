@@ -1,11 +1,24 @@
+import { dev } from '$app/environment';
 import { redirect, type Handle } from '@sveltejs/kit';
 import { AUTH_COOKIE_NAME, clearSessionCookie, getSessionFromToken } from '$lib/server/auth';
 
-const isPublicPath = (pathname: string): boolean =>
-	pathname === '/login' ||
-	pathname.startsWith('/login/') ||
+type PublicPathOptions = {
+	allowPrototype?: boolean;
+};
+
+const isPrototypePath = (pathname: string): boolean =>
 	pathname === '/prototype' ||
 	pathname.startsWith('/prototype/') ||
+	pathname === '/ingestion-proto' ||
+	pathname.startsWith('/ingestion-proto/');
+
+export const isPublicPath = (
+	pathname: string,
+	{ allowPrototype = dev }: PublicPathOptions = {}
+): boolean =>
+	pathname === '/login' ||
+	pathname.startsWith('/login/') ||
+	(allowPrototype && isPrototypePath(pathname)) ||
 	pathname === '/auth/logout';
 
 export const handle: Handle = async ({ event, resolve }) => {

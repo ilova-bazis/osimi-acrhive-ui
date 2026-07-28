@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import Chip from '$lib/components/Chip.svelte';
 	import ObjectEditDetails from '$lib/components/object-edit/ObjectEditDetails.svelte';
 	import ObjectEditRights from '$lib/components/object-edit/ObjectEditRights.svelte';
@@ -34,10 +35,10 @@
 	const object = $derived(data.object);
 
 	let currentObjectId = $state('');
-	let initialSnapshot = $state(JSON.stringify(data.editData));
-	let editData = $state<ObjectEditData>(deepCloneEditData(data.editData));
+	let initialSnapshot = $derived(JSON.stringify(data.editData));
+	let editData = $derived(deepCloneEditData(data.editData));
 	let activeDocPage = $state(0);
-	let docEditMode = $state<'per-page' | 'whole-document'>(
+	let docEditMode = $derived(
 		isDocumentEditData(data.editData) ? data.editData.editMode : 'per-page'
 	);
 	let activeVideoTab = $state<'transcript' | 'captions'>('transcript');
@@ -71,10 +72,8 @@
 		const newId = data.object.id;
 		if (newId === currentObjectId) return;
 		currentObjectId = newId;
-		initialSnapshot = JSON.stringify(data.editData);
 		editData = deepCloneEditData(data.editData);
 		activeDocPage = 0;
-		docEditMode = isDocumentEditData(data.editData) ? data.editData.editMode : 'per-page';
 		activeVideoTab = 'transcript';
 		metadataOpen = false;
 		rightsOpen = false;
@@ -205,7 +204,7 @@
 	<!-- ── Top bar ─────────────────────────────────────────────────── -->
 	<header class="flex shrink-0 items-center gap-3 border-b border-border-soft bg-surface-white/95 px-4 py-2.5 backdrop-blur sm:px-6">
 		<a
-			href="/prototype/alternative/objects/{object.id}"
+			href={resolve(`/prototype/alternative/objects/${object.id}`)}
 			class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border-soft bg-surface-white px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20"
 		>
 			← View
@@ -248,7 +247,7 @@
 			<span class="mr-1 text-[10px] uppercase tracking-[0.2em] text-text-muted">Switch object</span>
 			{#each data.reviewItems as item (item.id)}
 				<a
-					href="/prototype/alternative/objects/{item.id}/edit"
+					href={resolve(`/prototype/alternative/objects/${item.id}/edit`)}
 					class="rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.2em] transition {item.id === object.id
 						? 'border-blue-slate bg-blue-slate text-surface-white'
 						: 'border-border-soft bg-surface-white text-blue-slate hover:bg-pale-sky/20'}"
@@ -630,8 +629,9 @@
 								</div>
 								<!-- Speaker -->
 								<div class="mb-3">
-									<label class="block text-[9px] uppercase tracking-[0.15em] text-blue-slate/55">Speaker</label>
+									<label for="audio-speaker-{seg.id}" class="block text-[9px] uppercase tracking-[0.15em] text-blue-slate/55">Speaker</label>
 									<input
+										id="audio-speaker-{seg.id}"
 										class="mt-1 w-full rounded-lg border border-border-soft bg-pearl-beige/12 px-3 py-1.5 text-sm text-text-ink placeholder:text-text-muted/40 focus:border-pearl-beige focus:outline-none focus:ring-1 focus:ring-pearl-beige/60"
 										placeholder="Speaker name..."
 										value={seg.speaker}
@@ -647,8 +647,9 @@
 								{/if}
 								<!-- Curated textarea -->
 								<div>
-									<label class="block text-[9px] uppercase tracking-[0.15em] text-blue-slate/55">Curated text</label>
+									<label for="audio-curated-{seg.id}" class="block text-[9px] uppercase tracking-[0.15em] text-blue-slate/55">Curated text</label>
 									<textarea
+										id="audio-curated-{seg.id}"
 										class="mt-1 w-full resize-none rounded-lg border border-pearl-beige/50 bg-pearl-beige/12 px-3 py-2 text-sm leading-relaxed text-text-ink placeholder:text-text-muted/40 focus:border-pearl-beige focus:outline-none focus:ring-1 focus:ring-pearl-beige/60"
 										rows="3"
 										placeholder="Curated transcript text..."
@@ -822,8 +823,9 @@
 										</div>
 									{/if}
 									<div>
-										<label class="block text-[9px] uppercase tracking-[0.15em] text-blue-slate/55">Curated text</label>
+										<label for="video-transcript-{seg.id}" class="block text-[9px] uppercase tracking-[0.15em] text-blue-slate/55">Curated text</label>
 										<textarea
+											id="video-transcript-{seg.id}"
 											class="mt-1 w-full resize-none rounded-lg border border-pearl-beige/50 bg-pearl-beige/12 px-3 py-2 text-sm leading-relaxed text-text-ink placeholder:text-text-muted/40 focus:border-pearl-beige focus:outline-none focus:ring-1 focus:ring-pearl-beige/60"
 											rows="3"
 											placeholder="Curated transcript text..."
@@ -864,8 +866,9 @@
 										</div>
 									{/if}
 									<div>
-										<label class="block text-[9px] uppercase tracking-[0.15em] text-blue-slate/55">Curated caption</label>
+										<label for="video-caption-{cap.id}" class="block text-[9px] uppercase tracking-[0.15em] text-blue-slate/55">Curated caption</label>
 										<textarea
+											id="video-caption-{cap.id}"
 											class="mt-1 w-full resize-none rounded-lg border border-pearl-beige/50 bg-pearl-beige/12 px-3 py-2 text-sm leading-relaxed text-text-ink placeholder:text-text-muted/40 focus:border-pearl-beige focus:outline-none focus:ring-1 focus:ring-pearl-beige/60"
 											rows="2"
 											placeholder="Curated caption text..."

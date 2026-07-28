@@ -11,6 +11,7 @@ import {
     objectAvailableFilesResponseSchema,
     objectDetailResponseSchema,
     objectsListResponseSchema,
+    createObjectDownloadRequestRequestSchema,
     createObjectDownloadRequestResponseSchema,
     createObjectResyncResponseSchema,
 } from "$lib/api/schemas/objects";
@@ -189,6 +190,7 @@ export const apiObjectsService: ObjectsService = {
             body: {
                 available_file_id: availableFileId,
             },
+            requestSchema: createObjectDownloadRequestRequestSchema,
             responseSchema: createObjectDownloadRequestResponseSchema,
         });
 

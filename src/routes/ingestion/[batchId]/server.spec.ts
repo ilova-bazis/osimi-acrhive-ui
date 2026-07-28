@@ -13,6 +13,8 @@ vi.mock('$lib/services', () => ({
 
 import { DELETE } from './+server';
 
+const request = new Request('https://example.test/ingestion/batch-1', { method: 'DELETE' });
+
 describe('/ingestion/[batchId] +server', () => {
 	beforeEach(() => {
 		deleteMock.mockReset();
@@ -20,6 +22,7 @@ describe('/ingestion/[batchId] +server', () => {
 
 	it('returns 401 when auth missing', async () => {
 		const response = await DELETE({
+			request,
 			params: { batchId: 'batch-1' },
 			locals: { session: null },
 			cookies: { get: () => undefined, delete: vi.fn() },
@@ -33,6 +36,7 @@ describe('/ingestion/[batchId] +server', () => {
 		deleteMock.mockResolvedValue(undefined);
 
 		const response = await DELETE({
+			request,
 			params: { batchId: 'batch-1' },
 			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'archiver' } },
 			cookies: { get: () => 'token-1', delete: vi.fn() },
@@ -53,6 +57,7 @@ describe('/ingestion/[batchId] +server', () => {
 		);
 
 		const response = await DELETE({
+			request,
 			params: { batchId: 'batch-1' },
 			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'archiver' } },
 			cookies: { get: () => 'token-1', delete: vi.fn() },

@@ -108,7 +108,7 @@
 				/>
 
 				<div class="mt-5 flex h-32 items-end gap-1 rounded-xl border border-white/6 bg-[#162228] px-3 py-3">
-					{#each waveform as _, index (`bar-${index}`)}
+					{#each waveform.keys() as index (`bar-${index}`)}
 						<div class="w-full rounded-sm bg-pale-sky/8" style="height: 12%;"></div>
 					{/each}
 				</div>

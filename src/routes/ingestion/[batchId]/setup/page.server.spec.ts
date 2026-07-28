@@ -113,4 +113,26 @@ describe('/ingestion/[batchId]/setup +page.server', () => {
 		expect(pageData.metadata.classificationType).toBe('magazine_article');
 		expect(pageData.metadata.itemKind).toBeUndefined();
 	});
+
+	it('fails the load when ingestion detail cannot be loaded', async () => {
+		getCapabilitiesMock.mockResolvedValue({
+			mediaKinds: ['image', 'audio', 'video', 'document'],
+			extensionsByKind: { image: ['jpg'], audio: ['mp3'], video: ['mp4'], document: ['pdf'] },
+			mimeByKind: { image: ['image/jpeg'], audio: ['audio/mpeg'], video: ['video/mp4'], document: ['application/pdf'] },
+			mimeAliases: {}
+		});
+		getDetailMock.mockRejectedValue(new Error('backend unavailable'));
+
+		await expect(
+			load({
+				params: { batchId: 'batch-3' },
+				locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
+				cookies: {
+					get: () => 'token-1',
+					delete: vi.fn()
+				},
+				fetch: vi.fn()
+			} as never)
+		).rejects.toMatchObject({ status: 502 });
+	});
 });

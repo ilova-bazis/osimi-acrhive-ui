@@ -202,6 +202,40 @@ describe('mapObjectsList', () => {
 		expect(mapped.viewer).toBeNull();
 	});
 
+	it('fails closed when object detail access projection fields are omitted', () => {
+		const mapped = mapObjectDetail({
+			object: {
+				id: 'OBJ-10',
+				object_id: 'OBJ-10',
+				thumbnail_artifact_id: null,
+				title: 'Legacy detail object',
+				processing_state: 'index_done',
+				curation_state: 'reviewed',
+				availability_state: 'AVAILABLE',
+				access_level: 'public',
+				type: 'DOCUMENT',
+				tags: [],
+				tenant_id: 'tenant-1',
+				source_ingestion_id: null,
+				source_batch_label: null,
+				metadata: {},
+				created_at: '2026-02-17T00:00:00.000Z',
+				updated_at: '2026-02-17T01:00:00.000Z',
+				embargo_until: null,
+				embargo_kind: 'none',
+				embargo_curation_state: null,
+				rights_note: null,
+				sensitivity_note: null,
+				can_download: true,
+				access_reason_code: 'OK'
+			},
+			viewer: null
+		});
+
+		expect(mapped.detail.isAuthorized).toBe(false);
+		expect(mapped.detail.isDeliverable).toBe(false);
+	});
+
 	it('maps artifact list fields', () => {
 		const mapped = mapObjectArtifacts({
 			object_id: 'OBJ-9',

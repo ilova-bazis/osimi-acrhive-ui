@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { locale } from '$lib/i18n/locale';
 	import { translations } from '$lib/i18n/translations';
 
@@ -55,7 +56,8 @@
 	}>();
 
 	let editingLabel = $state(false);
-	let labelInput = $state(label ?? '');
+	let labelInput = $state('');
+	let labelInputElement = $state<HTMLInputElement | null>(null);
 
 	$effect(() => {
 		if (!editingLabel) {
@@ -66,6 +68,15 @@
 	const commitLabel = () => {
 		editingLabel = false;
 		onLabelChange(labelInput.trim());
+	};
+
+	const startLabelEdit = async (): Promise<void> => {
+		onSelect?.();
+		labelInput = label ?? '';
+		editingLabel = true;
+		await tick();
+		labelInputElement?.focus();
+		labelInputElement?.select();
 	};
 
 	const fileCountLabel = $derived(
@@ -104,6 +115,7 @@
 
 		{#if editingLabel}
 			<input
+				bind:this={labelInputElement}
 				class="min-w-0 flex-1 rounded-lg border border-blue-slate/40 bg-surface-white px-2 py-0.5 text-sm text-text-ink focus:outline-none focus:ring-1 focus:ring-blue-slate"
 				bind:value={labelInput}
 				onblur={commitLabel}
@@ -115,7 +127,6 @@
 					}
 				}}
 				onclick={(e) => e.stopPropagation()}
-				autofocus
 			/>
 		{:else}
 			<button
@@ -123,9 +134,7 @@
 				class="min-w-0 flex-1 truncate text-left text-sm font-medium text-text-ink hover:text-blue-slate"
 				onclick={(e) => {
 					e.stopPropagation();
-					onSelect?.();
-					labelInput = label ?? '';
-					editingLabel = true;
+					void startLabelEdit();
 				}}
 				title="Click to rename"
 			>

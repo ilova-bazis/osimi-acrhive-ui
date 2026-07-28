@@ -70,11 +70,47 @@ export const saveMetadataResultSchema = z.object({
 	updated_at: z.string(),
 });
 
+export const saveMetadataRequestSchema = z
+	.object({
+		metadata: z
+			.object({
+				title: z.string(),
+				publication_date: z.string(),
+				date_precision: z.enum(['none', 'year', 'month', 'day']),
+				date_approximate: z.boolean(),
+				language: z.string().nullable(),
+				tags: z.array(z.string()),
+				people: z.array(z.string()),
+				description: z.string().nullable(),
+			})
+			.strict(),
+		rights: z
+			.object({
+				rights_note: z.string().nullable(),
+				sensitivity_note: z.string().nullable(),
+			})
+			.strict(),
+	})
+	.strict();
+
 export const saveDocumentCurationResultSchema = z.object({
 	object_id: z.string(),
 	updated_count: z.number().int(),
 	updated_at: z.string(),
 });
+
+export const saveDocumentCurationRequestSchema = z
+	.object({
+		pages: z.array(
+			z
+				.object({
+					page_number: z.number().int().positive(),
+					curated_text: z.string(),
+				})
+				.strict(),
+		),
+	})
+	.strict();
 
 export const submitCurationResultSchema = z.object({
 	object_id: z.string(),
@@ -87,6 +123,12 @@ export const submitCurationResultSchema = z.object({
 	submitted_at: z.string(),
 	submitted_by: z.string(),
 });
+
+export const submitCurationRequestSchema = z
+	.object({
+		review_note: z.string().nullable(),
+	})
+	.strict();
 
 export const releaseLockResultSchema = z.object({
 	object_id: z.string(),

@@ -218,7 +218,7 @@ const fetchItemsWithFiles = async (
 	const items = itemsResponse.items;
 	if (items.length === 0) return [];
 
-	const itemFilesResults = await Promise.allSettled(
+	const itemFilesResponses = await Promise.all(
 		items.map((item) =>
 			backendRequest({
 				fetchFn,
@@ -231,14 +231,7 @@ const fetchItemsWithFiles = async (
 		)
 	);
 
-	return items.map((item, index) => {
-		const filesResult = itemFilesResults[index];
-		const files =
-			filesResult.status === 'fulfilled'
-				? filesResult.value.files.map(mapItemFile)
-				: [];
-		return mapItem(item, files);
-	});
+	return items.map((item, index) => mapItem(item, itemFilesResponses[index]?.files.map(mapItemFile) ?? []));
 };
 
 export const apiIngestionDetailService: IngestionDetailService = {
@@ -252,7 +245,7 @@ export const apiIngestionDetailService: IngestionDetailService = {
 				token,
 				responseSchema: ingestionDetailResponseSchema
 			}),
-			fetchItemsWithFiles(fetchFn, token, batchId).catch(() => [] as IngestionDetailItem[])
+			fetchItemsWithFiles(fetchFn, token, batchId)
 		]);
 
 		return mapDetail(detailResponse.ingestion, detailResponse.files ?? [], items);

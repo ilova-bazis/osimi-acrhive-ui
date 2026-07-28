@@ -95,20 +95,47 @@ const toAppCode = (
     return "UNKNOWN_ERROR";
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+
+const readString = (value: unknown): string | undefined =>
+    typeof value === "string" && value.length > 0 ? value : undefined;
+
+const readErrorMessage = (payload: unknown): string | undefined => {
+    if (!isRecord(payload)) return undefined;
+
+    const errorValue = payload.error;
+    if (isRecord(errorValue)) {
+        return readString(errorValue.message);
+    }
+    if (typeof errorValue === "string") {
+        return readString(errorValue);
+    }
+
+    return readString(payload.message) ?? readString(payload.detail);
+};
+
+const readRequestId = (payload: unknown): string | null => {
+    if (!isRecord(payload)) return null;
+    return readString(payload.request_id) ?? readString(payload.requestId) ?? null;
+};
+
 const toApiClientError = (
     status: number,
     payload: unknown,
     fallbackMessage: string,
 ): ApiClientError => {
     const parsed = backendErrorSchema.safeParse(payload);
+    const fallbackRequestId = readRequestId(payload);
+    const fallbackPayloadMessage = readErrorMessage(payload);
 
     if (parsed.success) {
         const { request_id, error } = parsed.data;
         return new ApiClientError({
             status,
             code: toAppCode(status, error?.code),
-            message: error?.message ?? fallbackMessage,
-            requestId: request_id ?? null,
+            message: error?.message ?? fallbackPayloadMessage ?? fallbackMessage,
+            requestId: request_id ?? fallbackRequestId,
             details: error?.details,
         });
     }
@@ -116,7 +143,8 @@ const toApiClientError = (
     return new ApiClientError({
         status,
         code: toAppCode(status),
-        message: fallbackMessage,
+        message: fallbackPayloadMessage ?? fallbackMessage,
+        requestId: fallbackRequestId,
         details: payload,
     });
 };

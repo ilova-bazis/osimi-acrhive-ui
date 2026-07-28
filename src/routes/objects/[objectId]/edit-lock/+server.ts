@@ -1,14 +1,13 @@
 import { objectEditService } from '$lib/services';
-import { AUTH_COOKIE_NAME } from '$lib/server/auth';
 import { isUnauthorizedError } from '$lib/server/apiClient';
+import { isAuthFailureResponse, requireMutationAuth } from '$lib/server/routeGuards';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
-export const DELETE: RequestHandler = async ({ params, locals, cookies, fetch }) => {
-	const token = cookies.get(AUTH_COOKIE_NAME);
-	if (!locals.session || !token) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+export const DELETE: RequestHandler = async ({ params, locals, cookies, fetch, request }) => {
+	const auth = requireMutationAuth({ request, locals, cookies });
+	if (isAuthFailureResponse(auth)) return auth;
+	const { token } = auth;
 
 	const objectId = params.objectId;
 	if (!objectId) {

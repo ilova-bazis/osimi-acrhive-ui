@@ -23,34 +23,48 @@
 		initialEditData: ObjectEditData;
 	} = $props();
 
-	let editData = $state<ObjectEditData>(deepCloneEditData(initialEditData));
+	let editData = $state<ObjectEditData | null>(null);
 	let dirtyTabs = new SvelteSet<TabId>();
 
-	const initialSnapshot = $state(JSON.stringify(initialEditData));
+	let initialSnapshot = $state('');
+	let initialSnapshotKey = $state('');
 
-	let isDirty = $derived(JSON.stringify(editData) !== initialSnapshot);
+	let isDirty = $derived(editData ? JSON.stringify(editData) !== initialSnapshot : false);
+
+	$effect(() => {
+		const nextSnapshot = JSON.stringify(initialEditData);
+		if (nextSnapshot === initialSnapshotKey) return;
+		editData = deepCloneEditData(initialEditData);
+		dirtyTabs.clear();
+		initialSnapshot = nextSnapshot;
+		initialSnapshotKey = nextSnapshot;
+	});
 
 	const markDirty = (tab: TabId): void => {
 		dirtyTabs.add(tab);
 	};
 
 	const handleMetadataChange = (patch: Partial<EditableMetadata>): void => {
+		if (!editData) return;
 		editData = { ...editData, metadata: { ...editData.metadata, ...patch } } as ObjectEditData;
 		markDirty('details');
 	};
 
 	const handleRightsChange = (patch: Partial<EditableRights>): void => {
+		if (!editData) return;
 		editData = { ...editData, rights: { ...editData.rights, ...patch } } as ObjectEditData;
 		markDirty('rights');
 	};
 
 	const handleDocumentEditDataChange = (patch: Partial<DocumentEditData>): void => {
+		if (!editData) return;
 		if (!isDocumentEditData(editData)) return;
 		editData = { ...editData, ...patch } as ObjectEditData;
 		markDirty('source-text');
 	};
 
 	const handleCuratedTranscriptChange = (segments: Array<{ id: string; startSeconds: number; endSeconds: number; curatedText: string; speaker?: string }>): void => {
+		if (!editData) return;
 		if (isAudioEditData(editData)) {
 			editData = {
 				...editData,
@@ -77,6 +91,7 @@
 	};
 
 	const handleCuratedCaptionsChange = (captions: Array<{ id: string; startSeconds: number; endSeconds: number; curatedText: string }>): void => {
+		if (!editData) return;
 		if (!isVideoEditData(editData)) return;
 		editData = { ...editData, curatedCaptions: captions } as VideoEditData as ObjectEditData;
 		markDirty('source-text');
@@ -185,16 +200,18 @@
 
 		<!-- Right pane: edit panel -->
 		<div class="min-w-0 flex-1 bg-alabaster-grey">
-			<ObjectEditPanel
-				{object}
-				editData={editData}
-				{dirtyTabs}
-				onMetadataChange={handleMetadataChange}
-				onRightsChange={handleRightsChange}
-				onDocumentEditDataChange={handleDocumentEditDataChange}
-				onCuratedTranscriptChange={handleCuratedTranscriptChange}
-				onCuratedCaptionsChange={handleCuratedCaptionsChange}
-			/>
+			{#if editData}
+				<ObjectEditPanel
+					{object}
+					editData={editData}
+					{dirtyTabs}
+					onMetadataChange={handleMetadataChange}
+					onRightsChange={handleRightsChange}
+					onDocumentEditDataChange={handleDocumentEditDataChange}
+					onCuratedTranscriptChange={handleCuratedTranscriptChange}
+					onCuratedCaptionsChange={handleCuratedCaptionsChange}
+				/>
+			{/if}
 		</div>
 	</div>
 </div>

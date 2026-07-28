@@ -17,9 +17,7 @@
 		onCuratedCaptionsChange?: (captions: Array<{ id: string; startSeconds: number; endSeconds: number; curatedText: string }>) => void;
 	} = $props();
 
-	let editMode = $state<TranscriptEditMode>(
-		object.mediaType === 'video' && curatedCaptions ? 'transcript' : 'transcript'
-	);
+	let editMode = $state<TranscriptEditMode>('transcript');
 	let activeSegmentIndex = $state(0);
 	let showSourcePanel = $state(true);
 
@@ -188,8 +186,9 @@
 
 				{#if 'speaker' in activeSegment}
 					<div class="mt-2">
-						<label class="text-[9px] uppercase tracking-[0.12em] text-text-muted">Speaker</label>
+						<label for="transcript-speaker-{activeSegment.id}" class="text-[9px] uppercase tracking-[0.12em] text-text-muted">Speaker</label>
 						<input
+							id="transcript-speaker-{activeSegment.id}"
 							class="mt-1 w-full rounded-lg border border-border-soft bg-pearl-beige/10 px-3 py-1.5 text-sm text-text-ink focus:border-pearl-beige focus:outline-none"
 							placeholder="Speaker name"
 							value={activeSegment.speaker ?? ''}

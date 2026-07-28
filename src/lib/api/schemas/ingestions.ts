@@ -118,32 +118,37 @@ export const ingestionSummarySchema = z
 	})
 	.strict();
 
-export const ingestionDtoSchema = z.object({
-	id: z.string().min(1).optional(),
-	ingestion_id: z.string().min(1).optional(),
-	batch_id: z.string().min(1).optional(),
-	batch_label: z.string().min(1).optional(),
-	schema_version: z.string().min(1).optional(),
-	classification_type: classificationTypeSchema.optional(),
-	item_kind: itemKindSchema.optional(),
-	document_type: z.string().min(1).optional(),
-	language_code: z.string().min(1).optional(),
-	pipeline_preset: z.string().min(1).optional(),
-	access_level: z.string().min(1).optional(),
-	embargo_until: z.string().nullable().optional(),
-	rights_note: z.string().nullable().optional(),
-	sensitivity_note: z.string().nullable().optional(),
-	summary: ingestionSummarySchema.optional(),
-	status: z.string().min(1).optional(),
-	created_at: z.string().min(1).optional(),
-	updated_at: z.string().min(1).optional(),
-	processed_objects: z.number().int().nonnegative().optional(),
-	objects_processed: z.number().int().nonnegative().optional(),
-	completed_count: z.number().int().nonnegative().optional(),
-	total_objects: z.number().int().nonnegative().optional(),
-	object_count: z.number().int().nonnegative().optional(),
-	total_count: z.number().int().nonnegative().optional()
-});
+export const ingestionDtoSchema = z
+	.object({
+		id: z.string().min(1).optional(),
+		ingestion_id: z.string().min(1).optional(),
+		batch_id: z.string().min(1).optional(),
+		batch_label: z.string().min(1).optional(),
+		schema_version: z.string().min(1).optional(),
+		classification_type: classificationTypeSchema.optional(),
+		item_kind: itemKindSchema.optional(),
+		document_type: z.string().min(1).optional(),
+		language_code: z.string().min(1).optional(),
+		pipeline_preset: z.string().min(1).optional(),
+		access_level: z.string().min(1).optional(),
+		embargo_until: z.string().nullable().optional(),
+		rights_note: z.string().nullable().optional(),
+		sensitivity_note: z.string().nullable().optional(),
+		summary: ingestionSummarySchema.optional(),
+		status: z.string().min(1).optional(),
+		created_at: z.string().min(1).optional(),
+		updated_at: z.string().min(1).optional(),
+		processed_objects: z.number().int().nonnegative().optional(),
+		objects_processed: z.number().int().nonnegative().optional(),
+		completed_count: z.number().int().nonnegative().optional(),
+		total_objects: z.number().int().nonnegative().optional(),
+		object_count: z.number().int().nonnegative().optional(),
+		total_count: z.number().int().nonnegative().optional()
+	})
+	.refine((dto) => Boolean(dto.id ?? dto.ingestion_id ?? dto.batch_id ?? dto.batch_label), {
+		message: 'Expected at least one ingestion identifier field',
+		path: ['ingestion_id']
+	});
 
 export const ingestionsListResponseSchema = z.object({
 	ingestions: z.array(ingestionDtoSchema),
@@ -340,6 +345,69 @@ export const reorderItemsResponseSchema = z.object({ items: z.array(ingestionIte
 export const listItemFilesResponseSchema = z.object({ files: z.array(ingestionItemFileSchema) });
 export const attachItemFileResponseSchema = z.object({ file: ingestionItemFileSchema });
 export const reorderItemFilesResponseSchema = z.object({ files: z.array(ingestionItemFileSchema) });
+
+export const createItemRequestSchema = z
+	.object({
+		item_index: z.number().int().positive(),
+		title: z.string().min(1).optional()
+	})
+	.strict();
+
+export const updateItemRequestSchema = z
+	.object({
+		title: z.string().nullable().optional(),
+		description: z.string().nullable().optional(),
+		tags: z.array(z.string().min(1)).optional(),
+		people: z.array(z.string().min(1)).optional(),
+		dates: z
+			.object({
+				published: z
+					.object({
+						value: summaryDateValueSchema,
+						approximate: z.boolean(),
+						confidence: z.enum(['low', 'medium', 'high']),
+						note: z.string().nullable()
+					})
+					.strict()
+			})
+			.strict()
+			.optional()
+	})
+	.strict();
+
+export const reorderItemsRequestSchema = z
+	.object({
+		items: z.array(
+			z
+				.object({
+					ingestion_item_id: z.string().min(1),
+					item_index: z.number().int().positive()
+				})
+				.strict()
+		)
+	})
+	.strict();
+
+export const attachItemFileRequestSchema = z
+	.object({
+		ingestion_file_id: z.string().min(1),
+		sort_order: z.number().int().positive(),
+		role: z.string().min(1).optional()
+	})
+	.strict();
+
+export const reorderItemFilesRequestSchema = z
+	.object({
+		files: z.array(
+			z
+				.object({
+					ingestion_file_id: z.string().min(1),
+					sort_order: z.number().int().positive()
+				})
+				.strict()
+		)
+	})
+	.strict();
 
 export const retryIngestionResponseSchema = z.object({
 	ingestion: ingestionDtoSchema

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import AltObjectTopBar from '$lib/components/object-view-alt/AltObjectTopBar.svelte';
 	import AltObjectInfoSheet from '$lib/components/object-view-alt/AltObjectInfoSheet.svelte';
 	import AltDocumentViewer from '$lib/components/object-view-alt/AltDocumentViewer.svelte';
@@ -136,7 +137,7 @@
 		<!-- Nav pills + edit button -->
 		<nav class="pointer-events-auto flex items-center gap-2 rounded-full border border-border-soft/30 bg-black/30 p-1.5 backdrop-blur-md">
 			<a
-				href="/prototype/alternative/objects/{object.id}/edit"
+				href={resolve(`/prototype/alternative/objects/${object.id}/edit`)}
 				class="rounded-full bg-surface-white/15 px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-white transition hover:bg-surface-white/25"
 			>
 				Edit
@@ -144,7 +145,7 @@
 			<span class="h-4 w-px bg-white/15"></span>
 			{#each data.reviewItems as item (item.id)}
 				<a
-					href="/prototype/alternative/objects/{item.id}"
+					href={resolve(`/prototype/alternative/objects/${item.id}`)}
 					class="rounded-full px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] transition {item.id === object.id
 						? 'bg-surface-white text-text-ink shadow-sm'
 						: 'text-white/60 hover:bg-white/10 hover:text-white'}"

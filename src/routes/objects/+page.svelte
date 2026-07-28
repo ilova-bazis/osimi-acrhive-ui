@@ -20,7 +20,7 @@
 
 	let {
 		data
-	} = $props<{ data: { recent: ObjectRow[]; list: { rows: ObjectRow[]; filteredCount: number; totalCount: number; nextCursor?: string | null }; filters: ObjectsFilters } }>();
+	} = $props<{ data: { recent: ObjectRow[]; list: { rows: ObjectRow[]; filteredCount: number; totalCount: number; nextCursor?: string | null }; filters: ObjectsFilters; session?: { role: string } | null } }>();
 
 	let selectedIds = $state<string[]>([]);
 	let selectionCopied = $state(false);
@@ -29,6 +29,7 @@
 	let resyncMessage = $state<{ type: 'success' | 'error'; text: string } | null>(null);
 	const dictionary = $derived(translations[$locale]);
 	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
+	const canRequestResync = $derived(data.session?.role === 'archiver' || data.session?.role === 'admin');
 
 	const availabilityOptions: AvailabilityState[] = [
 		'AVAILABLE',
@@ -289,14 +290,16 @@
 				>
 					{selectionCopied ? t('objects.header.copiedSelection') : t('objects.header.copySelectionIds')}
 				</button>
-				<button
-					type="button"
-					onclick={() => (showResyncConfirm = true)}
-					disabled={resyncRunning}
-					class="rounded-full bg-blue-slate px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-surface-white transition-colors hover:bg-blue-slate-mid-dark disabled:cursor-not-allowed disabled:opacity-50"
-				>
-					{resyncRunning ? '…' : t('objects.resync.resyncSelected')}
-				</button>
+				{#if canRequestResync}
+					<button
+						type="button"
+						onclick={() => (showResyncConfirm = true)}
+						disabled={resyncRunning}
+						class="rounded-full bg-blue-slate px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-surface-white transition-colors hover:bg-blue-slate-mid-dark disabled:cursor-not-allowed disabled:opacity-50"
+					>
+						{resyncRunning ? '…' : t('objects.resync.resyncSelected')}
+					</button>
+				{/if}
 			{/if}
 		</div>
 	</div>

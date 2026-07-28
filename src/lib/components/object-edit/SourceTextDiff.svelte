@@ -39,7 +39,11 @@
 			<span class="text-[9px] uppercase tracking-[0.12em] text-text-muted">Read-only</span>
 		</div>
 		<div class="flex-1 overflow-y-auto rounded-xl border border-blue-slate/15 bg-pale-sky/20 px-4 py-3 text-sm leading-relaxed text-blue-slate/85">
-			{sourceText || '<span class="italic text-text-muted">No source text available</span>'}
+			{#if sourceText}
+				{sourceText}
+			{:else}
+				<span class="italic text-text-muted">No source text available</span>
+			{/if}
 		</div>
 	</div>
 

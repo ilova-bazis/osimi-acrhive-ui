@@ -14,11 +14,15 @@ export const POST: RequestHandler = async ({ cookies, fetch, request, url }) => 
 
 	const token = cookies.get(AUTH_COOKIE_NAME);
 
-	if (token) {
-		await logoutWithBackend(fetch, token);
+	try {
+		if (token) {
+			await logoutWithBackend(fetch, token);
+		}
+	} catch {
+		// Local logout must succeed even if remote token invalidation is unavailable.
+	} finally {
+		clearSessionCookie(cookies);
 	}
-
-	clearSessionCookie(cookies);
 
 	return json({ status: 'ok' });
 };

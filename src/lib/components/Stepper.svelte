@@ -15,18 +15,21 @@
 </script>
 
 <ol class="flex items-center gap-3 list-none m-0 p-0">
-	{#each steps as step, i}
+	{#each steps as step, i (step.id)}
 		{@const state = i < current ? 'done' : i === current ? 'current' : 'todo'}
+		{@const canJump = state === 'done' && Boolean(onJump)}
 		<li
 			class="flex items-center gap-2.5"
 			style={state === 'todo' ? 'opacity: 0.4' : ''}
 		>
 			<button
 				type="button"
-				disabled={state !== 'done'}
-				onclick={() => state === 'done' && onJump?.(i)}
+				disabled={!canJump}
+				onclick={() => onJump?.(i)}
+				aria-current={state === 'current' ? 'step' : undefined}
+				aria-label={`${step.label}, step ${i + 1} of ${steps.length}`}
 				class={`h-6 w-6 shrink-0 rounded-full flex items-center justify-center font-mono text-[10px] font-semibold leading-none border
-					${state === 'done' ? 'bg-text-ink text-surface-white border-text-ink cursor-pointer' : ''}
+					${state === 'done' ? `bg-text-ink text-surface-white border-text-ink ${canJump ? 'cursor-pointer' : 'cursor-default'}` : ''}
 					${state === 'current' ? 'bg-burnt-peach text-surface-white border-burnt-peach cursor-default' : ''}
 					${state === 'todo' ? 'bg-transparent text-text-muted border-border-strong cursor-default' : ''}
 				`}

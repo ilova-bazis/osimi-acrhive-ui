@@ -23,7 +23,8 @@ describe('/ingestion +page.server', () => {
 			load({
 				locals: { session: null },
 				cookies: { get: () => undefined, delete: vi.fn() },
-				fetch: vi.fn()
+				fetch: vi.fn(),
+				url: new URL('https://example.test/ingestion')
 			} as never)
 		).rejects.toMatchObject({
 			status: 303,
@@ -49,9 +50,10 @@ describe('/ingestion +page.server', () => {
 			load({
 				locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
 				cookies: { get: () => 'token-1', delete: vi.fn() },
-				fetch: vi.fn()
+				fetch: vi.fn(),
+				url: new URL('https://example.test/ingestion?ap=2&dp=3')
 			} as never)
-		).resolves.toEqual({ summary });
+		).resolves.toEqual({ summary, activePage: 2, draftPage: 3 });
 	});
 
 	it('clears auth cookie and redirects on unauthorized backend response', async () => {
@@ -68,7 +70,8 @@ describe('/ingestion +page.server', () => {
 			load({
 				locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
 				cookies: { get: () => 'token-1', delete: deleteMock },
-				fetch: vi.fn()
+				fetch: vi.fn(),
+				url: new URL('https://example.test/ingestion')
 			} as never)
 		).rejects.toMatchObject({
 			status: 303,

@@ -29,6 +29,37 @@ vi.mock('$lib/services', () => ({
 
 import { actions, load } from './+page.server';
 
+const makeDetail = () => ({
+	id: 'OBJ-1',
+	objectId: 'OBJ-1',
+	thumbnailArtifactId: null,
+	title: 'Object title',
+	type: 'DOCUMENT',
+	processingState: 'index_done',
+	curationState: 'reviewed',
+	availabilityState: 'AVAILABLE',
+	accessLevel: 'public',
+	language: 'en',
+	tags: [],
+	tenantId: 'tenant-1',
+	sourceIngestionId: 'ing-1',
+	sourceBatchLabel: 'batch-1',
+	metadata: {},
+	embargoUntil: null,
+	embargoKind: 'none',
+	embargoCurationState: null,
+	rightsNote: null,
+	sensitivityNote: null,
+	canDownload: true,
+	accessReasonCode: 'OK',
+	createdAt: '2026-01-01T00:00:00.000Z',
+	updatedAt: '2026-01-01T00:00:00.000Z',
+	indicators: { accessPdf: true, ocr: true, index: true },
+	ingestManifest: null,
+	isAuthorized: true,
+	isDeliverable: true
+});
+
 describe('/objects/[objectId] +page.server', () => {
 	beforeEach(() => {
 		getObjectDetailMock.mockReset();
@@ -238,5 +269,73 @@ describe('/objects/[objectId] +page.server', () => {
 				availableFileId: '11111111-1111-4111-8111-111111111111'
 			})
 		);
+	});
+
+	it('rejects malformed available file ids before requesting download', async () => {
+		const form = new FormData();
+		form.set('availableFileId', 'not-a-uuid');
+
+		const result = await actions.requestDownload({
+			request: new Request('https://example.test/objects/OBJ-1', { method: 'POST', body: form }),
+			params: { objectId: 'OBJ-1' },
+			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'viewer' } },
+			cookies: { get: () => 'token-1', delete: vi.fn() },
+			fetch: vi.fn()
+		} as never);
+
+		expect(result).toMatchObject({ status: 400, data: { error: 'Invalid available file id.' } });
+		expect(createObjectDownloadRequestMock).not.toHaveBeenCalled();
+	});
+
+	it('returns detail with non-blocking available files error', async () => {
+		const detail = makeDetail();
+		getObjectDetailMock.mockResolvedValue({ detail, viewer: null });
+		listObjectAvailableFilesMock.mockRejectedValue(
+			new ApiClientError({
+				status: 502,
+				code: 'BAD_REQUEST',
+				message: 'Available files unavailable',
+				requestId: 'req-files'
+			})
+		);
+
+		await expect(
+			load({
+				params: { objectId: 'OBJ-1' },
+				locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'archiver' } },
+				cookies: { get: () => 'token-1', delete: vi.fn() },
+				fetch: vi.fn()
+			} as never)
+		).resolves.toMatchObject({
+			detail,
+			availableFiles: [],
+			availableFilesError: 'Failed to load available archive files (request: req-files).'
+		});
+	});
+
+	it('returns detail with non-blocking pending requests error', async () => {
+		const detail = makeDetail();
+		getObjectDetailMock.mockResolvedValue({ detail, viewer: null });
+		listArchiveRequestsMock.mockRejectedValue(
+			new ApiClientError({
+				status: 502,
+				code: 'BAD_REQUEST',
+				message: 'Requests unavailable',
+				requestId: 'req-pending'
+			})
+		);
+
+		await expect(
+			load({
+				params: { objectId: 'OBJ-1' },
+				locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'archiver' } },
+				cookies: { get: () => 'token-1', delete: vi.fn() },
+				fetch: vi.fn()
+			} as never)
+		).resolves.toMatchObject({
+			detail,
+			pendingRequests: [],
+			pendingRequestsError: 'Failed to load pending requests (request: req-pending).'
+		});
 	});
 });

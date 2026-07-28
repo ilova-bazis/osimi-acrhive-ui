@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { base } from '$app/paths';
+	import { resolve } from '$app/paths';
 	import Icon from './Icon.svelte';
 	import ThinProgress from './ThinProgress.svelte';
 
-	type NavItem = { label: string; icon: string; href: string; matchPrefix?: string; badge?: string };
+	type NavHref = '/' | '/ingestion' | '/ingestion/new' | '/objects';
+	type NavItem = { label: string; icon: string; href: NavHref; matchPrefix?: NavHref; badge?: string };
 	type ActiveBatch = { id: string; name: string; done: number; total: number; status: string };
 
 	let {
@@ -63,7 +64,7 @@
 	<nav class="flex flex-col gap-[2px]">
 		{#each navItems as item (item.href)}
 			<a
-				href={base + item.href}
+				href={resolve(item.href)}
 				class={`flex items-center gap-[10px] px-[10px] py-2 rounded-xl text-sm transition-all no-underline
 					${isActive(item)
 						? 'bg-pale-sky/20 border border-border-soft text-text-ink font-medium'

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import type { ObjectViewRecord } from '$lib/objectView/types';
 
 	let {
@@ -10,7 +11,7 @@
 		title: string;
 		mediaType: ObjectViewRecord['mediaType'];
 		isDirty: boolean;
-		backHref: string;
+		backHref: '/prototype/glm/objects';
 	} = $props();
 
 	const mediaTypeLabels: Record<string, string> = {
@@ -27,7 +28,7 @@
 	<!-- Left: back + title -->
 	<div class="flex items-center gap-3 min-w-0">
 		<a
-			href={backHref}
+			href={resolve(backHref)}
 			class="flex h-8 w-8 items-center justify-center rounded-full border border-border-soft text-text-muted transition hover:bg-pale-sky/30 hover:text-blue-slate"
 			aria-label="Back to objects"
 		>

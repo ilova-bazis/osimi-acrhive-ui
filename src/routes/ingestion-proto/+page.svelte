@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+
 	// ─── Types ───────────────────────────────────────────────────────────────────
 
 	type StagingFile = {
@@ -236,6 +238,13 @@
 		}
 	};
 
+	const handleFileRowKeydown = (event: KeyboardEvent, fileId: number): void => {
+		if (event.target !== event.currentTarget) return;
+		if (event.key !== 'Enter' && event.key !== ' ') return;
+		event.preventDefault();
+		toggleFileSelection(fileId);
+	};
+
 	const toggleGroupCollapse = (groupId: string) => {
 		groups = groups.map(g => g.id === groupId ? { ...g, collapsed: !g.collapsed } : g);
 	};
@@ -443,7 +452,6 @@
 	<div class="mx-auto grid max-w-7xl grid-cols-[minmax(280px,2fr)_3fr] gap-6 px-6 py-6">
 
 		<!-- LEFT: Unassigned files -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<aside
 			class={[
 				'rounded-2xl border-2 transition',
@@ -474,7 +482,6 @@
 				{/if}
 
 				{#each unassignedFiles as file (file.id)}
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div
 						class={[
 							'flex cursor-grab items-center gap-3 px-5 py-3 transition',
@@ -487,6 +494,9 @@
 						ondragstart={(e) => onFileDragStart(e, file.id)}
 						ondragend={onFileDragEnd}
 						onclick={() => toggleFileSelection(file.id)}
+						onkeydown={(e) => handleFileRowKeydown(e, file.id)}
+						role="button"
+						tabindex="0"
 					>
 						<!-- Drag handle -->
 						<span class="select-none text-text-muted/60" title="Drag to assign to a group">⠿</span>
@@ -686,7 +696,7 @@
 		</div>
 		<div class="flex items-center gap-3">
 			<a
-				href="/ingestion"
+				href={resolve('/ingestion')}
 				class="rounded-full border border-blue-slate/40 px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20"
 			>
 				Back

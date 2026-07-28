@@ -1,7 +1,8 @@
 import { ingestionDetailService } from '$lib/services';
 import { ingestionSummarySchema } from '$lib/api/schemas/ingestions';
-import { AUTH_COOKIE_NAME, clearSessionCookie } from '$lib/server/auth';
+import { clearSessionCookie } from '$lib/server/auth';
 import { isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
+import { isAuthFailureResponse, mapApiErrorStatus, requireMutationAuth } from '$lib/server/routeGuards';
 import { json } from '@sveltejs/kit';
 import { z } from 'zod';
 import type { RequestHandler } from './$types';
@@ -48,19 +49,10 @@ const metadataUpdateSchema = z
 	})
 	.strict();
 
-const mapApiErrorStatus = (status: number): number => {
-	if (status === 400 || status === 401 || status === 403 || status === 404 || status === 409 || status === 423) {
-		return status;
-	}
-
-	return 502;
-};
-
 export const PATCH: RequestHandler = async ({ params, request, locals, cookies, fetch }) => {
-	const token = cookies.get(AUTH_COOKIE_NAME);
-	if (!locals.session || !token) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
+	const auth = requireMutationAuth({ request, locals, cookies });
+	if (isAuthFailureResponse(auth)) return auth;
+	const { token } = auth;
 
 	const payload = await request.json().catch(() => null);
 	const parsed = metadataUpdateSchema.safeParse(payload);
