@@ -48,4 +48,24 @@ describe('apiIngestionSetupService', () => {
 			})
 		);
 	});
+
+	it('sends only the changed metadata fields', async () => {
+		backendRequestMock.mockResolvedValue({ ok: true });
+
+		await apiIngestionSetupService.updateItem({
+			batchId: 'batch-1',
+			itemId: 'item-1',
+			metadata: { tags: ['archive'] },
+			context: {
+				fetchFn: vi.fn() as never,
+				token: 'token-1'
+			}
+		});
+
+		expect(backendRequestMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				body: { tags: ['archive'] }
+			})
+		);
+	});
 });

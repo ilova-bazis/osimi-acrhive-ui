@@ -163,6 +163,7 @@ const mapItem = (dto: IngestionItemDto, files: IngestionDetailItemFile[]): Inges
 		itemIndex: dto.item_index,
 		...(title ? { label: title } : {}),
 		status: dto.status,
+		summary: dto.summary ?? {},
 		files
 	};
 };

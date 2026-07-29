@@ -1,12 +1,12 @@
-# UI Components (Prototype)
+# UI Components
 
-This document describes the component breakdown for the ingestion UI prototype. These components are
-used on the `/prototype` route and serve as the reference layout for future UI work.
+This document describes reusable UI components used across production routes, internal previews, and
+legacy prototype surfaces.
 
 ## Overview
 
 - Components live in `src/lib/components`.
-- The prototype assembly lives in `src/routes/prototype/+page.svelte`.
+- Isolated component previews live in `src/routes/components`.
 - UI strings are sourced from `src/lib/i18n/translations.ts`.
 
 ## Services (Data Sources)
@@ -119,7 +119,7 @@ Props:
 
 | Name | Type | Required | Notes |
 | --- | --- | --- | --- |
-| variant | 'primary' \| 'secondary' | no | Defaults to 'primary' |
+| variant | 'default' \| 'primary' \| 'secondary' \| 'ghost' \| 'peach' | no | Defaults to 'default' |
 | type | 'button' \| 'submit' \| 'reset' | no | Defaults to 'button' |
 | class | string | no | Additional classes |
 | children | () => unknown | no | Button content |
@@ -556,7 +556,7 @@ Props:
 | activeBatches | `{id, name, done, total, status}[]` | no | Drives the mini progress list; defaults to `[]` |
 | onLogout | () => void | yes | Logout callback |
 
-Nav uses `base` from `$app/paths` (not `resolve`) so dynamic string paths are safe.
+Nav links use `resolve` from `$app/paths` with the fixed internal navigation targets supported by the component.
 
 ---
 
@@ -580,7 +580,7 @@ Available names: `archive`, `plus`, `search`, `arrow-r`, `arrow-l`, `check`, `x`
 
 ### Stepper
 
-Purpose: Horizontal step indicator for multi-step flows. Completed steps are clickable to jump back.
+Purpose: Horizontal step indicator for multi-step flows. Completed steps are clickable only when an `onJump` handler is provided.
 
 Props:
 
@@ -590,7 +590,7 @@ Props:
 | current | number | yes | Zero-based index of the active step |
 | onJump | (index: number) => void | no | Called when a completed step bubble is clicked |
 
-States: `done` (filled `bg-text-ink`, checkmark, clickable), `current` (`bg-burnt-peach`), `todo` (outline, opacity-45, non-interactive).
+States: `done` (filled `bg-text-ink`, checkmark, clickable only with `onJump`), `current` (`bg-burnt-peach`, `aria-current="step"`), `todo` (outline, opacity-45, non-interactive). Step buttons include accessible labels such as `Intent, step 1 of 3`.
 
 ### ChoiceCard
 
@@ -636,7 +636,7 @@ Props:
 | total | number | yes | Total count |
 | tone | `'ink' \| 'peach' \| 'sky'` | no | Fill color; default `'ink'` |
 
-Track: `bg-alabaster-grey`. Fill colors: `ink` → `bg-blue-slate-deep`, `peach` → `bg-burnt-peach`, `sky` → `bg-blue-slate`. Width transitions at 400ms.
+Track: `bg-alabaster-grey`. Fill colors: `ink` → `bg-blue-slate-deep`, `peach` → `bg-burnt-peach`, `sky` → `bg-blue-slate`. Width transitions at 400ms. Values are clamped into `0..total` and the track exposes `role="progressbar"` with bounded ARIA values.
 
 ### StripedPlaceholder
 

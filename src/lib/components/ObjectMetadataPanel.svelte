@@ -26,6 +26,7 @@
 		batchTags,
 		batchDate,
 		batchDescription,
+		peopleEditable = false,
 		onMetadataChange
 	} = $props<{
 		objectKey: string | null;
@@ -42,6 +43,7 @@
 		batchTags: string[];
 		batchDate: { value: string | null; approximate: boolean } | null;
 		batchDescription: string;
+		peopleEditable?: boolean;
 		onMetadataChange: (patch: Partial<ObjectItemMetadata>) => void;
 	}>();
 
@@ -155,7 +157,7 @@
 					placeholder={batchTitle || t('ingestionSetup.objectMetadata.fields.titlePlaceholder')}
 					value={metadata.title ?? ''}
 					oninput={(e) =>
-						onMetadataChange({ title: e.currentTarget.value.trim() || undefined })}
+						onMetadataChange({ title: e.currentTarget.value.trim() })}
 				/>
 				{#if !(metadata.title ?? '').trim()}
 					<p class="mt-1 text-[10px] text-burnt-peach">Required</p>
@@ -232,6 +234,7 @@
 				<div class="mt-2 flex items-center gap-2">
 					<input
 						class={`w-full rounded-xl border bg-surface-white px-3 py-2 text-sm text-text-ink ${!(metadata.tags ?? []).length ? 'border-burnt-peach/50' : 'border-border-soft'}`}
+						aria-label={t('ingestionSetup.objectMetadata.fields.tags')}
 						placeholder={t('ingestionSetup.objectMetadata.fields.tagsPlaceholder')}
 						value={tagInput}
 						oninput={(e) => (tagInput = e.currentTarget.value)}
@@ -293,7 +296,7 @@
 					placeholder={batchDescription || t('ingestionSetup.objectMetadata.fields.descriptionPlaceholder')}
 					value={metadata.description ?? ''}
 					oninput={(e) =>
-						onMetadataChange({ description: e.currentTarget.value || undefined })}
+						onMetadataChange({ description: e.currentTarget.value })}
 				></textarea>
 			</div>
 
@@ -303,6 +306,9 @@
 				<div class="mt-2 flex items-center gap-2">
 					<input
 						class="w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+						aria-label={t('ingestionSetup.objectMetadata.fields.people')}
+						disabled={!peopleEditable}
+						title={peopleEditable ? undefined : 'People updates are not available yet.'}
 						placeholder={t('ingestionSetup.objectMetadata.fields.peoplePlaceholder')}
 						value={personInput}
 						oninput={(e) => (personInput = e.currentTarget.value)}
@@ -315,6 +321,7 @@
 					/>
 					<button
 						type="button"
+						disabled={!peopleEditable}
 						onclick={addPerson}
 						class="rounded-full border border-blue-slate/40 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-blue-slate"
 					>
@@ -326,6 +333,7 @@
 						{#each metadata.people as person (person)}
 							<button
 								type="button"
+								disabled={!peopleEditable}
 								onclick={() => removePerson(person)}
 								class="rounded-full border border-blue-slate/40 bg-pale-sky/20 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-blue-slate"
 							>

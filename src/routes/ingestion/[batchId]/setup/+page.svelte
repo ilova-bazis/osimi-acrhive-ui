@@ -39,6 +39,11 @@
         type ClassificationType,
         type ItemKind,
     } from "$lib/ingestion/kindMappings";
+    import {
+        createSetupItemIndexAllocator,
+        type SetupItemIndexAllocator,
+    } from "$lib/ingestion/setupItemIndexAllocator";
+    import { hydrateIngestionItems } from "$lib/ingestion/setupItemHydration";
 
     let { data } = $props<{
         data: {
@@ -65,6 +70,7 @@
     const metadata = $derived(data.metadata);
     const existingFiles = $derived(data.existingFiles);
     const dictionary = $derived(translations[$locale]);
+    let itemIndexAllocator: SetupItemIndexAllocator | null = null;
 
     const t = (key: string) => {
         const segments = key.split(".");
@@ -143,36 +149,162 @@
 
     // Per-object metadata (keyed by group.id or `file:${localId}`)
     let objectMetadata = $state<Record<string, ObjectItemMetadata>>({});
+    let serverItemIds = $state<Record<string, string>>({});
 
-    // Debounce timers for per-group metadata updates (keyed by group local id)
+    type ItemMutationOperation = "metadata" | "rename" | "attach" | "reorder";
+    type ItemMutationFailure = {
+        operation: ItemMutationOperation;
+        message: string;
+    };
+
+    class SetupMutationUnauthorizedError extends Error {
+        constructor() {
+            super("Unauthorized");
+            this.name = "SetupMutationUnauthorizedError";
+        }
+    }
+
+    const itemMutationLabels: Record<ItemMutationOperation, string> = {
+        metadata: "Object metadata",
+        rename: "Object rename",
+        attach: "File attachment",
+        reorder: "File order",
+    };
+
+    // Debounce timers and queue state for existing-item mutations.
     const itemUpdateTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+    let scheduledItemMetadataKeys = $state<Record<string, true>>({});
+    let pendingItemMetadataPatches = $state<
+        Record<string, Partial<ObjectItemMetadata>>
+    >({});
+    let queuedItemMutationCount = $state(0);
+    let activeItemMutationCount = $state(0);
+    let itemMutationFailure = $state<ItemMutationFailure | null>(null);
+    let itemMutationClosed = $state(false);
+    let itemMutationChain: Promise<void> = Promise.resolve();
+
+    const clearScheduledItemMetadataSaves = (): void => {
+        for (const [key, timer] of Object.entries(itemUpdateTimers)) {
+            clearTimeout(timer);
+            delete itemUpdateTimers[key];
+        }
+        scheduledItemMetadataKeys = {};
+        pendingItemMetadataPatches = {};
+    };
+
+    const enqueueItemMutation = (
+        operation: ItemMutationOperation,
+        execute: () => Promise<void>,
+    ): void => {
+        if (itemMutationClosed) return;
+        queuedItemMutationCount += 1;
+        itemMutationChain = itemMutationChain.then(async () => {
+            queuedItemMutationCount -= 1;
+            if (itemMutationFailure || itemMutationClosed) return;
+
+            activeItemMutationCount += 1;
+            try {
+                await execute();
+            } catch (cause) {
+                if (cause instanceof SetupMutationUnauthorizedError) {
+                    itemMutationClosed = true;
+                    clearScheduledItemMetadataSaves();
+                    return;
+                }
+
+                itemMutationFailure = {
+                    operation,
+                    message:
+                        cause instanceof Error && cause.message
+                            ? cause.message
+                            : `${itemMutationLabels[operation]} failed to save.`,
+                };
+            } finally {
+                activeItemMutationCount -= 1;
+            }
+        });
+    };
+
+    const hasPendingItemMutations = $derived(
+        Object.keys(scheduledItemMetadataKeys).length > 0 ||
+            queuedItemMutationCount > 0 ||
+            activeItemMutationCount > 0,
+    );
+    const hasItemMutationBlock = $derived(
+        hasPendingItemMutations || itemMutationFailure !== null,
+    );
+
+    const scheduleItemMetadataSave = (
+        key: string,
+        serverId: string,
+        patch: Partial<ObjectItemMetadata>,
+    ): void => {
+        if (itemMutationFailure || itemMutationClosed) return;
+        if (itemUpdateTimers[key]) clearTimeout(itemUpdateTimers[key]);
+        scheduledItemMetadataKeys = {
+            ...scheduledItemMetadataKeys,
+            [key]: true,
+        };
+        pendingItemMetadataPatches = {
+            ...pendingItemMetadataPatches,
+            [key]: { ...pendingItemMetadataPatches[key], ...patch },
+        };
+        itemUpdateTimers[key] = setTimeout(() => {
+            delete itemUpdateTimers[key];
+            const nextScheduledKeys = { ...scheduledItemMetadataKeys };
+            delete nextScheduledKeys[key];
+            scheduledItemMetadataKeys = nextScheduledKeys;
+
+            const metadata = pendingItemMetadataPatches[key];
+            const nextPatches = { ...pendingItemMetadataPatches };
+            delete nextPatches[key];
+            pendingItemMetadataPatches = nextPatches;
+            if (!metadata || Object.keys(metadata).length === 0) return;
+            enqueueItemMutation("metadata", () =>
+                runCheckedSetupAction(
+                    {
+                        action: "update_item",
+                        itemId: serverId,
+                        metadata,
+                    },
+                    "Failed to save object metadata.",
+                ),
+            );
+        }, 300);
+    };
+
+    const serverItemIdForKey = (key: string): string | undefined =>
+        key.startsWith("file:")
+            ? serverItemIds[key]
+            : objectGroups.find((group) => group.id === key)?.serverId;
+
+    const serverItemIdForFile = (fileId: number): string | undefined =>
+        serverItemIds[`file:${fileId}`] ??
+        objectGroups.find((group) => group.fileIds.includes(fileId))?.serverId;
+
+    const canChangeFileGrouping = (fileId: number): boolean =>
+        !serverItemIdForFile(fileId);
 
     const setObjectMeta = (
         key: string | null,
         patch: Partial<ObjectItemMetadata>,
     ) => {
-        if (!key) return;
+        if (!key || itemMutationFailure) return;
         objectMetadata = {
             ...objectMetadata,
             [key]: { ...objectMetadata[key], ...patch },
         };
 
-        // If the key is a group id (not file:N) and the group has a serverId, debounce update_item
-        if (!key.startsWith("file:")) {
-            const group = objectGroups.find((g) => g.id === key);
-            if (group?.serverId) {
-                const serverId = group.serverId;
-                if (itemUpdateTimers[key]) clearTimeout(itemUpdateTimers[key]);
-                itemUpdateTimers[key] = setTimeout(() => {
-                    delete itemUpdateTimers[key];
-                    const meta = objectMetadata[key];
-                    void postSetupAction({
-                        action: "update_item",
-                        itemId: serverId,
-                        metadata: meta,
-                    }).catch(showItemSaveError);
-                }, 300);
-            }
+        if (!key.startsWith("file:") && patch.title !== undefined) {
+            const label = patch.title.trim() || undefined;
+            objectGroups = objectGroups.map((group) =>
+                group.id === key ? { ...group, label } : group,
+            );
+        }
+
+        const serverId = serverItemIdForKey(key);
+        if (serverId) {
+            scheduleItemMetadataSave(key, serverId, patch);
         }
     };
 
@@ -544,12 +676,11 @@
     let groupingWarningDismissed = $state(false);
     let autoGroupToast = $state(false);
     let autoGroupToastTimer: ReturnType<typeof setTimeout> | null = null;
-    let itemSaveError = $state(false);
-    let itemSaveErrorTimer: ReturnType<typeof setTimeout> | null = null;
     let metadataHydrated = $state(false);
     let confirmedBatchIntent = $state<BatchIntent | null>(null);
     let batchIntentError = $state("");
-    let createdStandaloneBackendFileIds = $state<string[]>([]);
+    let pendingItemMetadataSaves = $state<Record<string, string>>({});
+    let attachedFileIdsByItem = $state<Record<string, string[]>>({});
     let mismatchDialog = $state<{
         open: boolean;
         expectedLabel: string;
@@ -566,6 +697,7 @@
     );
     let abandonDeleting = $state(false);
     let abandonNavigateBypass = false;
+    let setupNavigationBypass = false;
 
     const uploadControllers = new SvelteMap<number, AbortController>();
     const maxConcurrentUploads = 2;
@@ -720,14 +852,6 @@
         }
     };
 
-    const showItemSaveError = () => {
-        itemSaveError = true;
-        if (itemSaveErrorTimer) clearTimeout(itemSaveErrorTimer);
-        itemSaveErrorTimer = setTimeout(() => {
-            itemSaveError = false;
-        }, 6000);
-    };
-
     const ungroupFiles = (groupId: string) => {
         const group = objectGroups.find((g) => g.id === groupId);
         if (group?.serverId) return; // cannot ungroup synced items
@@ -749,20 +873,27 @@
     };
 
     const renameGroup = (groupId: string, label: string) => {
+        if (itemMutationFailure) return;
         objectGroups = objectGroups.map((g) =>
             g.id === groupId ? { ...g, label: label || undefined } : g,
         );
         const group = objectGroups.find((g) => g.id === groupId);
         if (group?.serverId) {
-            void postSetupAction({
-                action: "update_item",
-                itemId: group.serverId,
-                label: label || "",
-            }).catch(showItemSaveError);
+            enqueueItemMutation("rename", () =>
+                runCheckedSetupAction(
+                    {
+                        action: "update_item",
+                        itemId: group.serverId,
+                        label: label || "",
+                    },
+                    "Failed to rename the object.",
+                ),
+            );
         }
     };
 
     const addFileToGroup = (fileId: number, targetGroupId: string) => {
+        if (itemMutationFailure) return;
         // Remove from any existing group first
         const cleaned = dissolveSmallGroups(
             objectGroups.map((g) => ({
@@ -780,12 +911,17 @@
         const backendFileId = files.find((f) => f.id === fileId)?.backendFileId;
         if (targetGroup?.serverId && backendFileId) {
             const sortOrder = targetGroup.fileIds.length; // position after push
-            void postSetupAction({
-                action: "attach_file",
-                itemId: targetGroup.serverId,
-                fileId: backendFileId,
-                sortOrder,
-            }).catch(showItemSaveError);
+            enqueueItemMutation("attach", () =>
+                runCheckedSetupAction(
+                    {
+                        action: "attach_file",
+                        itemId: targetGroup.serverId,
+                        fileId: backendFileId,
+                        sortOrder,
+                    },
+                    "Failed to attach the file to the object.",
+                ),
+            );
         }
     };
 
@@ -794,6 +930,7 @@
         sourceFileId: number,
         targetFileId: number,
     ) => {
+        if (itemMutationFailure) return;
         objectGroups = objectGroups.map((g) => {
             if (g.id !== groupId) return g;
             const sourceIdx = g.fileIds.indexOf(sourceFileId);
@@ -822,11 +959,16 @@
                         e !== null,
                 );
             if (fileEntries.length > 0) {
-                void postSetupAction({
-                    action: "reorder_item_files",
-                    itemId: group.serverId,
-                    files: fileEntries,
-                }).catch(showItemSaveError);
+                enqueueItemMutation("reorder", () =>
+                    runCheckedSetupAction(
+                        {
+                            action: "reorder_item_files",
+                            itemId: group.serverId,
+                            files: fileEntries,
+                        },
+                        "Failed to reorder object files.",
+                    ),
+                );
             }
         }
     };
@@ -1114,6 +1256,9 @@
         if (hydratedFromServer) return;
         hydratedFromServer = true;
 
+        itemIndexAllocator = createSetupItemIndexAllocator(
+            data.items.map((item: IngestionDetailItem) => item.itemIndex),
+        );
         if (!existingFiles.length) return;
 
         const mappedFiles: LocalIngestionFile[] = existingFiles.map(
@@ -1155,73 +1300,40 @@
         activeFileId = mappedFiles[0]?.id ?? 0;
         selectedIds = mappedFiles[0] ? [mappedFiles[0].id] : [];
 
-        // Hydrate object groups from server items
-        if (data.items && data.items.length > 0) {
-            const backendToLocal = new Map(
-                existingFiles.map((f: IngestionDetailFile, i: number) => [
-                    f.id,
-                    i + 1,
-                ]),
-            );
-            const hydratedGroups: ObjectGroup[] = [];
-
-            // Sort items by item_index
-            const sortedItems = [...data.items].sort(
-                (a, b) => a.itemIndex - b.itemIndex,
-            );
-
-            for (const item of sortedItems) {
-                // Sort item files by sort_order to get ordered local file IDs
-                const sortedItemFiles = [...item.files].sort(
-                    (a, b) => a.sortOrder - b.sortOrder,
-                );
-                const localFileIds = sortedItemFiles
-                    .map((f) => backendToLocal.get(f.ingestionFileId))
-                    .filter((id): id is number => id !== undefined);
-
-                if (localFileIds.length === 0) continue;
-
-                if (localFileIds.length >= 2) {
-                    hydratedGroups.push({
-                        id: crypto.randomUUID(),
-                        ...(item.label ? { label: item.label } : {}),
-                        fileIds: localFileIds,
-                        serverId: item.id,
-                    });
-                }
-                // Single-file items are standalone files — no group needed
-            }
-
-            objectGroups = hydratedGroups;
-        }
-
-        // Restore per-object metadata saved before navigating to the review step.
-        // Keys: 'file:N' for standalone files (stable), 'srv:<serverId>' for groups (remapped
-        // to the new UUID assigned above, since UUIDs regenerate on every remount).
-        const snapshot = sessionStorage.getItem(`objmeta:${batchId}`);
-        if (snapshot) {
-            try {
-                const parsed = JSON.parse(snapshot) as Record<
-                    string,
-                    ObjectItemMetadata
-                >;
-                const restored: Record<string, ObjectItemMetadata> = {};
-                for (const [savedKey, meta] of Object.entries(parsed)) {
-                    if (savedKey.startsWith("file:")) {
-                        restored[savedKey] = meta;
-                    } else if (savedKey.startsWith("srv:")) {
-                        const serverId = savedKey.slice(4);
-                        const grp = objectGroups.find(
-                            (g) => g.serverId === serverId,
-                        );
-                        if (grp) restored[grp.id] = meta;
-                    }
-                }
-                objectMetadata = restored;
-            } catch {
-                // Ignore parse errors — fall back to empty metadata
-            }
-        }
+        const backendToLocal = new Map<string, number>(
+            existingFiles.map((f: IngestionDetailFile, i: number) => [
+                f.id,
+                i + 1,
+            ]),
+        );
+        const hydrated = hydrateIngestionItems(
+            data.items ?? [],
+            backendToLocal,
+            () => crypto.randomUUID(),
+        );
+        objectGroups = hydrated.groups;
+        objectMetadata = hydrated.metadata;
+        serverItemIds = hydrated.serverItemIds;
+        attachedFileIdsByItem = Object.fromEntries(
+            (data.items ?? []).map((item: IngestionDetailItem) => [
+                item.id,
+                item.files.map(
+                    (file: IngestionDetailItemFile) => file.ingestionFileId,
+                ),
+            ]),
+        );
+        pendingItemMetadataSaves = Object.fromEntries(
+            Object.entries(hydrated.metadata)
+                .filter(([, itemMetadata]) =>
+                    !(
+                        (itemMetadata.title ?? "").trim() &&
+                        itemMetadata.date?.value !== null &&
+                        itemMetadata.date?.value !== undefined &&
+                        (itemMetadata.tags ?? []).length > 0
+                    ),
+                )
+                .map(([key]) => [key, hydrated.serverItemIds[key]!]),
+        );
     });
 
     const addFiles = (incoming: FileList | File[]) => {
@@ -1618,7 +1730,9 @@
                 }
             }
 
-            if (updated) objectMetadata = next;
+            if (updated) {
+                objectMetadata = next;
+            }
         });
     });
 
@@ -1742,9 +1856,6 @@
         if (autoGroupToastTimer) {
             clearTimeout(autoGroupToastTimer);
         }
-        if (itemSaveErrorTimer) {
-            clearTimeout(itemSaveErrorTimer);
-        }
         for (const timer of Object.values(itemUpdateTimers)) {
             clearTimeout(timer);
         }
@@ -1754,7 +1865,20 @@
     });
 
     beforeNavigate(({ cancel, to }) => {
-        if (abandonNavigateBypass || files.length > 0 || !to) return;
+        if (
+            abandonNavigateBypass ||
+            setupNavigationBypass ||
+            !to ||
+            to.url.pathname === "/login"
+        )
+            return;
+
+        if (hasItemMutationBlock) {
+            cancel();
+            return;
+        }
+
+        if (files.length > 0) return;
         cancel();
         abandonDialog = {
             open: true,
@@ -1768,6 +1892,24 @@
         abandonNavigateBypass = true;
         goto(resolve(url as "/ingestion"));
     };
+
+    const reloadSavedSetup = () => {
+        setupNavigationBypass = true;
+        window.location.reload();
+    };
+
+    $effect(() => {
+        if (typeof window === "undefined" || !hasItemMutationBlock) return;
+
+        const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+            if (setupNavigationBypass) return;
+            event.preventDefault();
+            event.returnValue = "";
+        };
+
+        window.addEventListener("beforeunload", handleBeforeUnload);
+        return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    });
 
     const deleteBatchAndLeave = async () => {
         if (!abandonDialog || abandonDeleting) return;
@@ -1949,13 +2091,22 @@
         fallback: string,
     ): Promise<void> => {
         if (response.status === 401) {
+            setupNavigationBypass = true;
             await goto(resolve("/login"));
-            throw new Error("Unauthorized");
+            throw new SetupMutationUnauthorizedError();
         }
 
         if (!response.ok) {
             throw new Error(await readErrorMessage(response, fallback));
         }
+    };
+
+    const runCheckedSetupAction = async (
+        body: unknown,
+        fallback: string,
+    ): Promise<void> => {
+        const response = await postSetupAction(body);
+        await requireSetupActionOk(response, fallback);
     };
 
     const persistCreatedItemMetadata = async (
@@ -2188,6 +2339,7 @@
             !hasPendingUploads &&
             !hasUploadFailures &&
             hasRequiredItemMetadata &&
+            !hasItemMutationBlock &&
             !isSubmitting,
     );
 
@@ -2276,6 +2428,7 @@
     const organizeGroupSelected = () => {
         if (selectedFileIds.length < 2) return;
         const ids = [...selectedFileIds];
+        if (ids.some((id) => !canChangeFileGrouping(id))) return;
         const updatedGroups = dissolveSmallGroups(
             objectGroups.map((g) => ({
                 ...g,
@@ -2294,6 +2447,7 @@
     const organizeSplitSelected = () => {
         if (selectedFileIds.length === 0) return;
         const ids = [...selectedFileIds];
+        if (ids.some((id) => !canChangeFileGrouping(id))) return;
         objectGroups = dissolveSmallGroups(
             objectGroups.map((g) => ({
                 ...g,
@@ -2391,6 +2545,7 @@
         const srcId = step1DragSourceId;
         dragOverUngroupedSection = false;
         if (srcId === null) return;
+        if (!canChangeFileGrouping(srcId)) return;
         objectGroups = dissolveSmallGroups(
             objectGroups.map((g) => ({
                 ...g,
@@ -2433,117 +2588,113 @@
         submitError = "";
 
         try {
-            // Create server items for groups that were auto-grouped (no serverId yet)
-            const unsyncedGroups = objectGroups.filter((g) => !g.serverId);
-            let nextItemIndex =
-                objectGroups.filter((g) => g.serverId).length + 1;
+            if (!itemIndexAllocator) {
+                throw new Error("Failed to initialize item ordering.");
+            }
+            const allocator = itemIndexAllocator;
 
-            for (const group of unsyncedGroups) {
-                const groupFilesWithBackendId = group.fileIds
-                    .map((localFileId) =>
-                        files.find((f) => f.id === localFileId),
-                    )
-                    .filter((f): f is LocalIngestionFile => !!f?.backendFileId);
-                if (groupFilesWithBackendId.length === 0) continue;
-                const createResponse = await postSetupAction({
-                    action: "create_item",
-                    itemIndex: nextItemIndex++,
-                    ...(group.label ? { label: group.label } : {}),
-                });
-                await requireSetupActionOk(
-                    createResponse,
-                    "Failed to create item for grouped files.",
-                );
-                const result: { id: string; itemIndex: number } =
-                    await createResponse.json();
-                objectGroups = objectGroups.map((entry) =>
-                    entry.id === group.id
-                        ? { ...entry, serverId: result.id }
-                        : entry,
-                );
-                await persistCreatedItemMetadata(result.id, group.id);
-                for (let i = 0; i < groupFilesWithBackendId.length; i++) {
+            const attachMissingFiles = async (
+                itemId: string,
+                backendFileIds: string[],
+            ): Promise<void> => {
+                const attached = [...(attachedFileIdsByItem[itemId] ?? [])];
+                for (let index = 0; index < backendFileIds.length; index++) {
+                    const fileId = backendFileIds[index];
+                    if (attached.includes(fileId)) continue;
+
                     const attachResponse = await postSetupAction({
                         action: "attach_file",
-                        itemId: result.id,
-                        fileId: groupFilesWithBackendId[i].backendFileId!,
-                        sortOrder: i + 1,
+                        itemId,
+                        fileId,
+                        sortOrder: index + 1,
                     });
                     await requireSetupActionOk(
                         attachResponse,
-                        `Failed to attach ${groupFilesWithBackendId[i].name} to item.`,
+                        "Failed to attach file to item.",
                     );
+                    attached.push(fileId);
+                    attachedFileIdsByItem = {
+                        ...attachedFileIdsByItem,
+                        [itemId]: attached,
+                    };
                 }
+            };
+
+            const persistPendingMetadata = async (
+                key: string,
+                itemId: string,
+            ): Promise<void> => {
+                if (pendingItemMetadataSaves[key] !== itemId) return;
+                await persistCreatedItemMetadata(itemId, key);
+                const nextPendingSaves = { ...pendingItemMetadataSaves };
+                delete nextPendingSaves[key];
+                pendingItemMetadataSaves = nextPendingSaves;
+            };
+
+            for (const group of objectGroups) {
+                const backendFileIds = group.fileIds
+                    .map((localFileId) => files.find((file) => file.id === localFileId)?.backendFileId)
+                    .filter((fileId): fileId is string => Boolean(fileId));
+                if (backendFileIds.length === 0) continue;
+
+                let itemId = group.serverId;
+                if (!itemId) {
+                    const itemIndex = allocator.reserve();
+                    const createResponse = await postSetupAction({
+                        action: "create_item",
+                        itemIndex,
+                        ...(group.label ? { label: group.label } : {}),
+                    });
+                    await requireSetupActionOk(
+                        createResponse,
+                        "Failed to create item for grouped files.",
+                    );
+                    const result: { id: string; itemIndex: number } = await createResponse.json();
+                    allocator.observe(result.itemIndex);
+                    itemId = result.id;
+                    objectGroups = objectGroups.map((entry) =>
+                        entry.id === group.id ? { ...entry, serverId: itemId } : entry,
+                    );
+                    serverItemIds = { ...serverItemIds, [group.id]: itemId };
+                    pendingItemMetadataSaves = {
+                        ...pendingItemMetadataSaves,
+                        [group.id]: itemId,
+                    };
+                }
+
+                await attachMissingFiles(itemId, backendFileIds);
+                await persistPendingMetadata(group.id, itemId);
             }
 
-            // Auto-create items for standalone files (files not in any group).
-            // Skip files that already have a server item — single-file items are not hydrated
-            // as groups on remount, so without this check a second Continue click re-creates
-            // them and hits the unique constraint on (ingestion_id, item_index).
-            const fileIdsInServerItems = [
-                ...(data.items ?? []).flatMap((item: IngestionDetailItem) =>
-                    item.files.map(
-                        (f: IngestionDetailItemFile) => f.ingestionFileId,
-                    ),
-                ),
-                ...createdStandaloneBackendFileIds,
-            ];
-            const standalonesToCreate = standaloneFiles.filter(
-                (f) =>
-                    f.backendFileId &&
-                    !fileIdsInServerItems.includes(f.backendFileId),
-            );
-
-            for (const standaloneFile of standalonesToCreate) {
+            for (const standaloneFile of standaloneFiles) {
                 const backendFileId = standaloneFile.backendFileId;
                 if (!backendFileId) continue;
 
-                const createResponse = await postSetupAction({
-                    action: "create_item",
-                    itemIndex: nextItemIndex++,
-                });
-                await requireSetupActionOk(
-                    createResponse,
-                    "Failed to create item for standalone file.",
-                );
-                const result: { id: string; itemIndex: number } =
-                    await createResponse.json();
-                await persistCreatedItemMetadata(
-                    result.id,
-                    `file:${standaloneFile.id}`,
-                );
-                const attachResponse = await postSetupAction({
-                    action: "attach_file",
-                    itemId: result.id,
-                    fileId: backendFileId,
-                    sortOrder: 1,
-                });
-                await requireSetupActionOk(
-                    attachResponse,
-                    "Failed to attach file to item.",
-                );
-                createdStandaloneBackendFileIds = [
-                    ...createdStandaloneBackendFileIds,
-                    backendFileId,
-                ];
-            }
-
-            // Snapshot objectMetadata to sessionStorage so it can be restored if the user
-            // navigates back from review. Group UUIDs regenerate on remount, so we key
-            // multi-file groups by serverId and standalone files by their stable file: key.
-            const snapshot: Record<string, ObjectItemMetadata> = {};
-            for (const [key, meta] of Object.entries(objectMetadata)) {
-                if (key.startsWith("file:")) {
-                    snapshot[key] = meta;
-                } else {
-                    const grp = objectGroups.find((g) => g.id === key);
-                    if (grp?.serverId) snapshot[`srv:${grp.serverId}`] = meta;
+                const key = `file:${standaloneFile.id}`;
+                let itemId = serverItemIds[key];
+                if (!itemId) {
+                    const itemIndex = allocator.reserve();
+                    const createResponse = await postSetupAction({
+                        action: "create_item",
+                        itemIndex,
+                    });
+                    await requireSetupActionOk(
+                        createResponse,
+                        "Failed to create item for standalone file.",
+                    );
+                    const result: { id: string; itemIndex: number } = await createResponse.json();
+                    allocator.observe(result.itemIndex);
+                    itemId = result.id;
+                    serverItemIds = { ...serverItemIds, [key]: itemId };
+                    pendingItemMetadataSaves = {
+                        ...pendingItemMetadataSaves,
+                        [key]: itemId,
+                    };
                 }
+
+                await attachMissingFiles(itemId, [backendFileId]);
+                await persistPendingMetadata(key, itemId);
             }
-            sessionStorage.setItem(
-                `objmeta:${batchId}`,
-                JSON.stringify(snapshot),
-            );
 
             await goto(resolve("/ingestion/[batchId]/review", { batchId }));
         } catch (error) {
@@ -3881,6 +4032,10 @@
                         <p class="text-sm text-text-muted">
                             {canStartIngestion
                                 ? t("ingestionSetup.readiness.ready")
+                                : itemMutationFailure
+                                  ? "Reload to reconcile saved changes"
+                                  : hasPendingItemMutations
+                                    ? "Saving object changes…"
                                 : hasPendingUploads
                                   ? t("ingestionSetup.readiness.uploading")
                                   : hasUploadFailures
@@ -4197,23 +4352,40 @@
             </div>
         {/if}
 
-        <!-- Item save error toast -->
-        {#if itemSaveError}
+        {#if itemMutationFailure}
             <div
-                class="fixed bottom-24 right-6 z-50 flex items-center gap-3 rounded-sm border border-burnt-peach/40 bg-pearl-beige px-4 py-3 shadow-lg"
+                class="fixed bottom-24 right-6 z-50 w-[min(28rem,calc(100vw-3rem))] rounded-2xl border border-burnt-peach/45 bg-pearl-beige px-4 py-4 shadow-lg"
             >
-                <Icon name="warn" size={14} />
-                <p class="text-xs text-burnt-peach">
-                    A change failed to save — check your connection.
-                </p>
+                <div class="flex items-start gap-3">
+                    <Icon name="warn" size={14} />
+                    <div class="min-w-0 flex-1">
+                        <p class="text-xs uppercase tracking-[0.16em] text-burnt-peach">
+                            {itemMutationLabels[itemMutationFailure.operation]} could not be saved
+                        </p>
+                        <p class="mt-2 text-xs text-text-muted">
+                            {itemMutationFailure.message}
+                        </p>
+                        <p class="mt-2 text-xs text-text-muted">
+                            Reload the saved setup before making more changes.
+                        </p>
+                    </div>
+                </div>
                 <button
                     type="button"
-                    onclick={() => {
-                        itemSaveError = false;
-                    }}
-                    class="ml-2 text-burnt-peach/50 hover:text-burnt-peach"
-                    aria-label="Dismiss"><Icon name="x" size={12} /></button
+                    onclick={reloadSavedSetup}
+                    class="mt-4 w-full rounded-full bg-burnt-peach px-4 py-2 text-xs uppercase tracking-[0.16em] text-surface-white transition hover:bg-burnt-peach/85"
                 >
+                    Reload saved setup
+                </button>
+            </div>
+        {:else if hasPendingItemMutations}
+            <div
+                class="fixed bottom-24 right-6 z-50 flex items-center gap-3 rounded-2xl border border-blue-slate/30 bg-surface-white px-4 py-3 shadow-lg"
+            >
+                <Icon name="clock" size={14} />
+                <p class="text-xs text-blue-slate">
+                    Saving object changes… Continue and navigation are temporarily disabled.
+                </p>
             </div>
         {/if}
     </main>
@@ -4256,7 +4428,7 @@
                     <Icon name="arrow-l" size={13} /> Back
                 </a>
                 <button
-                    disabled={hasPendingUploads}
+                    disabled={hasPendingUploads || hasItemMutationBlock}
                     onclick={() => {
                         step = "metadata";
                     }}
@@ -4268,6 +4440,10 @@
                 <span class="text-sm text-text-muted">
                     {canStartIngestion
                         ? t("ingestionSetup.readiness.ready")
+                        : itemMutationFailure
+                          ? "Reload to reconcile saved changes"
+                          : hasPendingItemMutations
+                            ? "Saving object changes…"
                         : hasPendingUploads
                           ? t("ingestionSetup.readiness.uploading")
                           : t("ingestionSetup.readiness.missingItemMetadata")}

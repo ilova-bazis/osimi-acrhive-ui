@@ -37,6 +37,7 @@ export type IngestionDetailItem = {
 	itemIndex: number;
 	label?: string;
 	status: string;
+	summary: Record<string, unknown>;
 	files: IngestionDetailItemFile[];
 };
 

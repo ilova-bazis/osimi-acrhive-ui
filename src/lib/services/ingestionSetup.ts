@@ -53,7 +53,7 @@ export type UpdateItemRequest = {
 	batchId: string;
 	itemId: string;
 	label?: string;
-	metadata?: ObjectItemMetadata;
+	metadata?: Partial<ObjectItemMetadata>;
 	context: IngestionSetupRequestContext;
 };
 
