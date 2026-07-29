@@ -1,26 +1,14 @@
 import { env } from '$env/dynamic/private';
 import { backendErrorSchema } from '$lib/api/schemas/errors';
 import { AUTH_COOKIE_NAME, clearSessionCookie } from '$lib/server/auth';
+import {
+	isSafeInlineArtifactMediaType,
+	NO_STORE_CACHE_CONTROL,
+	normalizeMediaType
+} from '$lib/server/mediaResponses';
 import { error, redirect, type RequestEvent } from '@sveltejs/kit';
 
 const getApiBase = (): string => env.PRIVATE_API_BASE || env.PUBLIC_API_BASE || 'http://localhost:3000';
-
-const SAFE_INLINE_CONTENT_TYPES = [
-	'image/',
-	'audio/',
-	'video/',
-	'application/pdf',
-	'text/plain',
-	'text/vtt'
-];
-
-const isSafeInlineContentType = (contentType: string | null): boolean => {
-	if (!contentType) return false;
-	const normalized = contentType.toLowerCase().split(';')[0]?.trim() ?? '';
-	return SAFE_INLINE_CONTENT_TYPES.some((safeType) =>
-		safeType.endsWith('/') ? normalized.startsWith(safeType) : normalized === safeType
-	);
-};
 
 const toPassthroughStatus = (status: number): number => {
 	if (status === 400 || status === 403 || status === 404 || status === 409 || status === 423) {
@@ -99,9 +87,9 @@ export const GET = async ({ params, locals, cookies, fetch }: RequestEvent) => {
 	const headers = new Headers();
 	const contentType = response.headers.get('content-type');
 	const contentLength = response.headers.get('content-length');
-	const contentDisposition = response.headers.get('content-disposition');
+	const normalizedContentType = normalizeMediaType(contentType);
 
-	if (!isSafeInlineContentType(contentType)) {
+	if (!isSafeInlineArtifactMediaType(normalizedContentType)) {
 		throw error(415, {
 			message: 'Artifact content type cannot be viewed inline.'
 		});
@@ -109,7 +97,8 @@ export const GET = async ({ params, locals, cookies, fetch }: RequestEvent) => {
 
 	if (contentType) headers.set('content-type', contentType);
 	if (contentLength) headers.set('content-length', contentLength);
-	if (contentDisposition) headers.set('content-disposition', contentDisposition);
+	headers.set('cache-control', NO_STORE_CACHE_CONTROL);
+	headers.set('content-disposition', 'inline');
 	headers.set('x-content-type-options', 'nosniff');
 	headers.set('content-security-policy', "default-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'unsafe-inline'");
 

@@ -696,6 +696,7 @@
         null,
     );
     let abandonDeleting = $state(false);
+    let abandonDeleteError = $state("");
     let abandonNavigateBypass = false;
     let setupNavigationBypass = false;
 
@@ -1878,6 +1879,11 @@
             return;
         }
 
+        if (abandonDeleting) {
+            cancel();
+            return;
+        }
+
         if (files.length > 0) return;
         cancel();
         abandonDialog = {
@@ -1887,6 +1893,7 @@
     });
 
     const keepDraftAndLeave = () => {
+        if (abandonDeleting) return;
         const url = abandonDialog?.pendingUrl ?? "/ingestion";
         abandonDialog = null;
         abandonNavigateBypass = true;
@@ -1899,7 +1906,11 @@
     };
 
     $effect(() => {
-        if (typeof window === "undefined" || !hasItemMutationBlock) return;
+        if (
+            typeof window === "undefined" ||
+            (!hasItemMutationBlock && !abandonDeleting)
+        )
+            return;
 
         const handleBeforeUnload = (event: BeforeUnloadEvent) => {
             if (setupNavigationBypass) return;
@@ -1914,21 +1925,44 @@
     const deleteBatchAndLeave = async () => {
         if (!abandonDialog || abandonDeleting) return;
         abandonDeleting = true;
+        abandonDeleteError = "";
         const url = abandonDialog.pendingUrl;
         try {
             const res = await postSetupAction({ action: "delete_batch" });
-            if (res.status === 401) {
-                await goto(resolve("/login"));
+            const redirectedToLogin =
+                res.redirected &&
+                new URL(res.url, window.location.origin).pathname === "/login";
+            if (res.status === 401 || redirectedToLogin) {
+                setupNavigationBypass = true;
+                try {
+                    await goto(resolve("/login"));
+                } catch {
+                    setupNavigationBypass = false;
+                    abandonDeleteError = "Your session expired. Please sign in again.";
+                }
                 return;
             }
+
+            const deleted = res.status === 404 || (res.ok && (await res.json().catch(() => null))?.ok === true);
+            if (!deleted) {
+                abandonDeleteError = !res.ok
+                    ? await readErrorMessage(res, "Failed to delete the batch. Check your connection and try again.")
+                    : "Failed to confirm the batch was deleted. Check your connection and try again.";
+                return;
+            }
+
+            abandonDialog = null;
+            abandonNavigateBypass = true;
+            try {
+                await goto(resolve(url as "/ingestion"));
+            } finally {
+                abandonNavigateBypass = false;
+            }
         } catch {
-            // navigate away even if delete fails
+            abandonDeleteError = "Failed to delete the batch. Check your connection and try again.";
         } finally {
             abandonDeleting = false;
         }
-        abandonDialog = null;
-        abandonNavigateBypass = true;
-        goto(resolve(url as "/ingestion"));
     };
 
     const saveBatchMetadata = async (): Promise<BatchIntent> => {
@@ -4320,6 +4354,8 @@
                             </h3>
                         </div>
                         <button
+                            type="button"
+                            disabled={abandonDeleting}
                             class="text-sm text-text-muted"
                             onclick={keepDraftAndLeave}>Close</button
                         >
@@ -4330,11 +4366,20 @@
                             keep it as a draft to continue later.
                         </p>
                     </div>
+                    {#if abandonDeleteError}
+                        <p
+                            role="alert"
+                            class="mt-4 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach"
+                        >
+                            {abandonDeleteError}
+                        </p>
+                    {/if}
                     <div
                         class="mt-6 flex flex-wrap items-center justify-end gap-3"
                     >
                         <button
                             type="button"
+                            disabled={abandonDeleting}
                             class="rounded-full border border-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate"
                             onclick={keepDraftAndLeave}>Keep as draft</button
                         >
@@ -4345,7 +4390,9 @@
                             onclick={deleteBatchAndLeave}
                             >{abandonDeleting
                                 ? "Deleting…"
-                                : "Delete batch"}</button
+                                : abandonDeleteError
+                                  ? "Retry delete"
+                                  : "Delete batch"}</button
                         >
                     </div>
                 </div>

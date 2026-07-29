@@ -1,11 +1,17 @@
 import { AUTH_COOKIE_NAME } from '$lib/server/auth';
+import {
+	isSafePreviewMediaType,
+	NO_STORE_CACHE_CONTROL,
+	normalizeMediaType,
+	PREVIEW_CONTENT_SECURITY_POLICY
+} from '$lib/server/mediaResponses';
 import { env } from '$env/dynamic/private';
 import type { RequestHandler } from './$types';
 
 const getApiBase = (): string =>
 	env.PRIVATE_API_BASE || env.PUBLIC_API_BASE || 'http://localhost:3000';
 
-export const GET: RequestHandler = async ({ params, locals, cookies, fetch }) => {
+const proxyPreview: RequestHandler = async ({ params, locals, cookies, fetch, request }) => {
 	const token = cookies.get(AUTH_COOKIE_NAME);
 	if (!locals.session || !token) {
 		return new Response(null, { status: 401 });
@@ -26,13 +32,29 @@ export const GET: RequestHandler = async ({ params, locals, cookies, fetch }) =>
 		return new Response(null, { status: response.status });
 	}
 
-	const body = await response.arrayBuffer();
-	const contentType = response.headers.get('content-type') ?? 'application/octet-stream';
+	const contentType = normalizeMediaType(response.headers.get('content-type'));
+	if (!isSafePreviewMediaType(contentType)) {
+		await response.body?.cancel();
+		return new Response(null, { status: 415 });
+	}
 
-	return new Response(body, {
-		headers: {
-			'content-type': contentType,
-			'cache-control': 'private, max-age=300'
-		}
+	const headers = new Headers({
+		'cache-control': NO_STORE_CACHE_CONTROL,
+		'content-disposition': 'inline',
+		'content-security-policy': PREVIEW_CONTENT_SECURITY_POLICY,
+		'content-type': contentType,
+		'x-content-type-options': 'nosniff'
 	});
+	const contentLength = response.headers.get('content-length');
+	if (contentLength) headers.set('content-length', contentLength);
+
+	if (request.method === 'HEAD') {
+		await response.body?.cancel();
+		return new Response(null, { headers });
+	}
+
+	return new Response(response.body, { headers });
 };
+
+export const GET = proxyPreview;
+export const HEAD = proxyPreview;

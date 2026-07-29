@@ -27,8 +27,27 @@ describe('/objects/[objectId]/artifacts/[artifactId]/download +server', () => {
 
 		expect(response.status).toBe(200);
 		expect(response.headers.get('content-type')).toBe('application/pdf');
-		expect(response.headers.get('content-disposition')).toBe('attachment; filename="file.pdf"');
+		expect(response.headers.get('content-disposition')).toContain('attachment;');
+		expect(response.headers.get('content-disposition')).toContain('filename="file.pdf"');
 		expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+		expect(response.headers.get('cache-control')).toBe('private, no-store');
+	});
+
+	it('forces active content to download as a sanitized attachment', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response('<script></script>', {
+				status: 200,
+				headers: {
+					'content-type': 'text/html',
+					'content-disposition': 'inline; filename="../../unsafe.html"'
+				}
+			})
+		);
+
+		const response = await GET(makeEvent(fetchMock));
+		expect(response.headers.get('content-disposition')).toContain('attachment;');
+		expect(response.headers.get('content-disposition')).toContain('filename="unsafe.html"');
+		expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
 	});
 
 	it('maps backend fetch rejection to a controlled 502', async () => {

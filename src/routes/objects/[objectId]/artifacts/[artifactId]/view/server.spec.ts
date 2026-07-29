@@ -27,6 +27,19 @@ describe('/objects/[objectId]/artifacts/[artifactId]/view +server', () => {
 		expect(response.headers.get('content-type')).toBe('text/plain');
 		expect(response.headers.get('x-content-type-options')).toBe('nosniff');
 		expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
+		expect(response.headers.get('content-disposition')).toBe('inline');
+		expect(response.headers.get('cache-control')).toBe('private, no-store');
+	});
+
+	it('rejects SVG even though it uses an image MIME type', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response('<svg></svg>', {
+				status: 200,
+				headers: { 'content-type': 'image/svg+xml' }
+			})
+		);
+
+		await expect(GET(makeEvent(fetchMock))).rejects.toMatchObject({ status: 415 });
 	});
 
 	it('rejects unsafe inline content types', async () => {

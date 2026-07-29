@@ -1,6 +1,11 @@
 import { env } from '$env/dynamic/private';
 import { backendErrorSchema } from '$lib/api/schemas/errors';
 import { AUTH_COOKIE_NAME, clearSessionCookie } from '$lib/server/auth';
+import {
+	createAttachmentDisposition,
+	NO_STORE_CACHE_CONTROL,
+	PREVIEW_CONTENT_SECURITY_POLICY
+} from '$lib/server/mediaResponses';
 import { error, redirect, type RequestEvent } from '@sveltejs/kit';
 
 const getApiBase = (): string => env.PRIVATE_API_BASE || env.PUBLIC_API_BASE || 'http://localhost:3000';
@@ -80,13 +85,15 @@ export const GET = async ({ params, locals, cookies, fetch }: RequestEvent) => {
 	}
 
 	const headers = new Headers();
-	const contentType = response.headers.get('content-type');
+	const contentType = response.headers.get('content-type') ?? 'application/octet-stream';
 	const contentLength = response.headers.get('content-length');
 	const contentDisposition = response.headers.get('content-disposition');
 
-	if (contentType) headers.set('content-type', contentType);
+	headers.set('cache-control', NO_STORE_CACHE_CONTROL);
+	headers.set('content-disposition', createAttachmentDisposition(contentDisposition, artifactId));
+	headers.set('content-security-policy', PREVIEW_CONTENT_SECURITY_POLICY);
+	headers.set('content-type', contentType);
 	if (contentLength) headers.set('content-length', contentLength);
-	if (contentDisposition) headers.set('content-disposition', contentDisposition);
 	headers.set('x-content-type-options', 'nosniff');
 
 	return new Response(response.body, {

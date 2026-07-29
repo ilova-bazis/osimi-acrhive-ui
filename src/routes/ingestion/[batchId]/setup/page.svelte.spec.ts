@@ -107,6 +107,17 @@ const pageData = () => ({
 	}
 });
 
+const openEmptyBatchDialog = (): void => {
+	const guard = beforeNavigateMock.mock.calls.at(-1)?.[0] as (event: {
+		cancel: () => void;
+		to: { url: { pathname: string; search: string; hash: string } };
+	}) => void;
+	guard({
+		cancel: vi.fn(),
+		to: { url: { pathname: '/ingestion', search: '', hash: '' } }
+	});
+};
+
 describe('/ingestion/[batchId]/setup +page.svelte', () => {
 	beforeEach(() => {
 		beforeNavigateMock.mockReset();
@@ -329,6 +340,87 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
 		expect(createIndexes).toEqual([10]);
+	});
+
+	it('leaves an empty batch only after confirmed deletion', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(JSON.stringify({ ok: true }), { status: 200 })
+		);
+		vi.stubGlobal('fetch', fetchMock);
+		const emptyData = pageData();
+		emptyData.existingFiles = [];
+		emptyData.items = [];
+		render(SetupPage, { data: emptyData });
+		openEmptyBatchDialog();
+
+		await page.getByRole('button', { name: 'Delete batch' }).click();
+
+		expect(gotoMock).toHaveBeenCalledWith('/ingestion');
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it('treats a missing batch as an idempotent deletion success', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
+		const emptyData = pageData();
+		emptyData.existingFiles = [];
+		emptyData.items = [];
+		render(SetupPage, { data: emptyData });
+		openEmptyBatchDialog();
+
+		await page.getByRole('button', { name: 'Delete batch' }).click();
+
+		expect(gotoMock).toHaveBeenCalledWith('/ingestion');
+	});
+
+	it('keeps the deletion dialog open after a backend rejection', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue(
+				new Response(JSON.stringify({ error: 'Batch is locked.' }), {
+					status: 423,
+					headers: { 'content-type': 'application/json' }
+				})
+			)
+		);
+		const emptyData = pageData();
+		emptyData.existingFiles = [];
+		emptyData.items = [];
+		render(SetupPage, { data: emptyData });
+		openEmptyBatchDialog();
+
+		await page.getByRole('button', { name: 'Delete batch' }).click();
+
+		await expect.element(page.getByRole('alert')).toHaveTextContent('Batch is locked.');
+		await expect.element(page.getByRole('button', { name: 'Retry delete' })).toBeInTheDocument();
+		expect(gotoMock).not.toHaveBeenCalled();
+	});
+
+	it('keeps the deletion dialog open after a network failure', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+		const emptyData = pageData();
+		emptyData.existingFiles = [];
+		emptyData.items = [];
+		render(SetupPage, { data: emptyData });
+		openEmptyBatchDialog();
+
+		await page.getByRole('button', { name: 'Delete batch' }).click();
+
+		await expect.element(page.getByRole('alert')).toHaveTextContent('Failed to delete the batch.');
+		expect(gotoMock).not.toHaveBeenCalled();
+	});
+
+	it('navigates only to login after an unauthorized deletion', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
+		const emptyData = pageData();
+		emptyData.existingFiles = [];
+		emptyData.items = [];
+		render(SetupPage, { data: emptyData });
+		openEmptyBatchDialog();
+
+		await page.getByRole('button', { name: 'Delete batch' }).click();
+
+		expect(gotoMock).toHaveBeenCalledWith('/login');
+		expect(gotoMock).not.toHaveBeenCalledWith('/ingestion');
 	});
 
 });

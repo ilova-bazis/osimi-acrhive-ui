@@ -313,6 +313,59 @@ describe('/ingestion/[batchId]/setup +server', () => {
 		);
 	});
 
+	it('preserves deletion conflicts for the setup client', async () => {
+		deleteMock.mockRejectedValue(
+			new ApiClientError({
+				status: 409,
+				code: 'LOCKED',
+				message: 'Batch is locked',
+				requestId: 'req-delete-conflict'
+			})
+		);
+
+		const response = await POST({
+			request: new Request('https://example.test/ingestion/batch-1/setup', {
+				method: 'POST',
+				body: JSON.stringify({ action: 'delete_batch' })
+			}),
+			params: { batchId: 'batch-1' },
+			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'archiver' } },
+			cookies: { get: () => 'token-1', delete: vi.fn() },
+			fetch: vi.fn()
+		} as never);
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toEqual({
+			error: 'Batch is locked',
+			requestId: 'req-delete-conflict'
+		});
+	});
+
+	it('clears the session when batch deletion is unauthorized', async () => {
+		deleteMock.mockRejectedValue(
+			new ApiClientError({
+				status: 401,
+				code: 'UNAUTHORIZED',
+				message: 'Unauthorized'
+			})
+		);
+		const deleteCookie = vi.fn();
+
+		const response = await POST({
+			request: new Request('https://example.test/ingestion/batch-1/setup', {
+				method: 'POST',
+				body: JSON.stringify({ action: 'delete_batch' })
+			}),
+			params: { batchId: 'batch-1' },
+			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'archiver' } },
+			cookies: { get: () => 'token-1', delete: deleteCookie },
+			fetch: vi.fn()
+		} as never);
+
+		expect(response.status).toBe(401);
+		expect(deleteCookie).toHaveBeenCalled();
+	});
+
 	it('maps backend api errors to JSON response status', async () => {
 		submitMock.mockRejectedValue(
 			new ApiClientError({

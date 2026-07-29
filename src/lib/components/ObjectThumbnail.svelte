@@ -17,7 +17,7 @@
 
 	const thumbnailHref = $derived(
 		thumbnailArtifactId
-			? resolve('/objects/[objectId]/artifacts/[artifactId]/download', {
+			? resolve('/objects/[objectId]/artifacts/[artifactId]/view', {
 					objectId,
 					artifactId: thumbnailArtifactId
 				})
@@ -49,6 +49,7 @@
 >
 	{#if thumbnailHref && !imageFailed}
 		<img
+			data-testid="object-thumbnail-image"
 			src={thumbnailHref}
 			alt=""
 			loading="lazy"
