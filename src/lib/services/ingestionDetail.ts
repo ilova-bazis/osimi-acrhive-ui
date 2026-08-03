@@ -17,7 +17,7 @@ export type IngestionDetailFile = {
 	sizeBytes: number | null;
 	createdAt: string | null;
 	preview: {
-		status: 'pending' | 'ready' | 'failed' | 'unsupported';
+		status: 'pending' | 'ready' | 'failed' | 'unsupported' | 'purged';
 		contentType: string | null;
 		width: number | null;
 		height: number | null;

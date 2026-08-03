@@ -164,6 +164,7 @@ export const translations = {
 				title: 'Files',
 				subtitle: 'Files currently registered in this ingestion batch.',
 				empty: 'No files found for this ingestion.',
+				previewPurged: 'Preview unavailable: retention period expired',
 				headers: {
 					file: 'File',
 					status: 'Status',
@@ -493,7 +494,8 @@ export const translations = {
 				removeFailed: 'Failed to remove file.',
 				typeMismatch: 'Only {expectedType} files are allowed in this batch. Rejected: {rejected}.',
 				unsupportedFormats: 'Unsupported format for this batch. Rejected: {rejected}. Supported formats: {supportedFormats}.',
-				expectedTypeFallback: 'the locked batch type'
+				expectedTypeFallback: 'the locked batch type',
+				previewPurged: 'Preview unavailable: retention period expired'
 			},
 			fileTypes: {
 				image: 'Image',
@@ -874,6 +876,7 @@ export const translations = {
 				title: 'Файлы',
 				subtitle: 'Файлы, зарегистрированные в этой партии.',
 				empty: 'Для этой загрузки файлы не найдены.',
+				previewPurged: 'Предпросмотр недоступен: срок хранения истек',
 				headers: {
 					file: 'Файл',
 					status: 'Статус',
@@ -1203,7 +1206,8 @@ export const translations = {
 				removeFailed: 'Не удалось удалить файл.',
 				typeMismatch: 'В этой партии разрешены только файлы типа {expectedType}. Отклонено: {rejected}.',
 				unsupportedFormats: 'Неподдерживаемый формат для этой партии. Отклонено: {rejected}. Поддерживаемые форматы: {supportedFormats}.',
-				expectedTypeFallback: 'зафиксированный тип партии'
+				expectedTypeFallback: 'зафиксированный тип партии',
+				previewPurged: 'Предпросмотр недоступен: срок хранения истек'
 			},
 			fileTypes: {
 				image: 'Изображение',

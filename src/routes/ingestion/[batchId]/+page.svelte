@@ -141,6 +141,8 @@
 		if (normalized.includes('process') || normalized.includes('queue')) return 'processing';
 		return 'queued';
 	};
+	const isPreviewPurged = (status: IngestionDetail['files'][number]['preview']): boolean =>
+		status?.status === 'purged';
 
 	const formatDate = (value: string | null): string =>
 		value ? new Date(value).toLocaleString() : t('ingestionDetail.messages.unknown');
@@ -254,7 +256,12 @@
 					<tbody class="divide-y divide-border-soft">
 						{#each detail.files as file (file.id)}
 							<tr class="text-sm text-text-ink">
-								<td class="py-3 pr-4">{file.name}</td>
+								<td class="py-3 pr-4">
+									{file.name}
+									{#if isPreviewPurged(file.preview)}
+										<p class="mt-1 text-xs text-text-muted">{t('ingestionDetail.files.previewPurged')}</p>
+									{/if}
+								</td>
 								<td class="py-3 pr-4"><StatusBadge status={toFileTone(file.status)} label={file.status} /></td>
 								<td class="py-3 pr-4">{file.contentType ?? '-'}</td>
 								<td class="py-3 pr-4">{formatSize(file.sizeBytes)}</td>

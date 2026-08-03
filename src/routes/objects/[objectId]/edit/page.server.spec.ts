@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiClientError } from '$lib/server/apiClient';
-import { ObjectEditLockedError } from '$lib/services/objectEdit';
+import { ObjectEditLockedError, ObjectEditRevisionConflictError } from '$lib/services/objectEdit';
 
 const {
 	getObjectEditPayloadMock,
@@ -29,6 +29,7 @@ const session = { id: 'u1', username: 'test', tenantId: null, role: 'archiver' }
 
 const baseEditPayload = {
 	objectId: 'OBJ-1',
+	revision: 4,
 	mediaType: 'document',
 	lock: { locked: true, lockedBy: 'u1', lockedUntil: '2026-05-23T19:00:00.000Z' },
 	curationState: 'draft',
@@ -75,8 +76,9 @@ const makeEvent = (body?: FormData) =>
 		}),
 	}) as never;
 
-const makeSaveDraftForm = (overrides: { metadata?: unknown; rights?: unknown; pages?: unknown } = {}) => {
+const makeSaveDraftForm = (overrides: { revision?: unknown; metadata?: unknown; rights?: unknown; pages?: unknown } = {}) => {
 	const form = new FormData();
+	form.set('revision', String(overrides.revision ?? 4));
 	form.set(
 		'metadata',
 		JSON.stringify(
@@ -113,16 +115,19 @@ describe('/objects/[objectId]/edit +page.server', () => {
 		getObjectEditPayloadMock.mockResolvedValue(baseEditPayload);
 		saveObjectMetadataMock.mockResolvedValue({
 			objectId: 'OBJ-1',
+			revision: 5,
 			curationState: 'draft',
 			updatedAt: '2026-05-23T18:00:00.000Z',
 		});
 		saveDocumentCurationMock.mockResolvedValue({
 			objectId: 'OBJ-1',
+			revision: 6,
 			updatedCount: 1,
 			updatedAt: '2026-05-23T18:00:00.000Z',
 		});
 		submitObjectCurationMock.mockResolvedValue({
 			objectId: 'OBJ-1',
+			revision: 5,
 			curationState: 'under_review',
 			submittedAt: '2026-05-23T18:00:00.000Z',
 			submittedBy: 'u1',
@@ -175,16 +180,17 @@ describe('/objects/[objectId]/edit +page.server', () => {
 	it('saves metadata and document curation when capabilities allow both', async () => {
 		const result = await actions.saveDraft(makeEvent(makeSaveDraftForm()));
 
-		expect(result).toEqual({ success: true });
+		expect(result).toEqual({ success: true, revision: 6 });
 		expect(saveObjectMetadataMock).toHaveBeenCalledWith(
 			expect.objectContaining({
 				objectId: 'OBJ-1',
+				revision: 4,
 				metadata: expect.objectContaining({ title: 'Updated title' }),
 				rights: { rightsNote: 'Rights', sensitivityNote: null },
 			}),
 		);
 		expect(saveDocumentCurationMock).toHaveBeenCalledWith(
-			expect.objectContaining({ pages: [{ pageNumber: 1, curatedText: 'Edited text' }] }),
+			expect.objectContaining({ revision: 5, pages: [{ pageNumber: 1, curatedText: 'Edited text' }] }),
 		);
 	});
 
@@ -207,9 +213,12 @@ describe('/objects/[objectId]/edit +page.server', () => {
 			capabilities: { canEditMetadata: false, canCurateText: true, canSubmitReview: false },
 		});
 
-		const result = await actions.saveDraft(makeEvent(makeSaveDraftForm()));
+		const form = makeSaveDraftForm();
+		form.delete('metadata');
+		form.delete('rights');
+		const result = await actions.saveDraft(makeEvent(form));
 
-		expect(result).toEqual({ success: true });
+		expect(result).toEqual({ success: true, revision: 6 });
 		expect(saveObjectMetadataMock).not.toHaveBeenCalled();
 		expect(saveDocumentCurationMock).toHaveBeenCalledOnce();
 	});
@@ -222,7 +231,7 @@ describe('/objects/[objectId]/edit +page.server', () => {
 		expect(result).toMatchObject({ status: 423, data: { locked: true } });
 	});
 
-	it('returns a specific error when document curation fails after metadata save', async () => {
+	it('returns recovered partial state when document curation fails after metadata save', async () => {
 		saveDocumentCurationMock.mockRejectedValue(
 			new ApiClientError({ status: 502, code: 'BAD_REQUEST', message: 'Curation failed', requestId: 'req-2' }),
 		);
@@ -231,14 +240,58 @@ describe('/objects/[objectId]/edit +page.server', () => {
 
 		expect(result).toMatchObject({
 			status: 502,
-			data: { error: 'Metadata saved, but document curation failed (request: req-2).' },
+			data: {
+				error: 'Metadata saved, but document curation failed. Review the refreshed values before retrying.',
+				recovery: { kind: 'partial', editPayload: baseEditPayload },
+			},
 		});
 		expect(saveObjectMetadataMock).toHaveBeenCalledOnce();
+		expect(getObjectEditPayloadMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('returns refreshed state without writing when the submitted revision is stale', async () => {
+		const result = await actions.saveDraft(makeEvent(makeSaveDraftForm({ revision: 3 })));
+
+		expect(result).toMatchObject({
+			status: 409,
+			data: { recovery: { kind: 'conflict', editPayload: baseEditPayload } },
+		});
+		expect(saveObjectMetadataMock).not.toHaveBeenCalled();
+		expect(saveDocumentCurationMock).not.toHaveBeenCalled();
+	});
+
+	it('refreshes authoritative state after a concurrent revision conflict', async () => {
+		const refreshedPayload = { ...baseEditPayload, revision: 5 };
+		getObjectEditPayloadMock.mockResolvedValueOnce(baseEditPayload).mockResolvedValueOnce(refreshedPayload);
+		saveObjectMetadataMock.mockRejectedValue(new ObjectEditRevisionConflictError(5));
+
+		const result = await actions.saveDraft(makeEvent(makeSaveDraftForm({ pages: [] })));
+
+		expect(result).toMatchObject({
+			status: 409,
+			data: { recovery: { kind: 'conflict', editPayload: refreshedPayload } },
+		});
+		expect(saveDocumentCurationMock).not.toHaveBeenCalled();
+	});
+
+	it('saves only changed document pages without writing metadata', async () => {
+		const form = makeSaveDraftForm({ pages: [{ pageNumber: 1, curatedText: 'Edited text' }] });
+		form.delete('metadata');
+		form.delete('rights');
+
+		const result = await actions.saveDraft(makeEvent(form));
+
+		expect(result).toEqual({ success: true, revision: 6 });
+		expect(saveObjectMetadataMock).not.toHaveBeenCalled();
+		expect(saveDocumentCurationMock).toHaveBeenCalledWith(
+			expect.objectContaining({ revision: 4, pages: [{ pageNumber: 1, curatedText: 'Edited text' }] }),
+		);
 	});
 
 	it('submits curation when capability allows review submission', async () => {
 		const form = new FormData();
 		form.set('reviewNote', 'Looks ready');
+		form.set('revision', '4');
 
 		const result = await actions.submitCuration(makeEvent(form));
 
@@ -249,7 +302,7 @@ describe('/objects/[objectId]/edit +page.server', () => {
 			requestStatus: 'PENDING',
 		});
 		expect(submitObjectCurationMock).toHaveBeenCalledWith(
-			expect.objectContaining({ objectId: 'OBJ-1', reviewNote: 'Looks ready' }),
+			expect.objectContaining({ objectId: 'OBJ-1', revision: 4, reviewNote: 'Looks ready' }),
 		);
 	});
 
@@ -259,7 +312,9 @@ describe('/objects/[objectId]/edit +page.server', () => {
 			capabilities: { canEditMetadata: true, canCurateText: true, canSubmitReview: false },
 		});
 
-		const result = await actions.submitCuration(makeEvent(new FormData()));
+		const form = new FormData();
+		form.set('revision', '4');
+		const result = await actions.submitCuration(makeEvent(form));
 
 		expect(result).toMatchObject({ status: 403 });
 		expect(submitObjectCurationMock).not.toHaveBeenCalled();

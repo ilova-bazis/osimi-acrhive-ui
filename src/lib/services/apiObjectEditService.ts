@@ -23,7 +23,7 @@ import type {
 	SaveMetadataRequest,
 	SubmitCurationRequest,
 } from './objectEdit';
-import { ObjectEditLockedError } from './objectEdit';
+import { ObjectEditLockedError, ObjectEditRevisionConflictError } from './objectEdit';
 
 const toObjectEditPath = (objectId: string) =>
 	`/api/objects/${encodeURIComponent(objectId)}/edit`;
@@ -48,7 +48,13 @@ const extractLockDetails = (error: ApiClientError): { lockedBy: string | null; l
 	};
 };
 
-const rethrowLocked = (error: unknown): never => {
+const rethrowEditConflict = (error: unknown): never => {
+	if (error instanceof ApiClientError && error.code === 'REVISION_CONFLICT') {
+		const details = error.details as { latest_revision?: unknown } | null;
+		throw new ObjectEditRevisionConflictError(
+			typeof details?.latest_revision === 'number' ? details.latest_revision : null,
+		);
+	}
 	if (error instanceof ApiClientError && error.status === 423) {
 		const { lockedBy, lockedUntil } = extractLockDetails(error);
 		throw new ObjectEditLockedError(lockedBy, lockedUntil);
@@ -70,7 +76,7 @@ export const apiObjectEditService: ObjectEditService = {
 		return mapObjectEditPayload(response);
 	},
 
-	saveObjectMetadata: async ({ context, objectId, metadata, rights }: SaveMetadataRequest) => {
+	saveObjectMetadata: async ({ context, objectId, revision, metadata, rights }: SaveMetadataRequest) => {
 		try {
 			const response = await backendRequest({
 				fetchFn: context.fetchFn,
@@ -79,6 +85,7 @@ export const apiObjectEditService: ObjectEditService = {
 				method: 'PATCH',
 				token: context.token,
 				body: {
+					revision,
 					metadata: {
 						title: metadata.title,
 						publication_date: metadata.publicationDate,
@@ -100,11 +107,11 @@ export const apiObjectEditService: ObjectEditService = {
 
 			return mapSaveMetadataResult(response);
 		} catch (e) {
-			return rethrowLocked(e);
+			return rethrowEditConflict(e);
 		}
 	},
 
-	saveDocumentCuration: async ({ context, objectId, pages }: SaveDocumentCurationRequest) => {
+	saveDocumentCuration: async ({ context, objectId, revision, pages }: SaveDocumentCurationRequest) => {
 		try {
 			const response = await backendRequest({
 				fetchFn: context.fetchFn,
@@ -113,6 +120,7 @@ export const apiObjectEditService: ObjectEditService = {
 				method: 'PUT',
 				token: context.token,
 				body: {
+					revision,
 					pages: pages.map((p) => ({
 						page_number: p.pageNumber,
 						curated_text: p.curatedText,
@@ -124,11 +132,11 @@ export const apiObjectEditService: ObjectEditService = {
 
 			return mapSaveDocumentCurationResult(response);
 		} catch (e) {
-			return rethrowLocked(e);
+			return rethrowEditConflict(e);
 		}
 	},
 
-	submitObjectCuration: async ({ context, objectId, reviewNote }: SubmitCurationRequest) => {
+	submitObjectCuration: async ({ context, objectId, revision, reviewNote }: SubmitCurationRequest) => {
 		try {
 			const response = await backendRequest({
 				fetchFn: context.fetchFn,
@@ -137,6 +145,7 @@ export const apiObjectEditService: ObjectEditService = {
 				method: 'POST',
 				token: context.token,
 				body: {
+					revision,
 					review_note: reviewNote,
 				},
 				requestSchema: submitCurationRequestSchema,
@@ -145,7 +154,7 @@ export const apiObjectEditService: ObjectEditService = {
 
 			return mapSubmitCurationResult(response);
 		} catch (e) {
-			return rethrowLocked(e);
+			return rethrowEditConflict(e);
 		}
 	},
 

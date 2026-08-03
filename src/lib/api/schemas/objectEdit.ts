@@ -32,6 +32,7 @@ const lockSchema = z.object({
 
 export const objectEditPayloadSchema = z.object({
 	object_id: z.string().min(1),
+	revision: z.number().int().min(0),
 	media_type: z.enum(['document', 'image', 'audio', 'video', 'other']),
 	lock: lockSchema,
 	curation_state: curationStateSchema,
@@ -66,12 +67,14 @@ export const objectEditPayloadSchema = z.object({
 
 export const saveMetadataResultSchema = z.object({
 	object_id: z.string(),
+	revision: z.number().int().min(0),
 	curation_state: curationStateSchema,
 	updated_at: z.string(),
 });
 
 export const saveMetadataRequestSchema = z
 	.object({
+		revision: z.number().int().min(0),
 		metadata: z
 			.object({
 				title: z.string(),
@@ -95,12 +98,14 @@ export const saveMetadataRequestSchema = z
 
 export const saveDocumentCurationResultSchema = z.object({
 	object_id: z.string(),
+	revision: z.number().int().min(0),
 	updated_count: z.number().int(),
 	updated_at: z.string(),
 });
 
 export const saveDocumentCurationRequestSchema = z
 	.object({
+		revision: z.number().int().min(0),
 		pages: z.array(
 			z
 				.object({
@@ -114,6 +119,7 @@ export const saveDocumentCurationRequestSchema = z
 
 export const submitCurationResultSchema = z.object({
 	object_id: z.string(),
+	revision: z.number().int().min(0),
 	curation_state: curationStateSchema,
 	request: z.object({
 		id: z.string(),
@@ -126,6 +132,7 @@ export const submitCurationResultSchema = z.object({
 
 export const submitCurationRequestSchema = z
 	.object({
+		revision: z.number().int().min(0),
 		review_note: z.string().nullable(),
 	})
 	.strict();

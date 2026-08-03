@@ -63,6 +63,7 @@ export type ObjectEditLock = {
 
 export type ObjectEditPayload = {
 	objectId: string;
+	revision: number;
 	mediaType: ObjectEditMediaType;
 	lock: ObjectEditLock;
 	curationState: CurationState;
@@ -75,18 +76,21 @@ export type ObjectEditPayload = {
 
 export type SaveMetadataResult = {
 	objectId: string;
+	revision: number;
 	curationState: CurationState;
 	updatedAt: string;
 };
 
 export type SaveDocumentCurationResult = {
 	objectId: string;
+	revision: number;
 	updatedCount: number;
 	updatedAt: string;
 };
 
 export type SubmitCurationResult = {
 	objectId: string;
+	revision: number;
 	curationState: CurationState;
 	submittedAt: string;
 	submittedBy: string;
@@ -107,6 +111,7 @@ export type ObjectEditRequest = {
 export type SaveMetadataRequest = {
 	context: ObjectsRequestContext;
 	objectId: string;
+	revision: number;
 	metadata: ObjectEditMetadata;
 	rights: Pick<ObjectEditRights, 'rightsNote' | 'sensitivityNote'>;
 };
@@ -114,12 +119,14 @@ export type SaveMetadataRequest = {
 export type SaveDocumentCurationRequest = {
 	context: ObjectsRequestContext;
 	objectId: string;
+	revision: number;
 	pages: Array<{ pageNumber: number; curatedText: string }>;
 };
 
 export type SubmitCurationRequest = {
 	context: ObjectsRequestContext;
 	objectId: string;
+	revision: number;
 	reviewNote: string | null;
 };
 
@@ -145,5 +152,15 @@ export class ObjectEditLockedError extends Error {
 		this.name = 'ObjectEditLockedError';
 		this.lockedBy = lockedBy;
 		this.lockedUntil = lockedUntil;
+	}
+}
+
+export class ObjectEditRevisionConflictError extends Error {
+	latestRevision: number | null;
+
+	constructor(latestRevision: number | null) {
+		super('Object edit revision is stale');
+		this.name = 'ObjectEditRevisionConflictError';
+		this.latestRevision = latestRevision;
 	}
 }

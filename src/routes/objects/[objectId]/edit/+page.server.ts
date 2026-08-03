@@ -3,7 +3,7 @@ import { error, fail, redirect, type Actions, type RequestEvent } from '@sveltej
 
 import { objectEditService } from '$lib/services';
 import type { ObjectEditMetadata, ObjectEditPayload } from '$lib/services/objectEdit';
-import { ObjectEditLockedError } from '$lib/services/objectEdit';
+import { ObjectEditLockedError, ObjectEditRevisionConflictError } from '$lib/services/objectEdit';
 import { AUTH_COOKIE_NAME, clearSessionCookie } from '$lib/server/auth';
 import { isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
 
@@ -40,32 +40,32 @@ const objectEditPagesSchema = z.array(
 	}),
 );
 
-const parseJsonFormField = (formData: FormData, name: string): unknown => {
+const parseOptionalJsonFormField = (formData: FormData, name: string): unknown | undefined => {
 	const value = formData.get(name);
-	if (typeof value !== 'string') throw new Error(`Missing ${name}`);
-	return JSON.parse(value);
-};
-
-const parseOptionalJsonFormField = (formData: FormData, name: string): unknown | null => {
-	const value = formData.get(name);
-	if (value === null) return null;
+	if (value === null) return undefined;
 	if (typeof value !== 'string') throw new Error(`Invalid ${name}`);
 	return JSON.parse(value);
 };
 
-const parseSaveDraftPayload = (
-	formData: FormData,
-): {
-	metadata: ObjectEditMetadata;
-	rights: { rightsNote: string | null; sensitivityNote: string | null };
+type SaveDraftPayload = {
+	revision: number;
+	metadata: ObjectEditMetadata | null;
+	rights: { rightsNote: string | null; sensitivityNote: string | null } | null;
 	pages: Array<{ pageNumber: number; curatedText: string }> | null;
-} | null => {
+};
+
+const parseSaveDraftPayload = (formData: FormData): SaveDraftPayload | null => {
 	try {
-		const metadata = objectEditMetadataSchema.parse(parseJsonFormField(formData, 'metadata'));
-		const rights = objectEditRightsSchema.parse(parseJsonFormField(formData, 'rights'));
+		const revision = z.coerce.number().int().min(0).parse(formData.get('revision'));
+		const rawMetadata = parseOptionalJsonFormField(formData, 'metadata');
+		const rawRights = parseOptionalJsonFormField(formData, 'rights');
+		if ((rawMetadata === undefined) !== (rawRights === undefined)) return null;
+		const metadata = rawMetadata === undefined ? null : objectEditMetadataSchema.parse(rawMetadata);
+		const rights = rawRights === undefined ? null : objectEditRightsSchema.parse(rawRights);
 		const rawPages = parseOptionalJsonFormField(formData, 'pages');
-		const pages = rawPages === null ? null : objectEditPagesSchema.parse(rawPages);
-		return { metadata, rights, pages };
+		const pages = rawPages === undefined ? null : objectEditPagesSchema.parse(rawPages);
+		if (!metadata && !pages?.length) return null;
+		return { revision, metadata, rights, pages };
 	} catch {
 		return null;
 	}
@@ -73,11 +73,39 @@ const parseSaveDraftPayload = (
 
 const canSaveDraft = (
 	editPayload: ObjectEditPayload,
-	pages: Array<{ pageNumber: number; curatedText: string }> | null,
+	payload: SaveDraftPayload,
 ): boolean => {
-	const hasPageChanges = Boolean(pages?.length);
+	const hasPageChanges = Boolean(payload.pages?.length);
 	if (hasPageChanges && !editPayload.capabilities.canCurateText) return false;
-	return editPayload.capabilities.canEditMetadata || (hasPageChanges && editPayload.capabilities.canCurateText);
+	if (payload.metadata && !editPayload.capabilities.canEditMetadata) return false;
+	return Boolean(payload.metadata || hasPageChanges);
+};
+
+const toRecovery = (
+	kind: 'conflict' | 'partial',
+	editPayload: ObjectEditPayload,
+	metadataSaved = false,
+): {
+	id: string;
+	kind: 'conflict' | 'partial';
+	savedDomains: Array<'metadata'>;
+	editPayload: ObjectEditPayload;
+} => ({
+	id: crypto.randomUUID(),
+	kind,
+	savedDomains: metadataSaved ? ['metadata'] : [],
+	editPayload,
+});
+
+const refreshEditPayload = async (
+	context: { fetchFn: typeof fetch; token: string },
+	objectId: string,
+): Promise<ObjectEditPayload | null> => {
+	try {
+		return await objectEditService.getObjectEditPayload({ context, objectId });
+	} catch {
+		return null;
+	}
 };
 
 export const load = async ({ params, locals, cookies, fetch }: RequestEvent) => {
@@ -141,51 +169,81 @@ export const actions: Actions = {
 
 		const context = { fetchFn: fetch, token };
 		let metadataSaved = false;
+		let revision: number;
 
 		try {
 			const editPayload = await objectEditService.getObjectEditPayload({ context, objectId });
-			if (!canSaveDraft(editPayload, payload.pages)) {
+			if (!canSaveDraft(editPayload, payload)) {
 				return fail(403, { error: 'You do not have permission to save this draft.' });
 			}
+			if (payload.revision !== editPayload.revision) {
+				return fail(409, {
+					error: 'This object changed while you were editing. Review the refreshed values before retrying.',
+					recovery: toRecovery('conflict', editPayload),
+				});
+			}
+			revision = payload.revision;
 
-			if (editPayload.capabilities.canEditMetadata) {
-				await objectEditService.saveObjectMetadata({
+			if (payload.metadata && payload.rights) {
+				const result = await objectEditService.saveObjectMetadata({
 					context,
 					objectId,
+					revision,
 					metadata: payload.metadata,
 					rights: payload.rights,
 				});
+				revision = result.revision;
 				metadataSaved = true;
 			}
 
 			if (payload.pages && payload.pages.length > 0) {
-				await objectEditService.saveDocumentCuration({
+				const result = await objectEditService.saveDocumentCuration({
 					context,
 					objectId,
+					revision,
 					pages: payload.pages,
 				});
+				revision = result.revision;
 			}
 
-			return { success: true };
+			return { success: true, revision };
 		} catch (cause) {
 			if (isUnauthorizedError(cause)) {
 				clearSessionCookie(cookies);
 				throw redirect(303, '/login');
 			}
 
-			if (cause instanceof ObjectEditLockedError) {
+			if (cause instanceof ObjectEditLockedError && !metadataSaved) {
 				return fail(423, { locked: true });
 			}
 
-			if (isApiClientError(cause)) {
-				if (metadataSaved && payload.pages?.length) {
-					return fail(cause.status || 502, {
-						error: cause.requestId
-							? `Metadata saved, but document curation failed (request: ${cause.requestId}).`
-							: 'Metadata saved, but document curation failed.',
+			const refreshed = metadataSaved ? await refreshEditPayload(context, objectId) : null;
+			if (cause instanceof ObjectEditRevisionConflictError) {
+				const editPayload = refreshed ?? (await refreshEditPayload(context, objectId));
+				if (editPayload) {
+					return fail(409, {
+						error: metadataSaved
+							? 'Metadata saved, but document curation needs review before retrying.'
+							: 'This object changed while you were editing. Review the refreshed values before retrying.',
+						recovery: toRecovery(metadataSaved ? 'partial' : 'conflict', editPayload, metadataSaved),
+					});
+				}
+			}
+
+			if (metadataSaved) {
+				if (refreshed) {
+					return fail(isApiClientError(cause) ? cause.status || 502 : 502, {
+						error: 'Metadata saved, but document curation failed. Review the refreshed values before retrying.',
+						recovery: toRecovery('partial', refreshed, true),
 					});
 				}
 
+				return fail(isApiClientError(cause) ? cause.status || 502 : 502, {
+					error: 'Metadata saved, but document curation failed. Refresh before retrying.',
+				});
+			}
+
+			if (isApiClientError(cause)) {
 				return fail(cause.status || 502, {
 					error: cause.requestId
 						? `Failed to save draft (request: ${cause.requestId}).`
@@ -210,6 +268,10 @@ export const actions: Actions = {
 
 		const formData = await request.formData();
 		const reviewNote = String(formData.get('reviewNote') ?? '').trim() || null;
+		const revision = z.coerce.number().int().min(0).safeParse(formData.get('revision'));
+		if (!revision.success) {
+			return fail(400, { error: 'Invalid form payload.' });
+		}
 		const context = { fetchFn: fetch, token };
 
 		try {
@@ -217,10 +279,17 @@ export const actions: Actions = {
 			if (!editPayload.capabilities.canSubmitReview) {
 				return fail(403, { error: 'You do not have permission to submit this object for review.' });
 			}
+			if (revision.data !== editPayload.revision) {
+				return fail(409, {
+					error: 'This object changed while you were editing. Review the refreshed values before submitting.',
+					recovery: toRecovery('conflict', editPayload),
+				});
+			}
 
 			const result = await objectEditService.submitObjectCuration({
 				context,
 				objectId,
+				revision: revision.data,
 				reviewNote,
 			});
 
@@ -238,6 +307,16 @@ export const actions: Actions = {
 
 			if (cause instanceof ObjectEditLockedError) {
 				return fail(423, { locked: true });
+			}
+
+			if (cause instanceof ObjectEditRevisionConflictError) {
+				const editPayload = await refreshEditPayload(context, objectId);
+				if (editPayload) {
+					return fail(409, {
+						error: 'This object changed while you were editing. Review the refreshed values before submitting.',
+						recovery: toRecovery('conflict', editPayload),
+					});
+				}
 			}
 
 			if (isApiClientError(cause)) {

@@ -3091,6 +3091,11 @@
                                                 >
                                                     {file.size}
                                                 </p>
+                                                {#if file.preview?.status === "purged"}
+                                                    <p class="mt-1 text-[10px] text-text-muted">
+                                                        {t("ingestionSetup.files.previewPurged")}
+                                                    </p>
+                                                {/if}
                                             </div>
                                             <StatusBadge
                                                 status={file.status}
@@ -3236,9 +3241,16 @@
                                             </span>
                                         {/if}
                                     </div>
-                                    <p class="truncate text-sm text-text-ink">
-                                        {file.name}
-                                    </p>
+                                    <div class="min-w-0 flex-1">
+                                        <p class="truncate text-sm text-text-ink">
+                                            {file.name}
+                                        </p>
+                                        {#if file.preview?.status === "purged"}
+                                            <p class="mt-1 text-[10px] text-text-muted">
+                                                {t("ingestionSetup.files.previewPurged")}
+                                            </p>
+                                        {/if}
+                                    </div>
                                     <span
                                         class="text-right font-mono text-xs text-text-muted"
                                         >{file.size}</span
@@ -3854,6 +3866,9 @@
                             filesById.get(id)?.mediaType === "image" &&
                             previewUrls[id],
                     )}
+                    {@const hasPurgedPreview = group.fileIds.some(
+                        (id) => filesById.get(id)?.preview?.status === "purged",
+                    )}
                     <div
                         class={`rounded-2xl border bg-surface-white ${isItemMetadataComplete(key) ? "border-border-soft" : "border-burnt-peach/35"}`}
                     >
@@ -3889,12 +3904,17 @@
                                     </span>
                                 {/if}
                             </div>
-                            <span
-                                class="min-w-0 flex-1 truncate text-sm font-medium text-text-ink"
-                            >
-                                {group.label ||
-                                    `Object ${group.id.slice(0, 6)}`}
-                            </span>
+                            <div class="min-w-0 flex-1">
+                                <p class="truncate text-sm font-medium text-text-ink">
+                                    {group.label ||
+                                        `Object ${group.id.slice(0, 6)}`}
+                                </p>
+                                {#if hasPurgedPreview}
+                                    <p class="mt-1 text-[10px] text-text-muted">
+                                        {t("ingestionSetup.files.previewPurged")}
+                                    </p>
+                                {/if}
+                            </div>
                             <span
                                 class="shrink-0 rounded-full border border-border-soft px-2 py-0.5 text-[10px] text-text-muted"
                             >
@@ -3992,10 +4012,16 @@
                                     </span>
                                 {/if}
                             </div>
-                            <span
-                                class="min-w-0 flex-1 truncate text-sm font-medium text-text-ink"
-                                >{file.name}</span
-                            >
+                            <div class="min-w-0 flex-1">
+                                <p class="truncate text-sm font-medium text-text-ink">
+                                    {file.name}
+                                </p>
+                                {#if file.preview?.status === "purged"}
+                                    <p class="mt-1 text-[10px] text-text-muted">
+                                        {t("ingestionSetup.files.previewPurged")}
+                                    </p>
+                                {/if}
+                            </div>
                             <span class="shrink-0 text-xs text-text-muted"
                                 >{file.size}</span
                             >

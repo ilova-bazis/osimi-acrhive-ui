@@ -68,6 +68,49 @@ describe('apiIngestionDetailService', () => {
 		expect(detail.itemKind).toBe('scanned_document');
 	});
 
+	it('preserves a retention-purged preview when mapping detail files', async () => {
+		backendRequestMock
+			.mockResolvedValueOnce({
+				ingestion: {
+					ingestion_id: 'ing-3',
+					batch_label: 'Batch 3',
+					status: 'COMPLETED',
+					created_at: '2026-01-01T00:00:00.000Z',
+					updated_at: '2026-01-02T00:00:00.000Z'
+				},
+				files: [
+					{
+						id: 'file-1',
+						filename: 'page-1.jpg',
+						status: 'UPLOADED',
+						content_type: 'image/jpeg',
+						preview: {
+							status: 'purged',
+							content_type: null,
+							width: null,
+							height: null,
+							url: null
+						}
+					}
+				]
+			})
+			.mockResolvedValueOnce({ items: [] });
+
+		const detail = await apiIngestionDetailService.getDetail({
+			fetchFn: vi.fn() as never,
+			token: 'token-1',
+			batchId: 'ing-3'
+		});
+
+		expect(detail.files[0]?.preview).toEqual({
+			status: 'purged',
+			contentType: null,
+			width: null,
+			height: null,
+			url: null
+		});
+	});
+
 	it('preserves persisted item summaries when mapping detail items', async () => {
 		const summary = {
 			classification: { tags: ['archive'], summary: 'Item summary' },

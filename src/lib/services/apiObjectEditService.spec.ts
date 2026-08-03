@@ -41,7 +41,7 @@ import {
 	saveMetadataRequestSchema,
 	submitCurationRequestSchema,
 } from '$lib/api/schemas/objectEdit';
-import { ObjectEditLockedError } from './objectEdit';
+import { ObjectEditLockedError, ObjectEditRevisionConflictError } from './objectEdit';
 import { apiObjectEditService } from './apiObjectEditService';
 
 const context = { fetchFn: vi.fn() as never, token: 'token-1' };
@@ -54,6 +54,7 @@ describe('apiObjectEditService', () => {
 	it('maps metadata save requests to backend transport shape', async () => {
 		backendRequestMock.mockResolvedValue({
 			object_id: 'OBJ-1',
+			revision: 5,
 			curation_state: 'review_in_progress',
 			updated_at: '2026-05-23T18:00:00.000Z',
 		});
@@ -61,6 +62,7 @@ describe('apiObjectEditService', () => {
 		await apiObjectEditService.saveObjectMetadata({
 			context,
 			objectId: 'OBJ-1',
+			revision: 4,
 			metadata: {
 				title: 'Object title',
 				publicationDate: '2026-05-23',
@@ -75,11 +77,12 @@ describe('apiObjectEditService', () => {
 		});
 
 		expect(backendRequestMock).toHaveBeenCalledWith(
-				expect.objectContaining({
-					path: '/api/objects/OBJ-1/metadata',
-					method: 'PATCH',
-					requestSchema: saveMetadataRequestSchema,
-					body: {
+			expect.objectContaining({
+				path: '/api/objects/OBJ-1/metadata',
+				method: 'PATCH',
+				requestSchema: saveMetadataRequestSchema,
+				body: {
+					revision: 4,
 					metadata: {
 						title: 'Object title',
 						publication_date: '2026-05-23',
@@ -102,6 +105,7 @@ describe('apiObjectEditService', () => {
 	it('maps document curation requests to backend transport shape', async () => {
 		backendRequestMock.mockResolvedValue({
 			object_id: 'OBJ-1',
+			revision: 5,
 			updated_count: 1,
 			updated_at: '2026-05-23T18:00:00.000Z',
 		});
@@ -109,6 +113,7 @@ describe('apiObjectEditService', () => {
 		await apiObjectEditService.saveDocumentCuration({
 			context,
 			objectId: 'OBJ-1',
+			revision: 4,
 			pages: [{ pageNumber: 2, curatedText: 'Edited text' }],
 		});
 
@@ -117,7 +122,7 @@ describe('apiObjectEditService', () => {
 					path: '/api/objects/OBJ-1/curation/document',
 					method: 'PUT',
 					requestSchema: saveDocumentCurationRequestSchema,
-					body: { pages: [{ page_number: 2, curated_text: 'Edited text' }] },
+					body: { revision: 4, pages: [{ page_number: 2, curated_text: 'Edited text' }] },
 			}),
 		);
 	});
@@ -125,6 +130,7 @@ describe('apiObjectEditService', () => {
 	it('maps submit requests to backend transport shape', async () => {
 		backendRequestMock.mockResolvedValue({
 			object_id: 'OBJ-1',
+			revision: 5,
 			curation_state: 'review_in_progress',
 			request: { id: 'req-1', action_type: 'CURATION_REVIEW', status: 'PENDING' },
 			submitted_at: '2026-05-23T18:00:00.000Z',
@@ -134,6 +140,7 @@ describe('apiObjectEditService', () => {
 		await apiObjectEditService.submitObjectCuration({
 			context,
 			objectId: 'OBJ-1',
+			revision: 4,
 			reviewNote: 'Ready',
 		});
 
@@ -142,7 +149,7 @@ describe('apiObjectEditService', () => {
 					path: '/api/objects/OBJ-1/curation/submit',
 					method: 'POST',
 					requestSchema: submitCurationRequestSchema,
-					body: { review_note: 'Ready' },
+					body: { revision: 4, review_note: 'Ready' },
 			}),
 		);
 	});
@@ -158,14 +165,34 @@ describe('apiObjectEditService', () => {
 		);
 
 		await expect(
-			apiObjectEditService.submitObjectCuration({ context, objectId: 'OBJ-1', reviewNote: null }),
+			apiObjectEditService.submitObjectCuration({ context, objectId: 'OBJ-1', revision: 4, reviewNote: null }),
 		).rejects.toMatchObject({
 			name: 'ObjectEditLockedError',
 			lockedBy: 'u2',
 			lockedUntil: '2026-05-23T19:00:00.000Z',
 		});
 		await expect(
-			apiObjectEditService.submitObjectCuration({ context, objectId: 'OBJ-1', reviewNote: null }),
+			apiObjectEditService.submitObjectCuration({ context, objectId: 'OBJ-1', revision: 4, reviewNote: null }),
 		).rejects.toBeInstanceOf(ObjectEditLockedError);
+	});
+
+	it('converts revision conflicts into ObjectEditRevisionConflictError', async () => {
+		backendRequestMock.mockRejectedValue(
+			new ApiClientError({
+				status: 409,
+				code: 'REVISION_CONFLICT',
+				message: 'Stale revision',
+				details: { latest_revision: 5 },
+			}),
+		);
+
+		await expect(
+			apiObjectEditService.saveDocumentCuration({
+				context,
+				objectId: 'OBJ-1',
+				revision: 4,
+				pages: [{ pageNumber: 1, curatedText: 'Edited text' }],
+			}),
+		).rejects.toEqual(new ObjectEditRevisionConflictError(5));
 	});
 });

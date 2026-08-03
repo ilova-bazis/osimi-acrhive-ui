@@ -16,6 +16,34 @@ vi.mock('$lib/services', () => ({
 
 import { load } from './+page.server';
 
+const capabilities = {
+	mediaKinds: ['image', 'audio', 'video', 'document'],
+	extensionsByKind: { image: ['jpg'], audio: ['mp3'], video: ['mp4'], document: ['pdf'] },
+	mimeByKind: { image: ['image/jpeg'], audio: ['audio/mpeg'], video: ['video/mp4'], document: ['application/pdf'] },
+	mimeAliases: {}
+};
+
+const createDetail = (status: string) => ({
+	id: 'batch-3',
+	batchLabel: 'Batch 3',
+	status,
+	classificationType: 'image',
+	itemKind: 'photo',
+	languageCode: 'en',
+	pipelinePreset: 'auto',
+	accessLevel: 'private',
+	embargoUntil: null,
+	rightsNote: null,
+	sensitivityNote: null,
+	summary: {},
+	createdAt: '2026-01-01T00:00:00.000Z',
+	updatedAt: '2026-01-02T00:00:00.000Z',
+	processedObjects: 1,
+	totalObjects: 1,
+	files: [],
+	items: []
+});
+
 describe('/ingestion/[batchId]/setup +page.server', () => {
 	beforeEach(() => {
 		getCapabilitiesMock.mockReset();
@@ -113,6 +141,38 @@ describe('/ingestion/[batchId]/setup +page.server', () => {
 		expect(pageData.metadata.classificationType).toBe('magazine_article');
 		expect(pageData.metadata.itemKind).toBeUndefined();
 	});
+
+
+	it('allows uploading ingestions into setup', async () => {
+		getCapabilitiesMock.mockResolvedValue(capabilities);
+		getDetailMock.mockResolvedValue(createDetail('uploading'));
+
+		const result = await load({
+			params: { batchId: 'batch-3' },
+			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
+			cookies: { get: () => 'token-1', delete: vi.fn() },
+			fetch: vi.fn()
+		} as never);
+
+		expect(result).toMatchObject({ batchId: 'batch-3' });
+	});
+
+	it.each(['queued', 'ingesting', 'completed', 'failed', 'canceled'])(
+		'redirects %s ingestions to detail instead of editable setup',
+		async (status) => {
+			getDetailMock.mockResolvedValue(createDetail(status));
+
+			await expect(
+				load({
+					params: { batchId: 'batch-3' },
+					locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
+					cookies: { get: () => 'token-1', delete: vi.fn() },
+					fetch: vi.fn()
+				} as never)
+			).rejects.toMatchObject({ status: 303, location: '/ingestion/batch-3' });
+			expect(getCapabilitiesMock).not.toHaveBeenCalled();
+		}
+	);
 
 	it('fails the load when ingestion detail cannot be loaded', async () => {
 		getCapabilitiesMock.mockResolvedValue({

@@ -1,7 +1,8 @@
 import { page } from 'vitest/browser';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import type { IngestionCapabilities } from '$lib/services/ingestionCapabilities';
+import type { IngestionDetailFile } from '$lib/services/ingestionDetail';
 
 const { beforeNavigateMock, gotoMock } = vi.hoisted(() => ({
 	beforeNavigateMock: vi.fn(),
@@ -69,7 +70,7 @@ const pageData = () => ({
 			contentType: 'image/jpeg',
 			sizeBytes: 100,
 			createdAt: null,
-			preview: null
+			preview: null as IngestionDetailFile['preview']
 		},
 		{
 			id: 'file-2',
@@ -78,7 +79,7 @@ const pageData = () => ({
 			contentType: 'image/jpeg',
 			sizeBytes: 100,
 			createdAt: null,
-			preview: null
+			preview: null as IngestionDetailFile['preview']
 		}
 	],
 	items: [
@@ -123,6 +124,10 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 		beforeNavigateMock.mockReset();
 		gotoMock.mockReset();
 		gotoMock.mockResolvedValue(undefined);
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
 	});
 
 	it('blocks Continue and surfaces an HTTP mutation failure', async () => {
@@ -199,6 +204,33 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 			.toBeInTheDocument();
 		await expect.element(page.getByText('Network unavailable.')).toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
+	});
+
+	it('shows purged grouped previews as unavailable without polling', async () => {
+		vi.useFakeTimers();
+		const fetchMock = vi.fn();
+		vi.stubGlobal('fetch', fetchMock);
+		const purgedData = pageData();
+		purgedData.existingFiles[0] = {
+			...purgedData.existingFiles[0]!,
+			preview: {
+				status: 'purged',
+				contentType: null,
+				width: null,
+				height: null,
+				url: null
+			}
+		};
+
+		render(SetupPage, { data: purgedData });
+
+		await page.getByRole('button', { name: 'Continue' }).click();
+		await expect.element(page.getByText('Per-Object Metadata')).toBeInTheDocument();
+		await expect
+			.element(page.getByText('Preview unavailable: retention period expired'))
+			.toBeInTheDocument();
+		await vi.advanceTimersByTimeAsync(2_001);
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it('retries only unfinished standalone item work after metadata save failure', async () => {

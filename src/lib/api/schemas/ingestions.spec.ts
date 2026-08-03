@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ingestionDtoSchema, ingestionsListResponseSchema } from './ingestions';
+import { ingestionDetailResponseSchema, ingestionDtoSchema, ingestionsListResponseSchema } from './ingestions';
 
 describe('ingestionDtoSchema', () => {
 	it('accepts legacy and canonical identifier aliases', () => {
@@ -25,6 +25,43 @@ describe('ingestionsListResponseSchema', () => {
 		const parsed = ingestionsListResponseSchema.safeParse({
 			ingestions: [{ status: 'DRAFT' }],
 			next_cursor: null
+		});
+
+		expect(parsed.success).toBe(false);
+	});
+});
+
+describe('ingestionDetailResponseSchema', () => {
+	it('accepts retention-purged previews', () => {
+		const parsed = ingestionDetailResponseSchema.safeParse({
+			ingestion: { id: 'ing-1' },
+			files: [
+				{
+					id: 'file-1',
+					filename: 'page-1.jpg',
+					preview: {
+						status: 'purged',
+						content_type: null,
+						size_bytes: null,
+						width: null,
+						height: null,
+						url: null,
+						error: null
+					}
+				}
+			]
+		});
+
+		expect(parsed.success).toBe(true);
+		if (parsed.success) {
+			expect(parsed.data.files?.[0]?.preview?.status).toBe('purged');
+		}
+	});
+
+	it('rejects unknown preview statuses', () => {
+		const parsed = ingestionDetailResponseSchema.safeParse({
+			ingestion: { id: 'ing-1' },
+			files: [{ id: 'file-1', preview: { status: 'deleted' } }]
 		});
 
 		expect(parsed.success).toBe(false);

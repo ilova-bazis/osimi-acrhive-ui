@@ -13,6 +13,12 @@
 			locked?: boolean;
 			error?: string;
 			curationState?: string;
+			recovery?: {
+				id: string;
+				kind: 'conflict' | 'partial';
+				savedDomains: Array<'metadata'>;
+				editPayload: ObjectEditPayload;
+			};
 		} | null;
 	}>();
 
@@ -28,8 +34,22 @@
 				}))
 			: [];
 
-	const toSnapshot = (editPayload: ObjectEditPayload): string =>
-		JSON.stringify({
+	type EditableSnapshot = {
+		title: string;
+		publicationDate: string;
+		datePrecision: 'none' | 'year' | 'month' | 'day';
+		dateApproximate: boolean;
+		language: string;
+		description: string;
+		tags: string[];
+		people: string[];
+		rightsNote: string;
+		sensitivityNote: string;
+		pages: Array<{ pageNumber: number; curatedText: string }>;
+	};
+
+	const toEditableSnapshot = (editPayload: ObjectEditPayload): EditableSnapshot =>
+		({
 			title: editPayload.metadata.title,
 			publicationDate: editPayload.metadata.publicationDate,
 			datePrecision: editPayload.metadata.datePrecision,
@@ -46,8 +66,10 @@
 			})),
 		});
 
+	const toSnapshot = (editPayload: ObjectEditPayload): string => JSON.stringify(toEditableSnapshot(editPayload));
+
 	const payloadResetKey = $derived(
-		`${payload.objectId}:${payload.draft?.updatedAt ?? 'none'}:${payload.curationState}`
+		`${payload.objectId}:${payload.revision}:${payload.draft?.updatedAt ?? 'none'}:${payload.curationState}`
 	);
 
 	// Editable metadata state
@@ -92,9 +114,44 @@
 	// Dirty tracking
 	let initialSnapshot = $state('');
 	let activePayloadResetKey = $state<string | null>(null);
+	let activeRecoveryId = $state<string | null>(null);
+	const currentSnapshot = (): EditableSnapshot => ({
+		title,
+		publicationDate,
+		datePrecision,
+		dateApproximate,
+		language,
+		description,
+		tags,
+		people,
+		rightsNote,
+		sensitivityNote,
+		pages: pages.map((page) => ({ pageNumber: page.pageNumber, curatedText: page.curatedText })),
+	});
+	const initialEditableSnapshot = (): EditableSnapshot | null => {
+		try {
+			return initialSnapshot ? (JSON.parse(initialSnapshot) as EditableSnapshot) : null;
+		} catch {
+			return null;
+		}
+	};
 	const isDirty = $derived(
-		JSON.stringify({ title, publicationDate, datePrecision, dateApproximate, language, description, tags, people, rightsNote, sensitivityNote, pages: pages.map((p) => ({ pageNumber: p.pageNumber, curatedText: p.curatedText })) }) !== initialSnapshot
+		JSON.stringify(currentSnapshot()) !== initialSnapshot
 	);
+	const metadataChanged = $derived.by(() => {
+		const initial = initialEditableSnapshot();
+		if (!initial) return false;
+		const current = currentSnapshot();
+		return JSON.stringify({ ...current, pages: undefined }) !== JSON.stringify({ ...initial, pages: undefined });
+	});
+	const changedPages = $derived.by(() => {
+		const initial = initialEditableSnapshot();
+		if (!initial) return [];
+		const initialPages = new Map(initial.pages.map((page) => [page.pageNumber, page.curatedText]));
+		return pages
+			.filter((page) => initialPages.get(page.pageNumber) !== page.curatedText)
+			.map((page) => ({ pageNumber: page.pageNumber, curatedText: page.curatedText }));
+	});
 
 	// UI state
 	let detailsPaneOpen = $state(true);
@@ -127,6 +184,42 @@
 		resetEditState(payload, payloadResetKey);
 	});
 
+	const applyRecovery = (editPayload: ObjectEditPayload, preserveMetadata: boolean): void => {
+		const initial = initialEditableSnapshot();
+		const current = currentSnapshot();
+		resetEditState(editPayload, payloadResetKey);
+		if (!initial) return;
+
+		if (preserveMetadata) {
+			if (current.title !== initial.title) title = current.title;
+			if (current.publicationDate !== initial.publicationDate) publicationDate = current.publicationDate;
+			if (current.datePrecision !== initial.datePrecision) datePrecision = current.datePrecision;
+			if (current.dateApproximate !== initial.dateApproximate) dateApproximate = current.dateApproximate;
+			if (current.language !== initial.language) language = current.language;
+			if (current.description !== initial.description) description = current.description;
+			if (JSON.stringify(current.tags) !== JSON.stringify(initial.tags)) tags = current.tags;
+			if (JSON.stringify(current.people) !== JSON.stringify(initial.people)) people = current.people;
+			if (current.rightsNote !== initial.rightsNote) rightsNote = current.rightsNote;
+			if (current.sensitivityNote !== initial.sensitivityNote) sensitivityNote = current.sensitivityNote;
+		}
+
+		const initialPages = new Map(initial.pages.map((page) => [page.pageNumber, page.curatedText]));
+		const localPages = new Map(current.pages.map((page) => [page.pageNumber, page.curatedText]));
+		pages = pages.map((page) =>
+			initialPages.get(page.pageNumber) !== localPages.get(page.pageNumber) &&
+			page.curatedText !== localPages.get(page.pageNumber)
+				? { ...page, curatedText: localPages.get(page.pageNumber) ?? page.curatedText }
+				: page,
+		);
+	};
+
+	$effect(() => {
+		const recovery = form?.recovery;
+		if (!recovery || recovery.id === activeRecoveryId) return;
+		applyRecovery(recovery.editPayload, !recovery.savedDomains.includes('metadata'));
+		activeRecoveryId = recovery.id;
+	});
+
 	// Form payload builders
 	const buildMetadata = (): ObjectEditMetadata => ({
 		title,
@@ -142,9 +235,6 @@
 		rightsNote: rightsNote.trim() || null,
 		sensitivityNote: sensitivityNote.trim() || null,
 	});
-	const buildPages = () =>
-		pages.map((p) => ({ pageNumber: p.pageNumber, curatedText: p.curatedText }));
-
 	// Inject hidden inputs before submit
 	const prepareSaveDraft = (formEl: HTMLFormElement): void => {
 		const set = (name: string, value: string) => {
@@ -157,10 +247,19 @@
 			}
 			el.value = value;
 		};
-		set('metadata', JSON.stringify(buildMetadata()));
-		set('rights', JSON.stringify(buildRights()));
-		if (payload.capabilities.canCurateText && payload.curation.kind === 'document') {
-			set('pages', JSON.stringify(buildPages()));
+		const remove = (name: string) => formEl.querySelector(`input[name="${name}"]`)?.remove();
+		set('revision', String(payload.revision));
+		if (metadataChanged) {
+			set('metadata', JSON.stringify(buildMetadata()));
+			set('rights', JSON.stringify(buildRights()));
+		} else {
+			remove('metadata');
+			remove('rights');
+		}
+		if (changedPages.length > 0) {
+			set('pages', JSON.stringify(changedPages));
+		} else {
+			remove('pages');
 		}
 	};
 
@@ -224,6 +323,11 @@
 				{form.error}
 			</span>
 		{/if}
+		{#if form?.recovery}
+			<span class="shrink-0 rounded-full bg-pearl-beige/65 px-3 py-1.5 text-[10px] text-burnt-peach">
+				{form.recovery.kind === 'partial' ? 'Partial save recovered. Review and retry remaining changes.' : 'Server changes loaded. Review your rebased edits before retrying.'}
+			</span>
+		{/if}
 
 		{#if payload.capabilities.canEditMetadata || payload.capabilities.canCurateText}
 			<div class="ml-1 flex shrink-0 items-center gap-2">
@@ -234,8 +338,8 @@
 					use:enhance={({ formElement }) => {
 						prepareSaveDraft(formElement);
 						saving = true;
-						return async ({ update }) => {
-							await update({ reset: false });
+						return async ({ update, result }) => {
+							await update({ reset: false, invalidateAll: result.type === 'success' });
 							saving = false;
 						};
 					}}
@@ -256,13 +360,14 @@
 						action="?/submitCuration"
 						use:enhance={() => {
 							submitting = true;
-							return async ({ update }) => {
-								await update({ reset: false });
+						return async ({ update, result }) => {
+							await update({ reset: false, invalidateAll: result.type === 'success' });
 								submitting = false;
 							};
 						}}
 					>
 						<input type="hidden" name="reviewNote" value="" />
+						<input type="hidden" name="revision" value={payload.revision} />
 						<button
 							type="submit"
 							disabled={submitting || isDirty}

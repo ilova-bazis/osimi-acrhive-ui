@@ -31,6 +31,7 @@ describe('objectEditMapper', () => {
 		expect(
 			mapObjectEditPayload({
 				object_id: 'OBJ-1',
+				revision: 4,
 				media_type: 'document',
 				lock: { locked: true, locked_by: 'u1', locked_until: '2026-05-23T19:00:00.000Z' },
 				curation_state: 'review_in_progress',
@@ -72,6 +73,7 @@ describe('objectEditMapper', () => {
 			}),
 		).toMatchObject({
 			objectId: 'OBJ-1',
+			revision: 4,
 			mediaType: 'document',
 			lock: { locked: true, lockedBy: 'u1' },
 			curationState: 'review_in_progress',
@@ -87,11 +89,13 @@ describe('objectEditMapper', () => {
 		expect(
 			mapSaveMetadataResult({
 				object_id: 'OBJ-1',
+				revision: 5,
 				curation_state: 'review_in_progress',
 				updated_at: '2026-05-23T18:00:00.000Z',
 			}),
 		).toEqual({
 			objectId: 'OBJ-1',
+			revision: 5,
 			curationState: 'review_in_progress',
 			updatedAt: '2026-05-23T18:00:00.000Z',
 		});
@@ -99,11 +103,13 @@ describe('objectEditMapper', () => {
 		expect(
 			mapSaveDocumentCurationResult({
 				object_id: 'OBJ-1',
+				revision: 6,
 				updated_count: 2,
 				updated_at: '2026-05-23T18:01:00.000Z',
 			}),
 		).toEqual({
 			objectId: 'OBJ-1',
+			revision: 6,
 			updatedCount: 2,
 			updatedAt: '2026-05-23T18:01:00.000Z',
 		});
@@ -111,6 +117,7 @@ describe('objectEditMapper', () => {
 		expect(
 			mapSubmitCurationResult({
 				object_id: 'OBJ-1',
+				revision: 7,
 				curation_state: 'review_in_progress',
 				request: { id: 'req-1', action_type: 'CURATION_REVIEW', status: 'PENDING' },
 				submitted_at: '2026-05-23T18:02:00.000Z',
@@ -118,6 +125,7 @@ describe('objectEditMapper', () => {
 			}),
 		).toEqual({
 			objectId: 'OBJ-1',
+			revision: 7,
 			curationState: 'review_in_progress',
 			submittedAt: '2026-05-23T18:02:00.000Z',
 			submittedBy: 'u1',

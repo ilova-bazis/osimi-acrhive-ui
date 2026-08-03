@@ -290,7 +290,7 @@ export const ingestionFileDtoSchema = z.object({
 	created_at: z.string().min(1).nullable().optional(),
 	preview: z
 		.object({
-			status: z.enum(['pending', 'ready', 'failed', 'unsupported']),
+			status: z.enum(['pending', 'ready', 'failed', 'unsupported', 'purged']),
 			content_type: z.string().nullable().optional(),
 			size_bytes: z.number().nullable().optional(),
 			width: z.number().nullable().optional(),

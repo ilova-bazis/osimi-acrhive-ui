@@ -88,6 +88,36 @@ describe('backendRequest', () => {
 		});
 	});
 
+	it('maps backend revision conflicts without collapsing them into unknown errors', async () => {
+		const fetchFn = vi.fn().mockResolvedValue(
+			jsonResponse(
+				{
+					request_id: 'req-conflict',
+					error: {
+						code: 'REVISION_CONFLICT',
+						message: 'Object metadata revision is stale.',
+						details: { latest_revision: 5 }
+					}
+				},
+				409
+			)
+		);
+
+		await expect(
+			backendRequest({
+				fetchFn,
+				path: '/api/test',
+				context: 'test.revisionConflict',
+				responseSchema: z.object({ ok: z.boolean() })
+			})
+		).rejects.toMatchObject({
+			code: 'REVISION_CONFLICT',
+			status: 409,
+			requestId: 'req-conflict',
+			details: { latest_revision: 5 }
+		});
+	});
+
 	it('preserves alternate backend error messages and request ids', async () => {
 		const fetchFn = vi.fn().mockResolvedValue(
 			jsonResponse({ request_id: 'req-2', message: 'Alternate error shape' }, 500)

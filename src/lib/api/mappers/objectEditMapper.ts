@@ -40,6 +40,7 @@ const mapObjectEditCurationPayload = (
 
 export const mapObjectEditPayload = (raw: ObjectEditPayloadDto): ObjectEditPayload => ({
 	objectId: raw.object_id,
+	revision: raw.revision,
 	mediaType: raw.media_type,
 	lock: {
 		locked: raw.lock.locked,
@@ -75,6 +76,7 @@ export const mapObjectEditPayload = (raw: ObjectEditPayloadDto): ObjectEditPaylo
 
 export const mapSaveMetadataResult = (raw: SaveMetadataResultDto): SaveMetadataResult => ({
 	objectId: raw.object_id,
+	revision: raw.revision,
 	curationState: raw.curation_state,
 	updatedAt: raw.updated_at,
 });
@@ -83,12 +85,14 @@ export const mapSaveDocumentCurationResult = (
 	raw: SaveDocumentCurationResultDto,
 ): SaveDocumentCurationResult => ({
 	objectId: raw.object_id,
+	revision: raw.revision,
 	updatedCount: raw.updated_count,
 	updatedAt: raw.updated_at,
 });
 
 export const mapSubmitCurationResult = (raw: SubmitCurationResultDto): SubmitCurationResult => ({
 	objectId: raw.object_id,
+	revision: raw.revision,
 	curationState: raw.curation_state,
 	submittedAt: raw.submitted_at,
 	submittedBy: raw.submitted_by,
