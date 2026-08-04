@@ -23,6 +23,7 @@ import type {
 	ObjectDetailResponse,
 	ObjectDownloadRequest,
 	ObjectIndicators,
+	ObjectBase,
 	ObjectRow,
 	ObjectViewer,
 	ObjectViewerActiveRequest,
@@ -34,15 +35,12 @@ import type {
 	CreateObjectResyncResult
 } from '$lib/services/objects';
 
-const toBooleanFlag = (value: 0 | 1 | undefined): boolean => value === 1;
-
 const toIndicators = (item: ObjectListItemDto): ObjectIndicators => ({
-	accessPdf: toBooleanFlag(item.has_access_pdf),
-	ocr: toBooleanFlag(item.has_ocr),
-	index: toBooleanFlag(item.has_index)
+	accessPdf: item.has_access_pdf,
+	ocr: item.has_ocr
 });
 
-const toObjectRow = (item: ObjectListItemDto): ObjectRow => ({
+const toObjectBase = (item: ObjectListItemDto | ObjectDetailItemDto): ObjectBase => ({
 	id: item.id,
 	objectId: item.object_id,
 	thumbnailArtifactId: item.thumbnail_artifact_id,
@@ -66,12 +64,16 @@ const toObjectRow = (item: ObjectListItemDto): ObjectRow => ({
 	rightsNote: item.rights_note,
 	sensitivityNote: item.sensitivity_note,
 	canDownload: item.can_download,
-	accessReasonCode: item.access_reason_code,
+	accessReasonCode: item.access_reason_code
+});
+
+const toObjectRow = (item: ObjectListItemDto): ObjectRow => ({
+	...toObjectBase(item),
 	indicators: toIndicators(item)
 });
 
 const toObjectDetail = (item: ObjectDetailItemDto): ObjectDetail => ({
-	...toObjectRow(item),
+	...toObjectBase(item),
 	ingestManifest: item.ingest_manifest ?? null,
 	isAuthorized: item.is_authorized ?? false,
 	isDeliverable: item.is_deliverable ?? false

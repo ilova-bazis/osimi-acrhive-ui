@@ -16,7 +16,8 @@ import {
 	updateItemRequestSchema,
 	updateItemResponseSchema
 } from '$lib/api/schemas/ingestions';
-import { env } from '$env/dynamic/private';
+import { env as privateEnv } from '$env/dynamic/private';
+import { env as publicEnv } from '$env/dynamic/public';
 import { ApiClientError, backendRequest } from '$lib/server/apiClient';
 import type {
 	AttachFileToItemRequest,
@@ -45,9 +46,10 @@ const toItemFilesPath = (batchId: string, itemId: string): string =>
 const toItemFilesOrderPath = (batchId: string, itemId: string): string =>
 	`/api/ingestions/${encodeURIComponent(batchId)}/items/${encodeURIComponent(itemId)}/files/order`;
 
-const getApiBase = (): string => env.PRIVATE_API_BASE || env.PUBLIC_API_BASE || 'http://localhost:3000';
+const getBrowserUploadBase = (): string =>
+	publicEnv.PUBLIC_API_BASE || privateEnv.PRIVATE_API_BASE || 'http://localhost:3000';
 
-const toAbsoluteUploadUrl = (value: string): string => new URL(value, getApiBase()).toString();
+const toAbsoluteUploadUrl = (value: string): string => new URL(value, getBrowserUploadBase()).toString();
 
 const getHeaderValue = (
 	headers: Record<string, string | number> | undefined,

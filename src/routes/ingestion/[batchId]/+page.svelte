@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import type { IngestionDetail } from '$lib/services/ingestionDetail';
+	import { actionsFromCapabilities, type IngestionAction } from '$lib/services/ingestionOverview';
 	import type { DashboardActivity } from '$lib/services/dashboard';
 	import { locale } from '$lib/i18n/locale';
 	import { translations } from '$lib/i18n/translations';
@@ -17,18 +18,11 @@
   	const dictionary = $derived(translations[$locale]);
 	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
 
-	type DetailAction = 'resume' | 'retry' | 'cancel' | 'restore' | 'delete';
+	type DetailAction = Exclude<IngestionAction, 'view'>;
 
 	const actionLabel = (action: DetailAction): string => t(`ingestionDetail.actions.${action}`);
 
-	const detailActions: DetailAction[] = (() => {
-		if (detail.status === 'draft') return ['resume', 'delete'];
-		if (detail.status === 'uploading') return ['resume', 'cancel', 'delete'];
-		if (detail.status === 'queued') return ['cancel'];
-		if (detail.status === 'failed') return ['retry', 'cancel'];
-		if (detail.status === 'canceled') return ['restore', 'delete'];
-		return [];
-	})();
+	const detailActions = $derived(actionsFromCapabilities(detail.actionCapabilities));
 
 	const actionEndpoint = (action: DetailAction): string => {
 		if (action === 'retry') return resolve(`/ingestion/${detail.id}/retry`);
@@ -125,6 +119,7 @@
 
 	const toTone = (status: IngestionDetail['status']): FileStatus => {
 		if (status === 'completed') return 'approved';
+		if (status === 'completed_with_errors') return 'needs-review';
 		if (status === 'failed') return 'failed';
 		if (status === 'ingesting') return 'processing';
 		return 'queued';

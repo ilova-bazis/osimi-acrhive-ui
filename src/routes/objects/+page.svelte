@@ -20,7 +20,7 @@
 
 	let {
 		data
-	} = $props<{ data: { recent: ObjectRow[]; list: { rows: ObjectRow[]; filteredCount: number; totalCount: number; nextCursor?: string | null }; filters: ObjectsFilters; session?: { role: string } | null } }>();
+	} = $props<{ data: { recent: ObjectRow[]; list: { rows: ObjectRow[]; filteredCount: number; totalCount: number; nextCursor?: string | null }; filters: ObjectsFilters; returnTo: string; session?: { role: string } | null } }>();
 
 	let selectedIds = $state<string[]>([]);
 	let selectionCopied = $state(false);
@@ -251,7 +251,7 @@
 		activeChips={activeChips()}
 	/>
 
-	<ObjectsRecentStrip recent={data.recent} />
+	<ObjectsRecentStrip recent={data.recent} returnTo={data.returnTo} />
 
 	<div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border-soft bg-surface-white px-4 py-2.5">
 		<div class="flex items-center gap-3">
@@ -312,6 +312,7 @@
 
 	<ObjectsTable
 		rows={data.list.rows}
+		returnTo={data.returnTo}
 		selectedIds={selectedIds}
 		onToggleSelection={toggleSelection}
 		hasActiveFilters={hasActiveFilters()}

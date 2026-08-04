@@ -7,7 +7,7 @@ import type {
 
 export type ObjectDetailMediaType = 'document' | 'image' | 'audio' | 'video' | 'unknown';
 
-export type ObjectDetailPreviewArtifact = 'thumbnail' | 'ocr' | 'access_pdf' | 'index';
+export type ObjectDetailPreviewArtifact = 'thumbnail';
 
 export type ObjectDetailAccessState =
 	| 'available'
@@ -47,9 +47,6 @@ const previewArtifactsFor = (detail: ObjectDetail): ObjectDetailPreviewArtifact[
 	const previewArtifacts: ObjectDetailPreviewArtifact[] = [];
 
 	if (detail.thumbnailArtifactId) previewArtifacts.push('thumbnail');
-	if (detail.indicators.ocr) previewArtifacts.push('ocr');
-	if (detail.indicators.accessPdf) previewArtifacts.push('access_pdf');
-	if (detail.indicators.index) previewArtifacts.push('index');
 
 	return previewArtifacts;
 };

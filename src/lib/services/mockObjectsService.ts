@@ -31,7 +31,7 @@ const rows: ObjectRow[] = [
 		accessReasonCode: 'OK',
 		createdAt: '2026-02-01T10:40:00Z',
 		updatedAt: '2026-02-02T10:40:00Z',
-		indicators: { accessPdf: true, ocr: true, index: true }
+		indicators: { accessPdf: true, ocr: true }
 	},
 	{
 		id: 'OBJ-20260201-000287',
@@ -58,7 +58,7 @@ const rows: ObjectRow[] = [
 		accessReasonCode: 'RESTORE_IN_PROGRESS',
 		createdAt: '2026-02-01T14:00:00Z',
 		updatedAt: '2026-02-01T14:18:00Z',
-		indicators: { accessPdf: false, ocr: false, index: true }
+		indicators: { accessPdf: false, ocr: false }
 	},
 	{
 		id: 'OBJ-20260131-000255',
@@ -85,7 +85,7 @@ const rows: ObjectRow[] = [
 		accessReasonCode: 'TEMP_UNAVAILABLE',
 		createdAt: '2026-01-31T11:00:00Z',
 		updatedAt: '2026-01-31T12:02:00Z',
-		indicators: { accessPdf: false, ocr: false, index: false }
+		indicators: { accessPdf: false, ocr: false }
 	},
 	{
 		id: 'OBJ-20260130-000231',
@@ -112,7 +112,7 @@ const rows: ObjectRow[] = [
 		accessReasonCode: 'RESTORE_REQUIRED',
 		createdAt: '2026-01-30T07:00:00Z',
 		updatedAt: '2026-01-30T08:40:00Z',
-		indicators: { accessPdf: false, ocr: true, index: false }
+		indicators: { accessPdf: false, ocr: true }
 	}
 ];
 
@@ -152,7 +152,7 @@ export const mockObjectsService: ObjectsService = {
 	listObjectArtifacts: async ({ objectId }) => [
 		{
 			id: `${objectId}-artifact-pdf`,
-			kind: 'access_pdf',
+			kind: 'pdf',
 			variant: null,
 			storageKey: `objects/${objectId}/access.pdf`,
 			contentType: 'application/pdf',

@@ -1,4 +1,8 @@
-import type { IngestionStatus } from './ingestionOverview';
+import type {
+	IngestionActionCapabilities,
+	IngestionStatus,
+	StagingPurge
+} from './ingestionOverview';
 import type {
 	IngestionSummaryDto,
 	classificationTypeSchema,
@@ -45,6 +49,8 @@ export type IngestionDetail = {
 	id: string;
 	batchLabel: string;
 	status: IngestionStatus;
+	actionCapabilities: IngestionActionCapabilities;
+	stagingPurge: StagingPurge;
 	classificationType: ClassificationType;
 	itemKind?: ItemKind;
 	languageCode: string;

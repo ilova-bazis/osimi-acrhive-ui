@@ -118,6 +118,36 @@ describe('backendRequest', () => {
 		});
 	});
 
+	it('preserves validation failures and field details', async () => {
+		const fetchFn = vi.fn().mockResolvedValue(
+			jsonResponse(
+				{
+					request_id: 'req-validation',
+					error: {
+						code: 'VALIDATION_FAILED',
+						message: 'Validation failed.',
+						details: [{ path: 'metadata.title', code: 'TOO_SMALL' }]
+					}
+				},
+				422
+			)
+		);
+
+		await expect(
+			backendRequest({
+				fetchFn,
+				path: '/api/test',
+				context: 'test.validation',
+				responseSchema: z.object({ ok: z.boolean() })
+			})
+		).rejects.toMatchObject({
+			code: 'VALIDATION_FAILED',
+			status: 422,
+			requestId: 'req-validation',
+			details: [{ path: 'metadata.title', code: 'TOO_SMALL' }]
+		});
+	});
+
 	it('preserves alternate backend error messages and request ids', async () => {
 		const fetchFn = vi.fn().mockResolvedValue(
 			jsonResponse({ request_id: 'req-2', message: 'Alternate error shape' }, 500)

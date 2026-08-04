@@ -5,9 +5,12 @@
 	import { locale } from '$lib/i18n/locale';
 	import { translations } from '$lib/i18n/translations';
 	import { formatTemplate, translate } from '$lib/i18n/translate';
+	import { withObjectsReturnTo } from '$lib/objects/navigation';
 	import type { ObjectRow } from '$lib/services/objects';
 
-	let { recent } = $props<{ recent: ObjectRow[] }>();
+	let { recent, returnTo } = $props<{ recent: ObjectRow[]; returnTo: string }>();
+	const objectHref = (objectId: string): string =>
+		withObjectsReturnTo(resolve('/objects/[objectId]', { objectId }), returnTo);
 
 	const dictionary = $derived(translations[$locale]);
 	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
@@ -29,7 +32,7 @@
 	<div class="mt-4 flex gap-4 overflow-x-auto pb-2">
 		{#each recent as item (item.id)}
 			<a
-				href={resolve('/objects/[objectId]', { objectId: item.objectId })}
+				href={resolve(objectHref(item.objectId) as '/objects')}
 				class="min-w-[220px] rounded-2xl border border-border-soft bg-alabaster-grey/60 p-3 shadow-[0_10px_20px_rgba(79,109,122,0.08)] transition hover:-translate-y-0.5 hover:border-blue-slate/45 hover:shadow-[0_14px_28px_rgba(79,109,122,0.14)]"
 			>
 				<ObjectThumbnail

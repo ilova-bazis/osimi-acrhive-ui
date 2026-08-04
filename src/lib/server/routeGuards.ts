@@ -10,7 +10,7 @@ export type AuthenticatedMutation = {
 };
 
 export const mapApiErrorStatus = (status: number): number => {
-	if (status === 400 || status === 401 || status === 403 || status === 404 || status === 409 || status === 423) {
+	if (status === 400 || status === 401 || status === 403 || status === 404 || status === 409 || status === 422 || status === 423) {
 		return status;
 	}
 

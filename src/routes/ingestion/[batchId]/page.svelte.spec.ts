@@ -23,6 +23,14 @@ const detail: IngestionDetail = {
 	id: 'batch-1',
 	batchLabel: 'Batch 1',
 	status: 'completed',
+	actionCapabilities: {
+		canResume: false,
+		canRetry: false,
+		canCancel: false,
+		canRestore: false,
+		canDelete: false
+	},
+	stagingPurge: { state: 'not_scheduled', startedAt: null, purgedAt: null },
 	classificationType: 'image',
 	itemKind: 'photo',
 	languageCode: 'en',
@@ -71,5 +79,64 @@ describe('/ingestion/[batchId] +page.svelte', () => {
 		await expect
 			.element(page.getByText('Preview unavailable: retention period expired'))
 			.toBeInTheDocument();
+	});
+
+	it('renders completed with errors without retry or cancel actions', async () => {
+		render(IngestionDetailPage, {
+			data: {
+				detail: { ...detail, status: 'completed_with_errors' },
+				activity: [],
+				activityError: null
+			}
+		});
+
+		await expect.element(page.getByText('Completed with errors')).toBeInTheDocument();
+		await expect.element(page.getByText('Actions')).not.toBeInTheDocument();
+		await expect.element(page.getByText('Retry')).not.toBeInTheDocument();
+		await expect.element(page.getByText('Cancel')).not.toBeInTheDocument();
+	});
+
+	it('uses explicit capabilities instead of failed status to render actions', async () => {
+		render(IngestionDetailPage, {
+			data: {
+				detail: {
+					...detail,
+					status: 'failed',
+					actionCapabilities: {
+						canResume: false,
+						canRetry: true,
+						canCancel: false,
+						canRestore: false,
+						canDelete: false
+					}
+				},
+				activity: [],
+				activityError: null
+			}
+		});
+
+		await expect.element(page.getByText('Retry')).toBeInTheDocument();
+		await expect.element(page.getByText('Cancel')).not.toBeInTheDocument();
+	});
+
+	it('hides actions for a purge-pending failed ingestion', async () => {
+		render(IngestionDetailPage, {
+			data: {
+				detail: {
+					...detail,
+					status: 'failed',
+					stagingPurge: {
+						state: 'pending',
+						startedAt: '2026-01-03T00:00:00.000Z',
+						purgedAt: null
+					}
+				},
+				activity: [],
+				activityError: null
+			}
+		});
+
+		await expect.element(page.getByText('Actions')).not.toBeInTheDocument();
+		await expect.element(page.getByText('Retry')).not.toBeInTheDocument();
 	});
 });

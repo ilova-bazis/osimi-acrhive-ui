@@ -1,25 +1,30 @@
-import type { IngestionDto, IngestionsListResponseDto } from '$lib/api/schemas/ingestions';
+import type { IngestionDto, IngestionResourceDto, IngestionsListResponseDto } from '$lib/api/schemas/ingestions';
 import type {
-	IngestionAction,
+	IngestionActionCapabilities,
 	IngestionBatch,
 	IngestionOverviewSummary,
-	IngestionStatus
+	IngestionStatus,
+	StagingPurge
 } from '$lib/services/ingestionOverview';
+import { actionsFromCapabilities } from '$lib/services/ingestionOverview';
 
-const resolveIngestionId = (dto: IngestionDto, index: number): string =>
+const resolveIngestionId = (dto: IngestionResourceDto, index: number): string =>
 	dto.id ?? dto.ingestion_id ?? dto.batch_id ?? dto.batch_label ?? `ingestion-${index + 1}`;
 
-const resolveBatchName = (dto: IngestionDto, fallbackId: string): string => dto.batch_label ?? fallbackId;
+const resolveBatchName = (dto: IngestionResourceDto, fallbackId: string): string => dto.batch_label ?? fallbackId;
 
-const resolveCreatedAt = (dto: IngestionDto): string =>
+const resolveCreatedAt = (dto: IngestionResourceDto): string =>
 	dto.created_at ?? dto.updated_at ?? new Date(0).toISOString();
 
-const toIngestionStatus = (rawStatus: string | undefined): IngestionStatus => {
+export const mapIngestionStatus = (rawStatus: string | undefined): IngestionStatus => {
 	const normalized = (rawStatus ?? '').toLowerCase();
 
 	if (normalized.includes('draft')) return 'draft';
 	if (normalized.includes('upload')) return 'uploading';
 	if (normalized.includes('cancel')) return 'canceled';
+	if (normalized.includes('complete') && normalized.includes('error')) {
+		return 'completed_with_errors';
+	}
 	if (normalized.includes('fail') || normalized.includes('error')) {
 		return 'failed';
 	}
@@ -40,7 +45,7 @@ const toIngestionStatus = (rawStatus: string | undefined): IngestionStatus => {
 	return 'draft';
 };
 
-const toProgress = (dto: IngestionDto, status: IngestionStatus): IngestionBatch['progress'] => {
+const toProgress = (dto: IngestionResourceDto, status: IngestionStatus): IngestionBatch['progress'] => {
 	const completed =
 		dto.processed_objects ?? dto.objects_processed ?? dto.completed_count ?? (status === 'completed' ? 1 : 0);
 	const total = dto.total_objects ?? dto.object_count ?? dto.total_count ?? (completed > 0 ? completed : 1);
@@ -51,19 +56,24 @@ const toProgress = (dto: IngestionDto, status: IngestionStatus): IngestionBatch[
 	};
 };
 
-const toActions = (status: IngestionStatus): IngestionAction[] => {
-	if (status === 'draft') return ['resume', 'delete'];
-	if (status === 'uploading') return ['resume', 'cancel', 'delete'];
-	if (status === 'queued') return ['view', 'cancel'];
-	if (status === 'ingesting') return ['view'];
-	if (status === 'failed') return ['view', 'retry', 'cancel'];
-	if (status === 'canceled') return ['view', 'restore', 'delete'];
-	return ['view'];
-};
+const toActionCapabilities = (dto: IngestionResourceDto): IngestionActionCapabilities => ({
+	canResume: dto.action_capabilities.can_resume,
+	canRetry: dto.action_capabilities.can_retry,
+	canCancel: dto.action_capabilities.can_cancel,
+	canRestore: dto.action_capabilities.can_restore,
+	canDelete: dto.action_capabilities.can_delete
+});
 
-const toBatch = (dto: IngestionDto, index: number): IngestionBatch => {
+const toStagingPurge = (dto: IngestionResourceDto): StagingPurge => ({
+	state: dto.staging_purge.state.toLowerCase() as StagingPurge['state'],
+	startedAt: dto.staging_purge.started_at,
+	purgedAt: dto.staging_purge.purged_at
+});
+
+const toBatch = (dto: IngestionResourceDto, index: number): IngestionBatch => {
 	const id = resolveIngestionId(dto, index);
-	const status = toIngestionStatus(dto.status);
+	const status = mapIngestionStatus(dto.status);
+	const actionCapabilities = toActionCapabilities(dto);
 
 	return {
 		id,
@@ -71,7 +81,9 @@ const toBatch = (dto: IngestionDto, index: number): IngestionBatch => {
 		createdAt: resolveCreatedAt(dto),
 		status,
 		progress: toProgress(dto, status),
-		actions: toActions(status)
+		actionCapabilities,
+		stagingPurge: toStagingPurge(dto),
+		actions: ['view', ...actionsFromCapabilities(actionCapabilities)]
 	};
 };
 
@@ -87,7 +99,11 @@ export const mapIngestionOverviewSummary = (
 	);
 
 	const objectsCreated = allBatches.reduce(
-		(total, batch) => total + (batch.status === 'completed' ? batch.progress.completed : 0),
+		(total, batch) =>
+			total +
+			(batch.status === 'completed' || batch.status === 'completed_with_errors'
+				? batch.progress.completed
+				: 0),
 		0
 	);
 
@@ -96,7 +112,9 @@ export const mapIngestionOverviewSummary = (
 			totalBatches: allBatches.length,
 			objectsCreated,
 			inProgress: allBatches.filter((batch) => batch.status === 'ingesting' || batch.status === 'queued').length,
-			needsAttention: allBatches.filter((batch) => batch.status === 'failed').length
+			needsAttention: allBatches.filter(
+				(batch) => batch.status === 'failed' || batch.status === 'completed_with_errors'
+			).length
 		},
 		activeAndRecent,
 		drafts,

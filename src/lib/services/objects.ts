@@ -39,10 +39,9 @@ export type AccessReasonCode =
 export type ObjectIndicators = {
 	accessPdf: boolean;
 	ocr: boolean;
-	index: boolean;
 };
 
-export type ObjectRow = {
+export type ObjectBase = {
 	id: string;
 	objectId: string;
 	thumbnailArtifactId: string | null;
@@ -67,10 +66,13 @@ export type ObjectRow = {
 	accessReasonCode: AccessReasonCode;
 	createdAt: string;
 	updatedAt: string;
+};
+
+export type ObjectRow = ObjectBase & {
 	indicators: ObjectIndicators;
 };
 
-export type ObjectDetail = ObjectRow & {
+export type ObjectDetail = ObjectBase & {
 	ingestManifest: Record<string, unknown> | null;
 	isAuthorized: boolean;
 	isDeliverable: boolean;
@@ -326,7 +328,7 @@ export type ObjectResyncRequest = {
 	actionType: string;
 	actionPayload: Record<string, unknown>;
 	requestedBy: string;
-	dedupeKey: string;
+	dedupeKey: string | null;
 	status: ObjectResyncRequestStatus;
 	failureReason: string | null;
 	failureDetails: unknown | null;

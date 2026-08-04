@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import Chip from '$lib/components/Chip.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import type { FileStatus } from '$lib/types';
@@ -38,18 +39,15 @@
 	<div class="mx-auto max-w-[96rem] px-4 py-3 sm:px-6 lg:px-8">
 		<div class="flex items-start justify-between gap-4">
 			<div class="flex min-w-0 items-start gap-3 sm:gap-4">
-				<button
-					type="button"
-					onclick={() => {
-						window.location.href = backHref;
-					}}
+				<a
+					href={resolve(backHref as '/objects')}
 					class="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border-soft bg-surface-white text-blue-slate transition hover:bg-pale-sky/25"
 					aria-label="Back"
 				>
 					<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" class="h-4 w-4" aria-hidden="true">
 						<path d="M11.5 4.5L6 10l5.5 5.5" stroke-linecap="round" stroke-linejoin="round" />
 					</svg>
-				</button>
+				</a>
 				<div class="min-w-0">
 					<div class="flex flex-wrap items-center gap-2">
 						<h1 class="truncate font-display text-xl text-text-ink sm:text-2xl">{title}</h1>

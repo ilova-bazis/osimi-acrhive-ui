@@ -35,6 +35,7 @@
 	} = $props<{
 		data: {
 			detail: ObjectDetail;
+			backHref: string;
 			viewer: ObjectViewer | null;
 			artifacts: ObjectArtifact[];
 			artifactsError: string | null;
@@ -231,7 +232,7 @@
 </script>
 
 <ObjectDetailTopBar
-	backHref={resolve('/objects')}
+	backHref={data.backHref}
 	title={displayTitle}
 	objectId={detail.objectId}
 	processingLabel={processingLabel(detail.processingState)}

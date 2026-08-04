@@ -1,5 +1,5 @@
 <script lang="ts">
-	import AltMediaRequestBanner from '$lib/components/object-view-alt/AltMediaRequestBanner.svelte';
+	import MediaRequestBanner from '$lib/components/object-detail/MediaRequestBanner.svelte';
 	import ArtifactTextPreview from '$lib/components/object-detail/ArtifactTextPreview.svelte';
 
 	type ObjectViewerArtifactRef = {
@@ -224,7 +224,7 @@
 		<div bind:this={documentScrollContainer} class="h-[calc(76vh-3.25rem)] overflow-y-auto overflow-x-hidden" onscroll={updateDocumentPage}>
 			{#if !isAvailable}
 				<div class="mx-auto max-w-xl px-4 pt-6">
-					<AltMediaRequestBanner availability={availability} mediaLabel="document scans" variant="light" onRequest={onRequest} />
+					<MediaRequestBanner availability={availability} mediaLabel="document scans" variant="light" onRequest={onRequest} />
 				</div>
 			{/if}
 
@@ -270,7 +270,7 @@
 		{#if !isAvailable}
 			<div class="absolute inset-0 flex items-center justify-center p-8">
 				<div class="w-full max-w-sm">
-					<AltMediaRequestBanner availability={availability} mediaLabel="image" variant="dark" onRequest={onRequest} />
+					<MediaRequestBanner availability={availability} mediaLabel="image" variant="dark" onRequest={onRequest} />
 				</div>
 			</div>
 		{:else}
@@ -300,7 +300,7 @@
 							</audio>
 						</div>
 					{:else}
-						<AltMediaRequestBanner availability={availability} mediaLabel="audio file" variant="dark" onRequest={onRequest} />
+						<MediaRequestBanner availability={availability} mediaLabel="audio file" variant="dark" onRequest={onRequest} />
 					{/if}
 				</div>
 			</div>
@@ -331,7 +331,7 @@
 				{#if !isAvailable}
 					<div class="absolute inset-0 flex items-center justify-center p-8">
 						<div class="w-full max-w-sm">
-							<AltMediaRequestBanner availability={availability} mediaLabel="video file" variant="dark" onRequest={onRequest} />
+							<MediaRequestBanner availability={availability} mediaLabel="video file" variant="dark" onRequest={onRequest} />
 						</div>
 					</div>
 				{:else}
@@ -371,6 +371,6 @@
 	</div>
 {:else}
 	<div class="min-h-[76vh] rounded-[2rem] bg-surface-white/70 p-8">
-		<AltMediaRequestBanner availability={availability} mediaLabel={viewer.mediaType} variant={viewer.mediaType === 'document' ? 'light' : 'dark'} onRequest={onRequest} />
+		<MediaRequestBanner availability={availability} mediaLabel={viewer.mediaType} variant={viewer.mediaType === 'document' ? 'light' : 'dark'} onRequest={onRequest} />
 	</div>
 {/if}

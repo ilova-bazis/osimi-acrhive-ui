@@ -138,6 +138,7 @@ export const translations = {
 				queued: 'Queued',
 				ingesting: 'Ingesting',
 				completed: 'Completed',
+				completed_with_errors: 'Completed with errors',
 				failed: 'Failed',
 				canceled: 'Canceled'
 			},
@@ -850,6 +851,7 @@ export const translations = {
 				queued: 'В очереди',
 				ingesting: 'Обработка',
 				completed: 'Завершено',
+				completed_with_errors: 'Завершено с ошибками',
 				failed: 'Ошибка',
 				canceled: 'Отменено'
 			},

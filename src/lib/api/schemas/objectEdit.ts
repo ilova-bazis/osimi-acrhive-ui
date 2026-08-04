@@ -9,7 +9,7 @@ export const objectEditDocumentPageSchema = z.object({
 	machine_text: z.string(),
 	curated_text: z.string().nullable(),
 	status: documentPageStatusSchema,
-});
+}).strict();
 
 export const objectEditCurationPayloadSchema = z.discriminatedUnion('kind', [
 	z.object({
@@ -17,18 +17,18 @@ export const objectEditCurationPayloadSchema = z.discriminatedUnion('kind', [
 		machine_ocr_artifact_id: z.string().nullable(),
 		page_count: z.number().int().nullable(),
 		pages: z.array(objectEditDocumentPageSchema),
-	}),
-	z.object({ kind: z.literal('image') }),
-	z.object({ kind: z.literal('audio') }),
-	z.object({ kind: z.literal('video') }),
-	z.object({ kind: z.literal('other') }),
+	}).strict(),
+	z.object({ kind: z.literal('image') }).strict(),
+	z.object({ kind: z.literal('audio') }).strict(),
+	z.object({ kind: z.literal('video') }).strict(),
+	z.object({ kind: z.literal('other') }).strict(),
 ]);
 
 const lockSchema = z.object({
 	locked: z.boolean(),
 	locked_by: z.string().nullable(),
 	locked_until: z.string().nullable(),
-});
+}).strict();
 
 export const objectEditPayloadSchema = z.object({
 	object_id: z.string().min(1),
@@ -63,14 +63,14 @@ export const objectEditPayloadSchema = z.object({
 		can_submit_review: z.boolean(),
 	}),
 	curation_payload: objectEditCurationPayloadSchema,
-});
+}).strict();
 
 export const saveMetadataResultSchema = z.object({
 	object_id: z.string(),
 	revision: z.number().int().min(0),
 	curation_state: curationStateSchema,
 	updated_at: z.string(),
-});
+}).strict();
 
 export const saveMetadataRequestSchema = z
 	.object({
@@ -101,7 +101,7 @@ export const saveDocumentCurationResultSchema = z.object({
 	revision: z.number().int().min(0),
 	updated_count: z.number().int(),
 	updated_at: z.string(),
-});
+}).strict();
 
 export const saveDocumentCurationRequestSchema = z
 	.object({
@@ -128,7 +128,7 @@ export const submitCurationResultSchema = z.object({
 	}),
 	submitted_at: z.string(),
 	submitted_by: z.string(),
-});
+}).strict();
 
 export const submitCurationRequestSchema = z
 	.object({
@@ -140,7 +140,7 @@ export const submitCurationRequestSchema = z
 export const releaseLockResultSchema = z.object({
 	object_id: z.string(),
 	released: z.boolean(),
-});
+}).strict();
 
 export type ObjectEditDocumentPageDto = z.infer<typeof objectEditDocumentPageSchema>;
 export type ObjectEditPayloadDto = z.infer<typeof objectEditPayloadSchema>;

@@ -68,6 +68,89 @@ describe('apiIngestionDetailService', () => {
 		expect(detail.itemKind).toBe('scanned_document');
 	});
 
+	it('maps completed with errors as a terminal partial-success status', async () => {
+		backendRequestMock.mockResolvedValueOnce({
+			ingestion: {
+				ingestion_id: 'ing-partial',
+				batch_label: 'Partial batch',
+				status: 'COMPLETED_WITH_ERRORS',
+				classification_type: 'document',
+				item_kind: 'document',
+				language_code: 'en',
+				pipeline_preset: 'none',
+				access_level: 'private',
+				created_at: '2026-01-01T00:00:00.000Z',
+				updated_at: '2026-01-02T00:00:00.000Z'
+			},
+			files: []
+		}).mockResolvedValueOnce({ items: [] });
+
+		const detail = await apiIngestionDetailService.getDetail({
+			fetchFn: vi.fn() as never,
+			token: 'token-1',
+			batchId: 'ing-partial'
+		});
+
+		expect(detail.status).toBe('completed_with_errors');
+	});
+
+	it('maps purge state and explicit action capabilities independently of previews', async () => {
+		backendRequestMock.mockResolvedValueOnce({
+			ingestion: {
+				ingestion_id: 'ing-purged',
+				batch_label: 'Purged batch',
+				status: 'FAILED',
+				classification_type: 'document',
+				item_kind: 'document',
+				language_code: 'en',
+				pipeline_preset: 'none',
+				access_level: 'private',
+				staging_purge: {
+					state: 'PENDING',
+					started_at: '2026-01-03T00:00:00.000Z',
+					purged_at: null
+				},
+				action_capabilities: {
+					can_resume: false,
+					can_retry: false,
+					can_cancel: false,
+					can_restore: false,
+					can_delete: false
+				},
+				created_at: '2026-01-01T00:00:00.000Z',
+				updated_at: '2026-01-02T00:00:00.000Z'
+			},
+			files: [
+				{
+					id: 'file-1',
+					filename: 'page.jpg',
+					status: 'UPLOADED',
+					preview: { status: 'purged', content_type: null, width: null, height: null, url: null }
+				}
+			]
+		}).mockResolvedValueOnce({ items: [] });
+
+		const detail = await apiIngestionDetailService.getDetail({
+			fetchFn: vi.fn() as never,
+			token: 'token-1',
+			batchId: 'ing-purged'
+		});
+
+		expect(detail.stagingPurge).toEqual({
+			state: 'pending',
+			startedAt: '2026-01-03T00:00:00.000Z',
+			purgedAt: null
+		});
+		expect(detail.actionCapabilities).toEqual({
+			canResume: false,
+			canRetry: false,
+			canCancel: false,
+			canRestore: false,
+			canDelete: false
+		});
+		expect(detail.files[0]?.preview?.status).toBe('purged');
+	});
+
 	it('preserves a retention-purged preview when mapping detail files', async () => {
 		backendRequestMock
 			.mockResolvedValueOnce({

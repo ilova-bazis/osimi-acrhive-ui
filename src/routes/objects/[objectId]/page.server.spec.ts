@@ -54,7 +54,6 @@ const makeDetail = () => ({
 	accessReasonCode: 'OK',
 	createdAt: '2026-01-01T00:00:00.000Z',
 	updatedAt: '2026-01-01T00:00:00.000Z',
-	indicators: { accessPdf: true, ocr: true, index: true },
 	ingestManifest: null,
 	isAuthorized: true,
 	isDeliverable: true
@@ -112,7 +111,6 @@ describe('/objects/[objectId] +page.server', () => {
 			accessReasonCode: 'OK',
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-01T00:00:00.000Z',
-			indicators: { accessPdf: true, ocr: true, index: true },
 			ingestManifest: null,
 			isAuthorized: true,
 			isDeliverable: true
@@ -125,10 +123,12 @@ describe('/objects/[objectId] +page.server', () => {
 				params: { objectId: 'OBJ-1' },
 				locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'archiver' } },
 				cookies: { get: () => 'token-1', delete: vi.fn() },
-				fetch: vi.fn()
+				fetch: vi.fn(),
+				url: new URL('https://example.test/objects/OBJ-1?returnTo=%2Fobjects%3Fq%3Dledger')
 			} as never)
 		).resolves.toEqual({
 			detail,
+			backHref: '/objects?q=ledger',
 			viewer: null,
 			artifacts: [],
 			artifactsError: null,
@@ -193,7 +193,6 @@ describe('/objects/[objectId] +page.server', () => {
 			accessReasonCode: 'OK',
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-01T00:00:00.000Z',
-			indicators: { accessPdf: true, ocr: true, index: true },
 			ingestManifest: null,
 			isAuthorized: true,
 			isDeliverable: true
@@ -218,6 +217,7 @@ describe('/objects/[objectId] +page.server', () => {
 			} as never)
 		).resolves.toEqual({
 			detail,
+			backHref: '/objects',
 			viewer: null,
 			artifacts: [],
 			artifactsError: 'Failed to load object artifacts (request: req-123).',

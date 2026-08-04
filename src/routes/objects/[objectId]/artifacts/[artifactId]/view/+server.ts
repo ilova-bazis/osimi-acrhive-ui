@@ -9,6 +9,15 @@ import {
 import { error, redirect, type RequestEvent } from '@sveltejs/kit';
 
 const getApiBase = (): string => env.PRIVATE_API_BASE || env.PUBLIC_API_BASE || 'http://localhost:3000';
+const MEDIA_RESPONSE_STATUSES = new Set([200, 206, 416]);
+const MEDIA_RESPONSE_HEADERS = [
+	'content-type',
+	'content-length',
+	'content-range',
+	'accept-ranges',
+	'etag',
+	'last-modified'
+] as const;
 
 const toPassthroughStatus = (status: number): number => {
 	if (status === 400 || status === 403 || status === 404 || status === 409 || status === 423) {
@@ -37,7 +46,7 @@ const readBackendErrorMessage = async (response: Response): Promise<string | nul
 	}
 };
 
-export const GET = async ({ params, locals, cookies, fetch }: RequestEvent) => {
+export const GET = async ({ params, locals, cookies, fetch, request }: RequestEvent) => {
 	const token = cookies.get(AUTH_COOKIE_NAME);
 	if (!locals.session || !token) {
 		throw redirect(303, '/login');
@@ -52,13 +61,16 @@ export const GET = async ({ params, locals, cookies, fetch }: RequestEvent) => {
 	}
 
 	const backendPath = `/api/objects/${encodeURIComponent(objectId)}/artifacts/${encodeURIComponent(artifactId)}/view`;
+	const backendHeaders = new Headers({ authorization: `Bearer ${token}` });
+	const range = request.headers.get('range');
+	const ifRange = request.headers.get('if-range');
+	if (range) backendHeaders.set('range', range);
+	if (ifRange) backendHeaders.set('if-range', ifRange);
 	let response: Response;
 	try {
 		response = await fetch(`${getApiBase()}${backendPath}`, {
 			method: 'GET',
-			headers: {
-				authorization: `Bearer ${token}`
-			}
+			headers: backendHeaders
 		});
 	} catch {
 		throw error(502, {
@@ -77,7 +89,7 @@ export const GET = async ({ params, locals, cookies, fetch }: RequestEvent) => {
 		});
 	}
 
-	if (!response.ok) {
+	if (!MEDIA_RESPONSE_STATUSES.has(response.status)) {
 		const backendMessage = await readBackendErrorMessage(response);
 		throw error(toPassthroughStatus(response.status), {
 			message: backendMessage ?? 'Failed to view artifact.'
@@ -86,7 +98,6 @@ export const GET = async ({ params, locals, cookies, fetch }: RequestEvent) => {
 
 	const headers = new Headers();
 	const contentType = response.headers.get('content-type');
-	const contentLength = response.headers.get('content-length');
 	const normalizedContentType = normalizeMediaType(contentType);
 
 	if (!isSafeInlineArtifactMediaType(normalizedContentType)) {
@@ -95,15 +106,17 @@ export const GET = async ({ params, locals, cookies, fetch }: RequestEvent) => {
 		});
 	}
 
-	if (contentType) headers.set('content-type', contentType);
-	if (contentLength) headers.set('content-length', contentLength);
+	for (const headerName of MEDIA_RESPONSE_HEADERS) {
+		const value = response.headers.get(headerName);
+		if (value) headers.set(headerName, value);
+	}
 	headers.set('cache-control', NO_STORE_CACHE_CONTROL);
 	headers.set('content-disposition', 'inline');
 	headers.set('x-content-type-options', 'nosniff');
 	headers.set('content-security-policy', "default-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'unsafe-inline'");
 
 	return new Response(response.body, {
-		status: 200,
+		status: response.status,
 		headers
 	});
 };

@@ -23,10 +23,21 @@ const capabilities = {
 	mimeAliases: {}
 };
 
-const createDetail = (status: string) => ({
+const actionCapabilities = {
+	canResume: true,
+	canRetry: false,
+	canCancel: false,
+	canRestore: false,
+	canDelete: false
+};
+const stagingPurge = { state: 'not_scheduled' as const, startedAt: null, purgedAt: null };
+
+const createDetail = (status: string, canResume = true) => ({
 	id: 'batch-3',
 	batchLabel: 'Batch 3',
 	status,
+	actionCapabilities: { ...actionCapabilities, canResume },
+	stagingPurge,
 	classificationType: 'image',
 	itemKind: 'photo',
 	languageCode: 'en',
@@ -61,6 +72,8 @@ describe('/ingestion/[batchId]/setup +page.server', () => {
 			id: 'batch-1',
 			batchLabel: 'Batch 1',
 			status: 'draft',
+			actionCapabilities,
+			stagingPurge,
 			classificationType: 'magazine_article',
 			itemKind: undefined,
 			languageCode: 'en',
@@ -110,6 +123,8 @@ describe('/ingestion/[batchId]/setup +page.server', () => {
 			id: 'batch-2',
 			batchLabel: 'Batch 2',
 			status: 'draft',
+			actionCapabilities,
+			stagingPurge,
 			classificationType: 'magazine_article',
 			itemKind: undefined,
 			languageCode: 'en',
@@ -160,7 +175,7 @@ describe('/ingestion/[batchId]/setup +page.server', () => {
 	it.each(['queued', 'ingesting', 'completed', 'failed', 'canceled'])(
 		'redirects %s ingestions to detail instead of editable setup',
 		async (status) => {
-			getDetailMock.mockResolvedValue(createDetail(status));
+			getDetailMock.mockResolvedValue(createDetail(status, false));
 
 			await expect(
 				load({

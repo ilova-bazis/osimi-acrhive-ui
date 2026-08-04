@@ -6,13 +6,28 @@
 	import SourceTextDiff from '$lib/components/object-edit/SourceTextDiff.svelte';
 	import type { ObjectEditDocumentPage, ObjectEditMetadata, ObjectEditPayload } from '$lib/services/objectEdit';
 
+	type ObjectEditField =
+		| 'title'
+		| 'publicationDate'
+		| 'tags'
+		| 'people'
+		| 'description'
+		| 'rightsNote'
+		| 'sensitivityNote'
+		| 'pages';
+	type ObjectEditFieldErrors = Partial<Record<ObjectEditField, string>>;
+
 	let { data, form } = $props<{
 		data: { editPayload: ObjectEditPayload; isLockedByOtherUser: boolean };
 		form: {
 			success?: boolean;
 			locked?: boolean;
 			error?: string;
+			fieldErrors?: ObjectEditFieldErrors;
 			curationState?: string;
+			projectionUnavailable?: boolean;
+			requestId?: string;
+			requestStatus?: 'PENDING' | 'PROCESSING';
 			recovery?: {
 				id: string;
 				kind: 'conflict' | 'partial';
@@ -23,6 +38,17 @@
 	}>();
 
 	const payload = $derived(data.editPayload);
+	type PublicationStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
+	type PublicationRequest = {
+		id: string;
+		status: PublicationStatus;
+		failureReason: string | null;
+		createdAt: string;
+		updatedAt: string;
+		completedAt: string | null;
+	};
+	const fieldErrors = $derived(form?.fieldErrors ?? {});
+	const fieldError = (field: ObjectEditField): string | undefined => fieldErrors[field];
 	type PageEdit = { pageNumber: number; machineText: string; curatedText: string };
 
 	const toPageEdits = (editPayload: ObjectEditPayload): PageEdit[] =>
@@ -159,6 +185,54 @@
 	let rightsOpen = $state(false);
 	let saving = $state(false);
 	let submitting = $state(false);
+	let reviewNote = $state('');
+	let publishDialogOpen = $state(false);
+	let publicationRequest = $state<PublicationRequest | null>(null);
+	let publicationStatusError = $state<string | null>(null);
+	let publicationPollTimer: ReturnType<typeof setTimeout> | undefined;
+	let publicationPollGeneration = 0;
+	const hasDocumentPageProjection = $derived(
+		payload.curation.kind === 'document' && payload.curation.pages.length > 0
+	);
+	const publicationActive = $derived(
+		publicationRequest?.status === 'PENDING' || publicationRequest?.status === 'PROCESSING'
+	);
+	const publicationStatusUrl = $derived(`/objects/${encodeURIComponent(payload.objectId)}/publication-status`);
+
+	const refreshPublicationStatus = async (url = publicationStatusUrl): Promise<void> => {
+		try {
+			const response = await fetch(url);
+			if (!response.ok) throw new Error('Publication status is temporarily unavailable.');
+			const body = await response.json() as { request?: PublicationRequest | null };
+			publicationRequest = body.request ?? null;
+			publicationStatusError = null;
+		} catch {
+			publicationStatusError = 'Publication status is temporarily unavailable.';
+		}
+	};
+	const schedulePublicationPoll = (generation = publicationPollGeneration): void => {
+		if (publicationPollTimer) clearTimeout(publicationPollTimer);
+		if (generation !== publicationPollGeneration) return;
+		if (publicationRequest?.status !== 'PENDING' && publicationRequest?.status !== 'PROCESSING') return;
+		publicationPollTimer = setTimeout(async () => {
+			await refreshPublicationStatus();
+			schedulePublicationPoll(generation);
+		}, 12_000);
+	};
+
+	$effect(() => {
+		const url = publicationStatusUrl;
+		const generation = ++publicationPollGeneration;
+		const load = async (): Promise<void> => {
+			await refreshPublicationStatus(url);
+			schedulePublicationPoll(generation);
+		};
+		void load();
+		return () => {
+			if (publicationPollGeneration === generation) publicationPollGeneration += 1;
+			if (publicationPollTimer) clearTimeout(publicationPollTimer);
+		};
+	});
 
 	const resetEditState = (editPayload: ObjectEditPayload, resetKey: string): void => {
 		title = editPayload.metadata.title;
@@ -235,31 +309,19 @@
 		rightsNote: rightsNote.trim() || null,
 		sensitivityNote: sensitivityNote.trim() || null,
 	});
-	// Inject hidden inputs before submit
-	const prepareSaveDraft = (formEl: HTMLFormElement): void => {
-		const set = (name: string, value: string) => {
-			let el = formEl.elements.namedItem(name) as HTMLInputElement | null;
-			if (!el) {
-				el = document.createElement('input');
-				el.type = 'hidden';
-				el.name = name;
-				formEl.appendChild(el);
-			}
-			el.value = value;
-		};
-		const remove = (name: string) => formEl.querySelector(`input[name="${name}"]`)?.remove();
-		set('revision', String(payload.revision));
+	const prepareSaveDraft = (formData: FormData): void => {
+		formData.set('revision', String(payload.revision));
 		if (metadataChanged) {
-			set('metadata', JSON.stringify(buildMetadata()));
-			set('rights', JSON.stringify(buildRights()));
+			formData.set('metadata', JSON.stringify(buildMetadata()));
+			formData.set('rights', JSON.stringify(buildRights()));
 		} else {
-			remove('metadata');
-			remove('rights');
+			formData.delete('metadata');
+			formData.delete('rights');
 		}
 		if (changedPages.length > 0) {
-			set('pages', JSON.stringify(changedPages));
+			formData.set('pages', JSON.stringify(changedPages));
 		} else {
-			remove('pages');
+			formData.delete('pages');
 		}
 	};
 
@@ -287,6 +349,10 @@
 <svelte:head>
 	<title>Edit: {payload.metadata.title} — Osimi Archive</title>
 </svelte:head>
+
+<svelte:window onkeydown={(event) => {
+	if (event.key === 'Escape' && publishDialogOpen && !submitting) publishDialogOpen = false;
+}} />
 
 <div class="flex h-screen flex-col overflow-hidden bg-alabaster-grey">
 
@@ -335,8 +401,8 @@
 					id="form-save"
 					method="POST"
 					action="?/saveDraft"
-					use:enhance={({ formElement }) => {
-						prepareSaveDraft(formElement);
+					use:enhance={({ formData }) => {
+						prepareSaveDraft(formData);
 						saving = true;
 						return async ({ update, result }) => {
 							await update({ reset: false, invalidateAll: result.type === 'success' });
@@ -353,30 +419,28 @@
 					</button>
 				</form>
 
-				{#if payload.capabilities.canSubmitReview}
-					<form
-						id="form-submit"
-						method="POST"
-						action="?/submitCuration"
-						use:enhance={() => {
-							submitting = true;
-						return async ({ update, result }) => {
-							await update({ reset: false, invalidateAll: result.type === 'success' });
-								submitting = false;
-							};
-						}}
+				{#if payload.curation.kind === 'document'}
+					<button
+						type="button"
+						disabled={!hasDocumentPageProjection || !payload.capabilities.canSubmitReview || isDirty || publicationActive}
+						onclick={() => (publishDialogOpen = true)}
+						class="rounded-full bg-blue-slate px-3.5 py-1.5 text-[10px] uppercase tracking-[0.2em] text-surface-white transition hover:bg-blue-slate-mid-dark disabled:pointer-events-none disabled:opacity-40"
+						title={!hasDocumentPageProjection
+							? 'OCR pages are unavailable'
+							: isDirty
+								? 'Save changes before publishing'
+								: publicationActive
+									? 'A publication is already in progress'
+									: undefined}
 					>
-						<input type="hidden" name="reviewNote" value="" />
-						<input type="hidden" name="revision" value={payload.revision} />
-						<button
-							type="submit"
-							disabled={submitting || isDirty}
-							class="rounded-full bg-blue-slate px-3.5 py-1.5 text-[10px] uppercase tracking-[0.2em] text-surface-white transition hover:bg-blue-slate-mid-dark disabled:pointer-events-none disabled:opacity-40"
-							title={isDirty ? 'Save draft before submitting' : undefined}
-						>
-							{submitting ? 'Submitting…' : 'Submit for review'}
-						</button>
-					</form>
+						{publicationRequest?.status === 'PROCESSING'
+							? 'Publishing…'
+							: publicationRequest?.status === 'PENDING'
+								? 'Publication queued'
+								: hasDocumentPageProjection
+									? 'Publish curated OCR'
+									: 'OCR unavailable'}
+					</button>
 				{/if}
 			</div>
 		{/if}
@@ -388,6 +452,39 @@
 			<p class="text-[11px] text-burnt-peach">
 				This object is currently being edited by another user. It will be available after they finish.
 			</p>
+		</div>
+	{/if}
+
+	{#if payload.curation.kind === 'document' && !hasDocumentPageProjection}
+		<div class="shrink-0 border-b border-pearl-beige bg-pearl-beige/35 px-4 py-3 sm:px-6">
+			<p class="text-[11px] font-medium text-text-ink">Curated OCR cannot be published yet.</p>
+			<p class="mt-1 text-[10px] text-text-muted">
+				This document has no synchronized OCR pages. You can still save metadata changes.
+				<a href={resolve('/objects/[objectId]', { objectId: payload.objectId })} class="ml-1 text-blue-slate underline underline-offset-2">Return to the object to request a resync.</a>
+			</p>
+		</div>
+	{/if}
+
+	{#if publicationRequest}
+		<div class="shrink-0 border-b border-blue-slate/10 bg-pale-sky/15 px-4 py-2.5 sm:px-6">
+			<p class="text-[10px] text-blue-slate">
+				{#if publicationRequest.status === 'PENDING'}
+					Curated OCR publication is queued.
+				{:else if publicationRequest.status === 'PROCESSING'}
+					Curated OCR is being published to the archive.
+				{:else if publicationRequest.status === 'COMPLETED'}
+					Curated OCR was published successfully.
+				{:else if publicationRequest.status === 'FAILED'}
+					Curated OCR publication failed{publicationRequest.failureReason ? `: ${publicationRequest.failureReason}` : '.'}
+				{:else}
+					Curated OCR publication was canceled.
+				{/if}
+				<span class="ml-2 text-text-muted">Request {publicationRequest.id}</span>
+			</p>
+		</div>
+	{:else if publicationStatusError}
+		<div class="shrink-0 border-b border-border-soft px-4 py-2 sm:px-6">
+			<p class="text-[10px] text-text-muted">{publicationStatusError}</p>
 		</div>
 	{/if}
 
@@ -485,6 +582,9 @@
 				<div class="min-h-0 flex-1 overflow-y-auto p-5">
 					{#if pages[activePageIdx]}
 						{@const p = pages[activePageIdx]}
+						{#if fieldError('pages')}
+							<p class="mb-3 text-xs text-burnt-peach" role="alert">{fieldError('pages')}</p>
+						{/if}
 						<SourceTextDiff
 							sourceLabel="OCR text"
 							curatedLabel="Curated text"
@@ -570,6 +670,57 @@
 	</div>
 </div>
 
+{#if publishDialogOpen}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-blue-slate/45 p-4" role="presentation">
+		<div class="w-full max-w-lg rounded-2xl border border-border-soft bg-surface-white p-6 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="publish-dialog-title">
+			<h2 id="publish-dialog-title" class="font-display text-xl text-text-ink">Publish curated OCR?</h2>
+			<p class="mt-2 text-sm leading-relaxed text-text-muted">
+				This publishes the currently saved OCR as an asynchronous archive update. Metadata changes are saved separately and unsaved changes cannot be included.
+			</p>
+			<form
+				id="form-submit"
+				method="POST"
+				action="?/submitCuration"
+				class="mt-5"
+				use:enhance={() => {
+					submitting = true;
+					return async ({ update, result }) => {
+						await update({ reset: false, invalidateAll: result.type === 'success' });
+						submitting = false;
+						if (result.type === 'success') {
+							publishDialogOpen = false;
+							reviewNote = '';
+							await refreshPublicationStatus();
+							schedulePublicationPoll();
+						}
+					};
+				}}
+			>
+				<label class="block text-[10px] uppercase tracking-[0.2em] text-blue-slate" for="publication-note">Publication note <span class="normal-case tracking-normal text-text-muted">(optional)</span></label>
+				<textarea
+					id="publication-note"
+					name="reviewNote"
+					rows="4"
+					placeholder="Record context for the edit history"
+					bind:value={reviewNote}
+					class="mt-2 w-full resize-y rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink placeholder:text-text-muted/60 focus:border-blue-slate/40 focus:outline-none focus:ring-1 focus:ring-blue-slate/20"
+				></textarea>
+				<p class="mt-1 text-[10px] text-text-muted">This note is recorded in edit history; it is not sent to a human reviewer.</p>
+				{#if form?.error}
+					<p class="mt-3 rounded-xl bg-burnt-peach/10 px-3 py-2 text-xs text-burnt-peach" role="alert">{form.error}</p>
+				{/if}
+				<input type="hidden" name="revision" value={payload.revision} />
+				<div class="mt-5 flex flex-wrap justify-end gap-2">
+					<button type="button" disabled={submitting} onclick={() => (publishDialogOpen = false)} class="rounded-full border border-border-soft px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20 disabled:opacity-40">Cancel</button>
+					<button type="submit" disabled={submitting} class="rounded-full bg-blue-slate px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-surface-white transition hover:bg-blue-slate-mid-dark disabled:opacity-40">
+						{submitting ? 'Queueing…' : 'Queue publication'}
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+{/if}
+
 {#snippet metadataFields()}
 	<div class="space-y-4">
 		<!-- Title -->
@@ -578,10 +729,15 @@
 			<input
 				id="edit-title"
 				type="text"
-				class="mt-1.5 w-full rounded-lg border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink placeholder:text-text-muted/50 focus:border-blue-slate/40 focus:outline-none focus:ring-1 focus:ring-blue-slate/20"
+				class="mt-1.5 w-full rounded-lg border bg-surface-white px-3 py-2 text-sm text-text-ink placeholder:text-text-muted/50 focus:outline-none focus:ring-1 {fieldError('title') ? 'border-burnt-peach focus:border-burnt-peach/60 focus:ring-burnt-peach/20' : 'border-border-soft focus:border-blue-slate/40 focus:ring-blue-slate/20'}"
 				value={title}
 				oninput={(e) => (title = e.currentTarget.value)}
+				aria-invalid={fieldError('title') ? 'true' : undefined}
+				aria-describedby={fieldError('title') ? 'edit-title-error' : undefined}
 			/>
+			{#if fieldError('title')}
+				<p id="edit-title-error" class="mt-1 text-xs text-burnt-peach" role="alert">{fieldError('title')}</p>
+			{/if}
 		</div>
 
 		<!-- Publication date -->
@@ -599,7 +755,7 @@
 			{#if datePrecision !== 'none'}
 				<input
 					type="text"
-					class="mt-1.5 w-full rounded-lg border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink placeholder:text-text-muted/50 focus:border-blue-slate/40 focus:outline-none focus:ring-1 focus:ring-blue-slate/20"
+					class="mt-1.5 w-full rounded-lg border bg-surface-white px-3 py-2 text-sm text-text-ink placeholder:text-text-muted/50 focus:outline-none focus:ring-1 {fieldError('publicationDate') ? 'border-burnt-peach focus:border-burnt-peach/60 focus:ring-burnt-peach/20' : 'border-border-soft focus:border-blue-slate/40 focus:ring-blue-slate/20'}"
 					placeholder={datePrecision === 'year' ? 'YYYY' : datePrecision === 'month' ? 'YYYY-MM' : 'YYYY-MM-DD'}
 					value={publicationDate}
 					oninput={(e) => (publicationDate = e.currentTarget.value)}
@@ -608,6 +764,9 @@
 					<input type="checkbox" bind:checked={dateApproximate} class="rounded" />
 					Approximate date
 				</label>
+			{/if}
+			{#if fieldError('publicationDate')}
+				<p class="mt-1 text-xs text-burnt-peach" role="alert">{fieldError('publicationDate')}</p>
 			{/if}
 		</div>
 
@@ -645,6 +804,9 @@
 				/>
 				<button type="button" onclick={addTag} class="rounded-lg border border-border-soft px-3 py-1.5 text-[10px] text-blue-slate transition hover:bg-pale-sky/20">Add</button>
 			</div>
+			{#if fieldError('tags')}
+				<p class="mt-1 text-xs text-burnt-peach" role="alert">{fieldError('tags')}</p>
+			{/if}
 		</div>
 
 		<!-- People -->
@@ -668,6 +830,9 @@
 				/>
 				<button type="button" onclick={addPerson} class="rounded-lg border border-border-soft px-3 py-1.5 text-[10px] text-blue-slate transition hover:bg-pale-sky/20">Add</button>
 			</div>
+			{#if fieldError('people')}
+				<p class="mt-1 text-xs text-burnt-peach" role="alert">{fieldError('people')}</p>
+			{/if}
 		</div>
 
 		<!-- Description -->
@@ -681,6 +846,9 @@
 				value={description}
 				oninput={(e) => (description = e.currentTarget.value)}
 			></textarea>
+			{#if fieldError('description')}
+				<p class="mt-1 text-xs text-burnt-peach" role="alert">{fieldError('description')}</p>
+			{/if}
 		</div>
 	</div>
 {/snippet}
@@ -707,6 +875,9 @@
 				value={rightsNote}
 				oninput={(e) => (rightsNote = e.currentTarget.value)}
 			></textarea>
+			{#if fieldError('rightsNote')}
+				<p class="mt-1 text-xs text-burnt-peach" role="alert">{fieldError('rightsNote')}</p>
+			{/if}
 		</div>
 
 		<!-- Sensitivity note -->
@@ -720,6 +891,9 @@
 				value={sensitivityNote}
 				oninput={(e) => (sensitivityNote = e.currentTarget.value)}
 			></textarea>
+			{#if fieldError('sensitivityNote')}
+				<p class="mt-1 text-xs text-burnt-peach" role="alert">{fieldError('sensitivityNote')}</p>
+			{/if}
 		</div>
 	</div>
 {/snippet}

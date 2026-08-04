@@ -9,9 +9,11 @@
 	import { locale } from '$lib/i18n/locale';
 	import { translations } from '$lib/i18n/translations';
 	import { formatTemplate, translate } from '$lib/i18n/translate';
+	import { withObjectsReturnTo } from '$lib/objects/navigation';
 
 	let {
 		rows,
+		returnTo,
 		selectedIds,
 		onToggleSelection,
 		hasActiveFilters,
@@ -22,6 +24,7 @@
 		totalCount
 	} = $props<{
 		rows: ObjectRow[];
+		returnTo: string;
 		selectedIds: string[];
 		onToggleSelection: (id: string) => void;
 		hasActiveFilters: boolean;
@@ -31,6 +34,8 @@
 		filteredCount: number;
 		totalCount: number;
 	}>();
+	const objectHref = (objectId: string): string =>
+		withObjectsReturnTo(resolve('/objects/[objectId]', { objectId }), returnTo);
 
 	const dictionary = $derived(translations[$locale]);
 	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
@@ -149,7 +154,7 @@
 						checked={selectedIds.includes(row.id)}
 						onchange={() => onToggleSelection(row.id)}
 					/>
-					<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} class="shrink-0 transition hover:opacity-90">
+					<a href={resolve(objectHref(row.objectId) as '/objects')} class="shrink-0 transition hover:opacity-90">
 						<ObjectThumbnail
 							objectId={row.objectId}
 							thumbnailArtifactId={row.thumbnailArtifactId}
@@ -158,7 +163,7 @@
 						/>
 					</a>
 					<div class="min-w-0 flex-1">
-						<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} class="block truncate text-sm font-medium text-text-ink hover:text-blue-slate">
+						<a href={resolve(objectHref(row.objectId) as '/objects')} class="block truncate text-sm font-medium text-text-ink hover:text-blue-slate">
 							{row.title ?? titleFallback(row)}
 						</a>
 						<div class="mt-1 flex flex-wrap items-center gap-2">
@@ -190,7 +195,7 @@
 									id={`row-actions-mobile-${row.id}`}
 									class="absolute right-0 z-10 mt-2 w-44 rounded-xl border border-border-soft bg-surface-white p-2 shadow-[0_16px_36px_rgba(31,47,56,0.18)]"
 								>
-									<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} onclick={closeMenu} class="block rounded-lg px-3 py-2 text-xs text-text-ink hover:bg-alabaster-grey/70">
+									<a href={resolve(objectHref(row.objectId) as '/objects')} onclick={closeMenu} class="block rounded-lg px-3 py-2 text-xs text-text-ink hover:bg-alabaster-grey/70">
 										{t('objects.table.open')}
 									</a>
 									<button
@@ -232,7 +237,7 @@
 						checked={selectedIds.includes(row.id)}
 						onchange={() => onToggleSelection(row.id)}
 					/>
-					<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} class="shrink-0 transition hover:opacity-90">
+					<a href={resolve(objectHref(row.objectId) as '/objects')} class="shrink-0 transition hover:opacity-90">
 						<ObjectThumbnail
 							objectId={row.objectId}
 							thumbnailArtifactId={row.thumbnailArtifactId}
@@ -241,10 +246,10 @@
 						/>
 					</a>
 					<div class="min-w-0 flex-1">
-						<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} class="block truncate text-sm font-medium text-text-ink hover:text-blue-slate">
+						<a href={resolve(objectHref(row.objectId) as '/objects')} class="block truncate text-sm font-medium text-text-ink hover:text-blue-slate">
 							{row.title ?? titleFallback(row)}
 						</a>
-						<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} class="block truncate text-xs text-text-muted hover:text-blue-slate">{row.objectId}</a>
+						<a href={resolve(objectHref(row.objectId) as '/objects')} class="block truncate text-xs text-text-muted hover:text-blue-slate">{row.objectId}</a>
 						<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
 							<span class="text-xs text-text-muted">{row.type}</span>
 							<StatusBadge status={toBadgeStatus(row)} label={processingLabel(row.processingState)} />
@@ -278,7 +283,7 @@
 									id={`row-actions-mid-${row.id}`}
 									class="absolute right-0 z-10 mt-2 w-44 rounded-xl border border-border-soft bg-surface-white p-2 shadow-[0_16px_36px_rgba(31,47,56,0.18)]"
 								>
-									<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} onclick={closeMenu} class="block rounded-lg px-3 py-2 text-xs text-text-ink hover:bg-alabaster-grey/70">
+									<a href={resolve(objectHref(row.objectId) as '/objects')} onclick={closeMenu} class="block rounded-lg px-3 py-2 text-xs text-text-ink hover:bg-alabaster-grey/70">
 										{t('objects.table.open')}
 									</a>
 									<button
@@ -335,7 +340,7 @@
 								onchange={() => onToggleSelection(row.id)}
 							/>
 							<a
-								href={resolve('/objects/[objectId]', { objectId: row.objectId })}
+								href={resolve(objectHref(row.objectId) as '/objects')}
 								class="transition hover:opacity-90"
 							>
 								<ObjectThumbnail
@@ -346,10 +351,10 @@
 								/>
 							</a>
 							<div>
-								<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} class="text-sm font-medium text-text-ink underline-offset-2 hover:text-blue-slate hover:underline">
+								<a href={resolve(objectHref(row.objectId) as '/objects')} class="text-sm font-medium text-text-ink underline-offset-2 hover:text-blue-slate hover:underline">
 									{row.title ?? titleFallback(row)}
 								</a>
-								<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} class="block text-xs text-text-muted underline-offset-2 hover:text-blue-slate hover:underline">{row.objectId}</a>
+								<a href={resolve(objectHref(row.objectId) as '/objects')} class="block text-xs text-text-muted underline-offset-2 hover:text-blue-slate hover:underline">{row.objectId}</a>
 								{#if !row.canDownload}
 									<p class="mt-1 text-xs text-burnt-peach">{reasonLabel(reasonCode)}</p>
 									{@const action = reasonActionLabel(reasonCode)}
@@ -364,15 +369,12 @@
 							<StatusBadge status={toBadgeStatus(row)} label={processingLabel(row.processingState)} />
 							<div class="flex flex-wrap items-center gap-1">
 								{#if row.indicators.accessPdf}
-									<Chip class="border-blue-slate/30 bg-pale-sky/25 text-xs text-blue-slate">PDF</Chip>
+									<span title="Materialized PDF derivative"><Chip class="border-blue-slate/30 bg-pale-sky/25 text-xs text-blue-slate">PDF</Chip></span>
 								{/if}
 								{#if row.indicators.ocr}
-									<Chip class="border-blue-slate/30 bg-pale-sky/25 text-xs text-blue-slate">OCR</Chip>
+									<span title="Materialized OCR text"><Chip class="border-blue-slate/30 bg-pale-sky/25 text-xs text-blue-slate">OCR</Chip></span>
 								{/if}
-								{#if row.indicators.index}
-									<Chip class="border-blue-slate/30 bg-pale-sky/25 text-xs text-blue-slate">IDX</Chip>
-								{/if}
-								{#if !row.indicators.accessPdf && !row.indicators.ocr && !row.indicators.index}
+								{#if !row.indicators.accessPdf && !row.indicators.ocr}
 									<span class="text-xs text-text-muted">-</span>
 								{/if}
 							</div>
@@ -400,7 +402,7 @@
 											id={`row-actions-${row.id}`}
 											class="absolute right-0 z-10 mt-2 w-44 rounded-xl border border-border-soft bg-surface-white p-2 shadow-[0_16px_36px_rgba(31,47,56,0.18)]"
 										>
-											<a href={resolve('/objects/[objectId]', { objectId: row.objectId })} onclick={closeMenu} class="block rounded-lg px-3 py-2 text-xs text-text-ink hover:bg-alabaster-grey/70">
+											<a href={resolve(objectHref(row.objectId) as '/objects')} onclick={closeMenu} class="block rounded-lg px-3 py-2 text-xs text-text-ink hover:bg-alabaster-grey/70">
 											{t('objects.table.open')}
 										</a>
 										<button

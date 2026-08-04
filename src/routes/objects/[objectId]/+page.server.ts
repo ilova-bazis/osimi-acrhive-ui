@@ -1,4 +1,5 @@
 import { archiveRequestsService, objectsService } from "$lib/services";
+import { normalizeObjectsReturnTo } from '$lib/objects/navigation';
 import type {
     CreateObjectDownloadRequestResult,
     ObjectArtifact,
@@ -23,6 +24,7 @@ export const load = async ({
     locals,
     cookies,
     fetch,
+    url,
 }: RequestEvent) => {
     const token = cookies.get(AUTH_COOKIE_NAME);
     if (!locals.session || !token) {
@@ -117,6 +119,7 @@ export const load = async ({
 
         return {
             detail,
+			backHref: normalizeObjectsReturnTo(url?.searchParams.get('returnTo')),
 			viewer,
             artifacts,
             artifactsError,

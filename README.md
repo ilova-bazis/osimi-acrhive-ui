@@ -40,3 +40,19 @@ npm run build
 You can preview the production build with `npm run preview`.
 
 > To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+
+## API and Direct Upload Environment
+
+Use `PRIVATE_API_BASE` for SvelteKit server-to-server API calls and
+`PUBLIC_API_BASE` for the browser-visible base used to resolve relative signed
+upload URLs:
+
+```dotenv
+PRIVATE_API_BASE=http://backend.internal:3000
+PUBLIC_API_BASE=https://api.archive.example
+```
+
+`PUBLIC_API_BASE` must be browser-reachable and HTTPS in production. When the
+UI and API use separate origins, configure the backend's
+`CORS_ALLOWED_ORIGINS` with the exact UI origin. A same-origin reverse proxy
+does not require cross-origin upload CORS.

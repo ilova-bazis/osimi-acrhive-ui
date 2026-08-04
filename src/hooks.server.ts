@@ -1,27 +1,14 @@
-import { dev } from '$app/environment';
+import { env } from '$env/dynamic/private';
 import { redirect, type Handle } from '@sveltejs/kit';
 import { AUTH_COOKIE_NAME, clearSessionCookie, getSessionFromToken } from '$lib/server/auth';
 
-type PublicPathOptions = {
-	allowPrototype?: boolean;
-};
-
-const isPrototypePath = (pathname: string): boolean =>
-	pathname === '/prototype' ||
-	pathname.startsWith('/prototype/') ||
-	pathname === '/ingestion-proto' ||
-	pathname.startsWith('/ingestion-proto/');
-
-export const isPublicPath = (
-	pathname: string,
-	{ allowPrototype = dev }: PublicPathOptions = {}
-): boolean =>
+export const isPublicPath = (pathname: string): boolean =>
 	pathname === '/login' ||
 	pathname.startsWith('/login/') ||
-	(allowPrototype && isPrototypePath(pathname)) ||
 	pathname === '/auth/logout';
 
 export const handle: Handle = async ({ event, resolve }) => {
+	event.setHeaders({ 'x-osimi-build-id': env.APP_BUILD_ID || 'development' });
 	if (!event.route.id) {
 		return resolve(event);
 	}

@@ -150,8 +150,31 @@ export const ingestionDtoSchema = z
 		path: ['ingestion_id']
 	});
 
+export const stagingPurgeDtoSchema = z
+	.object({
+		state: z.enum(['NOT_SCHEDULED', 'PENDING', 'PURGED']),
+		started_at: z.string().nullable(),
+		purged_at: z.string().nullable()
+	})
+	.strict();
+
+export const ingestionActionCapabilitiesDtoSchema = z
+	.object({
+		can_resume: z.boolean(),
+		can_retry: z.boolean(),
+		can_cancel: z.boolean(),
+		can_restore: z.boolean(),
+		can_delete: z.boolean()
+	})
+	.strict();
+
+export const ingestionResourceDtoSchema = ingestionDtoSchema.extend({
+	staging_purge: stagingPurgeDtoSchema,
+	action_capabilities: ingestionActionCapabilitiesDtoSchema
+});
+
 export const ingestionsListResponseSchema = z.object({
-	ingestions: z.array(ingestionDtoSchema),
+	ingestions: z.array(ingestionResourceDtoSchema),
 	next_cursor: z.string().nullable().optional()
 });
 
@@ -303,7 +326,7 @@ export const ingestionFileDtoSchema = z.object({
 });
 
 export const ingestionDetailResponseSchema = z.object({
-	ingestion: ingestionDtoSchema,
+	ingestion: ingestionResourceDtoSchema,
 	files: z.array(ingestionFileDtoSchema).optional(),
 	object_groups: z.array(objectGroupSchema).optional()
 });
@@ -440,6 +463,7 @@ export type IngestionFileDto = z.infer<typeof ingestionFileDtoSchema>;
 export type IngestionsListResponseDto = z.infer<typeof ingestionsListResponseSchema>;
 export type CreateIngestionResponseDto = z.infer<typeof createIngestionResponseSchema>;
 export type PresignIngestionFileResponseDto = z.infer<typeof presignIngestionFileResponseSchema>;
+export type IngestionResourceDto = z.infer<typeof ingestionResourceDtoSchema>;
 export type IngestionCapabilitiesResponseDto = z.infer<typeof ingestionCapabilitiesResponseSchema>;
 export type IngestionItemDto = z.infer<typeof ingestionItemSchema>;
 export type IngestionItemFileDto = z.infer<typeof ingestionItemFileSchema>;

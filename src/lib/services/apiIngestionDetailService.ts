@@ -7,11 +7,17 @@ import {
 	retryIngestionResponseSchema,
 	restoreIngestionResponseSchema,
 	updateIngestionRequestSchema,
-	type IngestionDto,
+	type IngestionResourceDto,
 	type IngestionFileDto,
 	type IngestionItemDto,
 	type IngestionItemFileDto
 } from '$lib/api/schemas/ingestions';
+import { mapIngestionStatus } from '$lib/api/mappers/ingestionsMapper';
+import {
+	NO_INGESTION_ACTION_CAPABILITIES,
+	type IngestionActionCapabilities,
+	type StagingPurge
+} from './ingestionOverview';
 import { backendRequest } from '$lib/server/apiClient';
 import type {
 	IngestionDetail,
@@ -21,7 +27,6 @@ import type {
 	IngestionDetailService,
 	ListItemsRequest
 } from './ingestionDetail';
-import type { IngestionStatus } from './ingestionOverview';
 
 const toIngestionPath = (batchId: string): string => `/api/ingestions/${encodeURIComponent(batchId)}`;
 const toItemsPath = (batchId: string): string => `/api/ingestions/${encodeURIComponent(batchId)}/items`;
@@ -30,32 +35,6 @@ const toItemFilesPath = (batchId: string, itemId: string): string =>
 const toRetryPath = (batchId: string): string => `/api/ingestions/${encodeURIComponent(batchId)}/retry`;
 const toCancelPath = (batchId: string): string => `/api/ingestions/${encodeURIComponent(batchId)}/cancel`;
 const toRestorePath = (batchId: string): string => `/api/ingestions/${encodeURIComponent(batchId)}/restore`;
-
-const toIngestionStatus = (rawStatus: string | undefined): IngestionStatus => {
-	const normalized = (rawStatus ?? '').toLowerCase();
-
-	if (normalized.includes('draft')) return 'draft';
-	if (normalized.includes('upload')) return 'uploading';
-	if (normalized.includes('cancel')) return 'canceled';
-	if (normalized.includes('fail') || normalized.includes('error')) {
-		return 'failed';
-	}
-	if (normalized.includes('complete') || normalized.includes('done') || normalized.includes('success')) {
-		return 'completed';
-	}
-	if (normalized.includes('queue') || normalized.includes('submitted')) {
-		return 'queued';
-	}
-	if (
-		normalized.includes('ingest') ||
-		normalized.includes('process') ||
-		normalized.includes('running')
-	) {
-		return 'ingesting';
-	}
-
-	return 'draft';
-};
 
 const defaultSummary = (title: string) => ({
 	title: {
@@ -169,7 +148,7 @@ const mapItem = (dto: IngestionItemDto, files: IngestionDetailItemFile[]): Inges
 };
 
 const mapDetail = (
-	ingestion: IngestionDto,
+	ingestion: IngestionResourceDto,
 	files: IngestionFileDto[],
 	items: IngestionDetailItem[]
 ): IngestionDetail => {
@@ -177,11 +156,27 @@ const mapDetail = (
 	const processedObjects =
 		ingestion.processed_objects ?? ingestion.objects_processed ?? ingestion.completed_count ?? 0;
 	const totalObjects = ingestion.total_objects ?? ingestion.object_count ?? ingestion.total_count ?? processedObjects;
+	const actionCapabilities: IngestionActionCapabilities = ingestion.action_capabilities
+		? {
+				canResume: ingestion.action_capabilities.can_resume,
+				canRetry: ingestion.action_capabilities.can_retry,
+				canCancel: ingestion.action_capabilities.can_cancel,
+				canRestore: ingestion.action_capabilities.can_restore,
+				canDelete: ingestion.action_capabilities.can_delete
+			}
+		: { ...NO_INGESTION_ACTION_CAPABILITIES };
+	const stagingPurge: StagingPurge = {
+		state: ingestion.staging_purge?.state.toLowerCase() as StagingPurge['state'] ?? 'not_scheduled',
+		startedAt: ingestion.staging_purge?.started_at ?? null,
+		purgedAt: ingestion.staging_purge?.purged_at ?? null
+	};
 
 	return {
 		id,
 		batchLabel: ingestion.batch_label ?? id,
-		status: toIngestionStatus(ingestion.status),
+		status: mapIngestionStatus(ingestion.status),
+		actionCapabilities,
+		stagingPurge,
 		classificationType: normalizeClassificationType(
 			ingestion.classification_type ?? ingestion.document_type
 		),

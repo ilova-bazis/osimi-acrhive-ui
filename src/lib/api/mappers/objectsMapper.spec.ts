@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { ObjectsListResponseDto } from '$lib/api/schemas/objects';
 import {
+	createObjectResyncResponseSchema,
+	objectsListResponseSchema,
+	type ObjectsListResponseDto
+} from '$lib/api/schemas/objects';
+import {
+	mapCreateObjectResyncResponse,
 	mapCreateObjectDownloadRequestResponse,
 	mapObjectArtifacts,
 	mapObjectAvailableFiles,
@@ -12,11 +17,11 @@ describe('mapObjectsList', () => {
 	it('maps backend object projection fields to UI rows', () => {
 		const mapped = mapObjectsList({
 			limit: 25,
-			response: {
+			response: objectsListResponseSchema.parse({
 				objects: [
 					{
-						id: 'OBJ-1',
-						object_id: 'OBJ-1',
+						id: 'OBJ-20260101-1',
+						object_id: 'OBJ-20260101-1',
 						thumbnail_artifact_id: '60000000-0000-4000-8000-000000000777',
 						title: 'Sample object',
 						processing_state: 'index_done',
@@ -39,15 +44,14 @@ describe('mapObjectsList', () => {
 						sensitivity_note: null,
 						can_download: true,
 						access_reason_code: 'OK',
-						has_access_pdf: 1,
-						has_ocr: 1,
-						has_index: 1
+						has_access_pdf: true,
+						has_ocr: true
 					}
 				],
 				next_cursor: 'cursor-1',
 				total_count: 124,
 				filtered_count: 37
-			}
+			})
 		});
 
 		expect(mapped.rows).toHaveLength(1);
@@ -57,22 +61,21 @@ describe('mapObjectsList', () => {
 		expect(mapped.rows[0]?.thumbnailArtifactId).toBe('60000000-0000-4000-8000-000000000777');
 		expect(mapped.rows[0]?.indicators).toEqual({
 			accessPdf: true,
-			ocr: true,
-			index: true
+			ocr: true
 		});
 		expect(mapped.nextCursor).toBe('cursor-1');
 		expect(mapped.totalCount).toBe(124);
 		expect(mapped.filteredCount).toBe(37);
 	});
 
-	it('defaults optional indicator flags to false', () => {
+	it('maps explicit false artifact indicators', () => {
 		const mapped = mapObjectsList({
 			limit: 25,
-			response: {
+			response: objectsListResponseSchema.parse({
 				objects: [
 					{
-						id: 'OBJ-2',
-						object_id: 'OBJ-2',
+						id: 'OBJ-20260101-2',
+						object_id: 'OBJ-20260101-2',
 						thumbnail_artifact_id: null,
 						title: null,
 						processing_state: 'queued',
@@ -94,19 +97,20 @@ describe('mapObjectsList', () => {
 						rights_note: null,
 						sensitivity_note: null,
 						can_download: false,
-						access_reason_code: 'TEMP_UNAVAILABLE'
+						access_reason_code: 'TEMP_UNAVAILABLE',
+						has_access_pdf: false,
+						has_ocr: false
 					}
 				],
 				next_cursor: null,
 				total_count: 1,
 				filtered_count: 1
-			}
+			})
 		});
 
 		expect(mapped.rows[0]?.indicators).toEqual({
 			accessPdf: false,
-			ocr: false,
-			index: false
+			ocr: false
 		});
 		expect(mapped.rows[0]?.thumbnailArtifactId).toBeNull();
 	});
@@ -117,8 +121,8 @@ describe('mapObjectsList', () => {
 			response: {
 				objects: [
 					{
-						id: 'OBJ-3',
-						object_id: 'OBJ-3',
+						id: 'OBJ-20260101-3',
+						object_id: 'OBJ-20260101-3',
 						thumbnail_artifact_id: null,
 						title: 'Legacy object',
 						processing_state: 'queued',
@@ -139,7 +143,9 @@ describe('mapObjectsList', () => {
 						rights_note: null,
 						sensitivity_note: null,
 						can_download: false,
-						access_reason_code: 'TEMP_UNAVAILABLE'
+						access_reason_code: 'TEMP_UNAVAILABLE',
+						has_access_pdf: false,
+						has_ocr: false
 					}
 				],
 				next_cursor: null,
@@ -154,8 +160,8 @@ describe('mapObjectsList', () => {
 	it('maps object detail ingest and access projection fields', () => {
 		const mapped = mapObjectDetail({
 			object: {
-				id: 'OBJ-9',
-				object_id: 'OBJ-9',
+				id: 'OBJ-20260101-9',
+				object_id: 'OBJ-20260101-9',
 				thumbnail_artifact_id: '60000000-0000-4000-8000-000000000999',
 				title: 'Detail object',
 				processing_state: 'index_done',
@@ -177,12 +183,9 @@ describe('mapObjectsList', () => {
 				sensitivity_note: null,
 				can_download: true,
 				access_reason_code: 'OK',
-				has_access_pdf: 1,
-				has_ocr: 1,
-				has_index: 1,
 				ingest_manifest: {
 					schema_version: '1.0',
-					object_id: 'OBJ-9'
+					object_id: 'OBJ-20260101-9'
 				},
 				is_authorized: true,
 				is_deliverable: true
@@ -190,23 +193,68 @@ describe('mapObjectsList', () => {
 			viewer: null
 		});
 
-		expect(mapped.detail.objectId).toBe('OBJ-9');
+		expect(mapped.detail.objectId).toBe('OBJ-20260101-9');
 		expect(mapped.detail.thumbnailArtifactId).toBe('60000000-0000-4000-8000-000000000999');
 		expect(mapped.detail.tags).toEqual(['source:family_archive']);
 		expect(mapped.detail.ingestManifest).toEqual({
 			schema_version: '1.0',
-			object_id: 'OBJ-9'
+			object_id: 'OBJ-20260101-9'
 		});
 		expect(mapped.detail.isAuthorized).toBe(true);
 		expect(mapped.detail.isDeliverable).toBe(true);
 		expect(mapped.viewer).toBeNull();
 	});
 
+	it('requires boolean list artifact indicators', () => {
+		const response = {
+			objects: [
+				{
+					id: 'OBJ-20260101-11',
+					object_id: 'OBJ-20260101-11',
+					thumbnail_artifact_id: null,
+					title: 'Indicator object',
+					processing_state: 'queued',
+					curation_state: 'needs_review',
+					availability_state: 'UNAVAILABLE',
+					access_level: 'private',
+					type: 'DOCUMENT',
+					tenant_id: 'tenant-1',
+					source_ingestion_id: null,
+					source_batch_label: null,
+					metadata: {},
+					created_at: '2026-02-17T00:00:00.000Z',
+					updated_at: '2026-02-17T01:00:00.000Z',
+					embargo_until: null,
+					embargo_kind: 'none',
+					embargo_curation_state: null,
+					rights_note: null,
+					sensitivity_note: null,
+					can_download: false,
+					access_reason_code: 'TEMP_UNAVAILABLE',
+					has_access_pdf: false,
+					has_ocr: false
+				}
+			],
+			next_cursor: null,
+			total_count: 1,
+			filtered_count: 1
+		};
+
+		const missing = structuredClone(response);
+		delete (missing.objects[0] as { has_ocr?: boolean }).has_ocr;
+		const numeric = structuredClone(response);
+		(numeric.objects[0] as { has_access_pdf: unknown }).has_access_pdf = 1;
+
+		expect(objectsListResponseSchema.safeParse(response).success).toBe(true);
+		expect(objectsListResponseSchema.safeParse(missing).success).toBe(false);
+		expect(objectsListResponseSchema.safeParse(numeric).success).toBe(false);
+	});
+
 	it('fails closed when object detail access projection fields are omitted', () => {
 		const mapped = mapObjectDetail({
 			object: {
-				id: 'OBJ-10',
-				object_id: 'OBJ-10',
+				id: 'OBJ-20260101-10',
+				object_id: 'OBJ-20260101-10',
 				thumbnail_artifact_id: null,
 				title: 'Legacy detail object',
 				processing_state: 'index_done',
@@ -318,5 +366,34 @@ describe('mapObjectsList', () => {
 		expect(mapped.status).toBe('available');
 		expect(mapped.artifact?.kind).toBe('original');
 		expect(mapped.request).toBeNull();
+	});
+
+	it('preserves a null deduplication key in resync responses', () => {
+		const response = createObjectResyncResponseSchema.parse({
+			status: 'queued',
+			object_id: 'OBJ-9',
+			request: {
+				id: 'request-1',
+				tenant_id: 'tenant-1',
+				target_type: 'object',
+				target_id: 'OBJ-9',
+				action_type: 'object_resync',
+				action_payload: {},
+				requested_by: 'user-1',
+				dedupe_key: null,
+				status: 'PENDING',
+				failure_reason: null,
+				failure_details: null,
+				created_at: '2026-08-03T00:00:00.000Z',
+				updated_at: '2026-08-03T00:00:00.000Z',
+				completed_at: null
+			}
+		});
+
+		const mapped = mapCreateObjectResyncResponse(response);
+
+		expect(mapped.status).toBe('queued');
+		expect(mapped.objectId).toBe('OBJ-9');
+		expect(mapped.request.dedupeKey).toBeNull();
 	});
 });

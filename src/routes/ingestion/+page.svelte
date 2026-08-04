@@ -46,6 +46,7 @@
 		queued: t('ingestionOverview.statuses.queued'),
 		ingesting: t('ingestionOverview.statuses.ingesting'),
 		completed: t('ingestionOverview.statuses.completed'),
+		completed_with_errors: t('ingestionOverview.statuses.completed_with_errors'),
 		failed: t('ingestionOverview.statuses.failed'),
 		canceled: t('ingestionOverview.statuses.canceled')
 	});
@@ -56,6 +57,7 @@
 		queued: 'processing',
 		ingesting: 'processing',
 		completed: 'approved',
+		completed_with_errors: 'needs-review',
 		failed: 'failed',
 		canceled: 'blocked'
 	};
@@ -126,10 +128,6 @@
 			if (response.status === 401) {
 				await goto(resolve('/login'));
 				return;
-			}
-
-			if (response.status === 409) {
-				throw new Error(t('ingestionOverview.errors.deleteConflict'));
 			}
 
 			if (!response.ok) {

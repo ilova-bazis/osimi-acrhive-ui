@@ -147,17 +147,32 @@ describe('/objects/[objectId]/edit +page.server', () => {
 		).resolves.toEqual({ editPayload: baseEditPayload, isLockedByOtherUser: false });
 	});
 
-	it('returns 400 when saveDraft receives malformed pages', async () => {
+	it('marks a foreign edit lock so the page renders read-only lock behavior', async () => {
+		getObjectEditPayloadMock.mockResolvedValue({
+			...baseEditPayload,
+			lock: { locked: true, lockedBy: 'u2', lockedUntil: '2026-05-23T19:00:00.000Z' },
+		});
+
+		await expect(load({
+			params: { objectId: 'OBJ-1' }, locals: { session },
+			cookies: { get: () => 'token-1', delete: vi.fn() }, fetch: vi.fn(),
+		} as never)).resolves.toMatchObject({ isLockedByOtherUser: true });
+	});
+
+	it('returns page field errors when saveDraft receives malformed pages', async () => {
 		const form = makeSaveDraftForm({ pages: [{ pageNumber: 'one', curatedText: 'Edited text' }] });
 
 		const result = await actions.saveDraft(makeEvent(form));
 
-		expect(result).toMatchObject({ status: 400, data: { error: 'Invalid form payload.' } });
+		expect(result).toMatchObject({
+			status: 400,
+			data: { error: 'Check the highlighted fields.', fieldErrors: { pages: 'Review the page curation values.' } },
+		});
 		expect(saveObjectMetadataMock).not.toHaveBeenCalled();
 		expect(saveDocumentCurationMock).not.toHaveBeenCalled();
 	});
 
-	it('returns 400 when publication date does not match precision', async () => {
+	it('returns publication-date field errors when date does not match precision', async () => {
 		const form = makeSaveDraftForm({
 			metadata: {
 				title: 'Updated title',
@@ -173,8 +188,42 @@ describe('/objects/[objectId]/edit +page.server', () => {
 
 		const result = await actions.saveDraft(makeEvent(form));
 
-		expect(result).toMatchObject({ status: 400, data: { error: 'Invalid form payload.' } });
+		expect(result).toMatchObject({
+			status: 400,
+			data: { error: 'Check the highlighted fields.', fieldErrors: { publicationDate: 'Publication date does not match selected precision.' } },
+		});
 		expect(getObjectEditPayloadMock).not.toHaveBeenCalled();
+	});
+
+	it('returns a title field error before sending a whitespace-only title to the backend', async () => {
+		const result = await actions.saveDraft(
+			makeEvent(makeSaveDraftForm({ metadata: { ...baseEditPayload.metadata, title: '   ' }, pages: [] })),
+		);
+
+		expect(result).toMatchObject({
+			status: 400,
+			data: { error: 'Check the highlighted fields.', fieldErrors: { title: 'Enter a title.' } },
+		});
+		expect(saveObjectMetadataMock).not.toHaveBeenCalled();
+	});
+
+	it('rejects duplicate page numbers before sending curation', async () => {
+		const form = makeSaveDraftForm({
+			pages: [
+				{ pageNumber: 1, curatedText: 'First' },
+				{ pageNumber: 1, curatedText: 'Duplicate' },
+			],
+		});
+		form.delete('metadata');
+		form.delete('rights');
+
+		const result = await actions.saveDraft(makeEvent(form));
+
+		expect(result).toMatchObject({
+			status: 400,
+			data: { fieldErrors: { pages: 'Review the page curation values.' } },
+		});
+		expect(saveDocumentCurationMock).not.toHaveBeenCalled();
 	});
 
 	it('saves metadata and document curation when capabilities allow both', async () => {
@@ -229,6 +278,27 @@ describe('/objects/[objectId]/edit +page.server', () => {
 		const result = await actions.saveDraft(makeEvent(makeSaveDraftForm({ pages: [] })));
 
 		expect(result).toMatchObject({ status: 423, data: { locked: true } });
+	});
+
+	it('maps backend validation details to editor fields', async () => {
+		saveObjectMetadataMock.mockRejectedValue(
+			new ApiClientError({
+				status: 422,
+				code: 'VALIDATION_FAILED',
+				message: 'Validation failed.',
+				details: [{ path: 'metadata.title', code: 'TOO_SMALL' }],
+			}),
+		);
+
+		const result = await actions.saveDraft(makeEvent(makeSaveDraftForm({ pages: [] })));
+
+		expect(result).toMatchObject({
+			status: 422,
+			data: {
+				error: 'Check the highlighted fields and try again.',
+				fieldErrors: { title: 'Enter a title.' },
+			},
+		});
 	});
 
 	it('returns recovered partial state when document curation fails after metadata save', async () => {
@@ -304,6 +374,53 @@ describe('/objects/[objectId]/edit +page.server', () => {
 		expect(submitObjectCurationMock).toHaveBeenCalledWith(
 			expect.objectContaining({ objectId: 'OBJ-1', revision: 4, reviewNote: 'Looks ready' }),
 		);
+	});
+
+	it('rejects publication when the document has no OCR page projection', async () => {
+		getObjectEditPayloadMock.mockResolvedValue({
+			...baseEditPayload,
+			capabilities: { ...baseEditPayload.capabilities, canCurateText: false, canSubmitReview: false },
+			curation: { ...baseEditPayload.curation, pageCount: null, pages: [] },
+		});
+		const form = new FormData();
+		form.set('revision', '4');
+
+		const result = await actions.submitCuration(makeEvent(form));
+
+		expect(result).toMatchObject({
+			status: 409,
+			data: { projectionUnavailable: true, error: expect.stringContaining('OCR pages are unavailable') },
+		});
+		expect(submitObjectCurationMock).not.toHaveBeenCalled();
+	});
+
+	it('surfaces a projection race with the backend request id', async () => {
+		submitObjectCurationMock.mockRejectedValue(new ApiClientError({
+			status: 409,
+			code: 'UNKNOWN_ERROR',
+			message: 'Projection unavailable',
+			requestId: 'req-projection',
+			details: { code: 'PROJECTION_UNAVAILABLE', object_id: 'OBJ-1' },
+		}));
+		const form = new FormData();
+		form.set('revision', '4');
+
+		const result = await actions.submitCuration(makeEvent(form));
+
+		expect(result).toMatchObject({
+			status: 409,
+			data: { projectionUnavailable: true, error: expect.stringContaining('req-projection') },
+		});
+	});
+
+	it('trims blank review notes to null before submitting', async () => {
+		const form = new FormData();
+		form.set('reviewNote', '   ');
+		form.set('revision', '4');
+
+		await actions.submitCuration(makeEvent(form));
+
+		expect(submitObjectCurationMock).toHaveBeenCalledWith(expect.objectContaining({ reviewNote: null }));
 	});
 
 	it('rejects submitCuration when submit capability is missing', async () => {

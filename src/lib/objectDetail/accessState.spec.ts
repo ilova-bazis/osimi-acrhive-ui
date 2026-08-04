@@ -28,11 +28,6 @@ const baseDetail: ObjectDetail = {
 	accessReasonCode: 'RESTORE_REQUIRED',
 	createdAt: '2026-04-02T10:00:00.000Z',
 	updatedAt: '2026-04-02T10:00:00.000Z',
-	indicators: {
-		accessPdf: false,
-		ocr: false,
-		index: false
-	},
 	ingestManifest: null,
 	isAuthorized: true,
 	isDeliverable: false

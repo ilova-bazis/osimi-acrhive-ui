@@ -112,6 +112,7 @@ export const load: PageServerLoad = async ({ locals, cookies, fetch, url }) => {
 			recent,
 			list,
 			filters,
+			returnTo: `${url.pathname}${url.search}`,
 			session: locals.session
 		};
 	} catch (cause) {

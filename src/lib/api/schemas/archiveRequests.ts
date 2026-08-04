@@ -7,7 +7,7 @@ export const archiveRequestSchema = z.object({
 	target_id: z.string().min(1),
 	action_type: z.string().min(1),
 	requested_by: z.string().min(1),
-	dedupe_key: z.string().min(1),
+	dedupe_key: z.string().min(1).nullable(),
 	status: z.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELED']),
 	failure_reason: z.string().nullable(),
 	failure_details: z.unknown().nullable().optional(),

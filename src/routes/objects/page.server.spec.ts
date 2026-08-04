@@ -89,6 +89,7 @@ describe('/objects +page.server', () => {
 			recent,
 			list,
 			filters: expect.objectContaining({ q: 'archive', limit: 10 }),
+			returnTo: '/objects?q=archive&limit=10',
 			session
 		});
 		expect(listRecentMock).toHaveBeenCalledWith(expect.objectContaining({ context: expect.any(Object) }));

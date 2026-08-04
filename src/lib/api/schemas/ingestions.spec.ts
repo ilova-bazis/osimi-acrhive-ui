@@ -2,6 +2,17 @@ import { describe, expect, it } from 'vitest';
 
 import { ingestionDetailResponseSchema, ingestionDtoSchema, ingestionsListResponseSchema } from './ingestions';
 
+const resourceFields = {
+	staging_purge: { state: 'NOT_SCHEDULED' as const, started_at: null, purged_at: null },
+	action_capabilities: {
+		can_resume: false,
+		can_retry: true,
+		can_cancel: false,
+		can_restore: false,
+		can_delete: false
+	}
+};
+
 describe('ingestionDtoSchema', () => {
 	it('accepts legacy and canonical identifier aliases', () => {
 		expect(ingestionDtoSchema.safeParse({ id: 'id-1' }).success).toBe(true);
@@ -23,7 +34,7 @@ describe('ingestionDtoSchema', () => {
 describe('ingestionsListResponseSchema', () => {
 	it('rejects list responses containing rows without identifiers', () => {
 		const parsed = ingestionsListResponseSchema.safeParse({
-			ingestions: [{ status: 'DRAFT' }],
+			ingestions: [{ status: 'DRAFT', ...resourceFields }],
 			next_cursor: null
 		});
 
@@ -34,7 +45,7 @@ describe('ingestionsListResponseSchema', () => {
 describe('ingestionDetailResponseSchema', () => {
 	it('accepts retention-purged previews', () => {
 		const parsed = ingestionDetailResponseSchema.safeParse({
-			ingestion: { id: 'ing-1' },
+			ingestion: { id: 'ing-1', ...resourceFields },
 			files: [
 				{
 					id: 'file-1',
@@ -60,10 +71,25 @@ describe('ingestionDetailResponseSchema', () => {
 
 	it('rejects unknown preview statuses', () => {
 		const parsed = ingestionDetailResponseSchema.safeParse({
-			ingestion: { id: 'ing-1' },
+			ingestion: { id: 'ing-1', ...resourceFields },
 			files: [{ id: 'file-1', preview: { status: 'deleted' } }]
 		});
 
 		expect(parsed.success).toBe(false);
+	});
+
+	it('requires purge and action capability fields on ingestion resources', () => {
+		expect(
+			ingestionsListResponseSchema.safeParse({
+				ingestions: [{ id: 'ing-1', ...resourceFields }],
+				next_cursor: null
+			}).success
+		).toBe(true);
+		expect(
+			ingestionsListResponseSchema.safeParse({
+				ingestions: [{ id: 'ing-1', staging_purge: resourceFields.staging_purge }],
+				next_cursor: null
+			}).success
+		).toBe(false);
 	});
 });

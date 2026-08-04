@@ -6,8 +6,6 @@ import { redirect } from '@sveltejs/kit';
 import type { IngestionDetail } from '$lib/services/ingestionDetail';
 import type { PageServerLoad } from './$types';
 
-const SUBMITTABLE_STATUSES = new Set(['draft', 'uploading']);
-
 export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) => {
 	const token = cookies.get(AUTH_COOKIE_NAME);
 	if (!locals.session || !token) {
@@ -28,7 +26,7 @@ export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) =
 		throw redirect(303, `/ingestion/${params.batchId}/setup`);
 	}
 
-	if (!SUBMITTABLE_STATUSES.has(detail.status)) {
+	if (!detail.actionCapabilities.canResume) {
 		throw redirect(303, `/ingestion/${params.batchId}`);
 	}
 

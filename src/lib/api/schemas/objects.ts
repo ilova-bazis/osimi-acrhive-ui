@@ -42,9 +42,26 @@ export const accessReasonCodeSchema = z.enum([
     "TEMP_UNAVAILABLE",
 ]);
 
-export const objectListItemSchema = z.object({
-    id: z.string().min(1),
-    object_id: z.string().min(1),
+export const objectIdSchema = z.string().regex(/^OBJ-[0-9]{8}-[A-Z0-9]+$/, {
+    message: 'Object ID must match OBJ-YYYYMMDD-XXXXXX.',
+});
+
+const requireCanonicalObjectId = (
+    value: { id: string; object_id: string },
+    context: z.RefinementCtx,
+): void => {
+    if (value.id !== value.object_id) {
+        context.addIssue({
+            code: 'custom',
+            path: ['id'],
+            message: 'id and object_id must identify the same object.',
+        });
+    }
+};
+
+export const objectBaseSchema = z.object({
+    id: objectIdSchema,
+    object_id: objectIdSchema,
     thumbnail_artifact_id: z.string().min(1).nullable(),
     title: z.string().nullable(),
     processing_state: processingStateSchema,
@@ -63,14 +80,16 @@ export const objectListItemSchema = z.object({
     embargo_curation_state: curationStateSchema.nullable(),
     rights_note: z.string().nullable(),
     sensitivity_note: z.string().nullable(),
-    can_download: z.boolean(),
-    access_reason_code: accessReasonCodeSchema,
     language: z.string().nullable().optional(),
     tags: z.array(z.string()).optional().default([]),
-    has_access_pdf: z.union([z.literal(0), z.literal(1)]).optional(),
-    has_ocr: z.union([z.literal(0), z.literal(1)]).optional(),
-    has_index: z.union([z.literal(0), z.literal(1)]).optional(),
 });
+
+export const objectListItemSchema = objectBaseSchema.extend({
+    can_download: z.boolean(),
+    access_reason_code: accessReasonCodeSchema,
+    has_access_pdf: z.boolean(),
+    has_ocr: z.boolean(),
+}).superRefine(requireCanonicalObjectId);
 
 export const objectsListResponseSchema = z.object({
     objects: z.array(objectListItemSchema),
@@ -79,11 +98,13 @@ export const objectsListResponseSchema = z.object({
     filtered_count: z.number().int().nonnegative(),
 });
 
-export const objectDetailItemSchema = objectListItemSchema.extend({
+export const objectDetailItemSchema = objectBaseSchema.extend({
     ingest_manifest: z.record(z.string(), z.unknown()).nullable().optional(),
     is_authorized: z.boolean().optional(),
     is_deliverable: z.boolean().optional(),
-});
+    can_download: z.boolean(),
+    access_reason_code: accessReasonCodeSchema,
+}).superRefine(requireCanonicalObjectId);
 
 const objectViewerMediaTypeSchema = z.enum(['document', 'image', 'audio', 'video']);
 
@@ -286,7 +307,7 @@ export const objectResyncRequestSchema = z.object({
     action_type: z.string().min(1),
     action_payload: z.record(z.string(), z.unknown()).default({}),
     requested_by: z.string().min(1),
-    dedupe_key: z.string().min(1),
+    dedupe_key: z.string().min(1).nullable(),
     status: z.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELED']),
     failure_reason: z.string().nullable(),
     failure_details: z.unknown().nullable().optional(),

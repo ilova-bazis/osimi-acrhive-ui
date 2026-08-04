@@ -18,7 +18,10 @@ describe('/ingestion/[batchId]/review +page.server', () => {
 	});
 
 	it('redirects non-submittable ingestions directly to detail', async () => {
-		getDetailMock.mockResolvedValue({ status: 'completed' });
+		getDetailMock.mockResolvedValue({
+			status: 'completed',
+			actionCapabilities: { canResume: false }
+		});
 
 		await expect(
 			load({

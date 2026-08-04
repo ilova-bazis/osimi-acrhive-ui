@@ -17,9 +17,7 @@
 	}>();
 
 	const isPublicRoute = (pathname: string) =>
-		pathname === '/login' || pathname.startsWith('/login/') ||
-		pathname === '/prototype' || pathname.startsWith('/prototype/') ||
-		pathname === '/ingestion-proto' || pathname.startsWith('/ingestion-proto/');
+		pathname === '/login' || pathname.startsWith('/login/');
 
 	$effect(() => {
 		setSession(data.session);

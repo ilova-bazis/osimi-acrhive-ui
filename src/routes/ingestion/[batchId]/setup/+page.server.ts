@@ -6,8 +6,6 @@ import { error, redirect } from '@sveltejs/kit';
 import type { IngestionDetail, IngestionDetailFile, IngestionDetailItem } from '$lib/services/ingestionDetail';
 import type { PageServerLoad } from './$types';
 
-const EDITABLE_SETUP_STATUSES = new Set(['draft', 'uploading']);
-
 export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) => {
 	const token = cookies.get(AUTH_COOKIE_NAME);
 	if (!locals.session || !token) {
@@ -51,7 +49,7 @@ export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) =
 		throw error(502, 'Failed to load ingestion setup details.');
 	}
 
-	if (!EDITABLE_SETUP_STATUSES.has(detail.status)) {
+	if (!detail.actionCapabilities.canResume) {
 		throw redirect(303, `/ingestion/${params.batchId}`);
 	}
 

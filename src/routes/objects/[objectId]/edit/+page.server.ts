@@ -5,17 +5,79 @@ import { objectEditService } from '$lib/services';
 import type { ObjectEditMetadata, ObjectEditPayload } from '$lib/services/objectEdit';
 import { ObjectEditLockedError, ObjectEditRevisionConflictError } from '$lib/services/objectEdit';
 import { AUTH_COOKIE_NAME, clearSessionCookie } from '$lib/server/auth';
-import { isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
+import { ApiClientError, isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
+
+type ObjectEditField =
+	| 'title'
+	| 'publicationDate'
+	| 'tags'
+	| 'people'
+	| 'description'
+	| 'rightsNote'
+	| 'sensitivityNote'
+	| 'pages';
+
+type ObjectEditFieldErrors = Partial<Record<ObjectEditField, string>>;
+
+const fieldMessage = (field: ObjectEditField): string => {
+	if (field === 'title') return 'Enter a title.';
+	if (field === 'publicationDate') return 'Publication date does not match selected precision.';
+	if (field === 'tags') return 'Tags cannot be blank.';
+	if (field === 'people') return 'People cannot be blank.';
+	if (field === 'pages') return 'Review the page curation values.';
+	return 'Enter a valid value.';
+};
+
+const toField = (path: ReadonlyArray<string | number>): ObjectEditField | null => {
+	const joined = path.join('.');
+	if (joined === 'title' || joined === 'metadata.title') return 'title';
+	if (joined === 'publicationDate' || joined === 'metadata.publication_date') return 'publicationDate';
+	if (joined === 'tags' || joined.startsWith('tags.') || joined === 'metadata.tags' || joined.startsWith('metadata.tags.')) return 'tags';
+	if (joined === 'people' || joined.startsWith('people.') || joined === 'metadata.people' || joined.startsWith('metadata.people.')) return 'people';
+	if (joined === 'description' || joined === 'metadata.description') return 'description';
+	if (joined === 'rightsNote' || joined === 'rights.rights_note') return 'rightsNote';
+	if (joined === 'sensitivityNote' || joined === 'rights.sensitivity_note') return 'sensitivityNote';
+	if (
+		joined === 'pages' ||
+		joined.startsWith('pages.') ||
+		joined.endsWith('.pageNumber') ||
+		joined.endsWith('.curatedText')
+	) {
+		return 'pages';
+	}
+	return null;
+};
+
+const toZodFieldErrors = (error: z.ZodError): ObjectEditFieldErrors => {
+	const fieldErrors: ObjectEditFieldErrors = {};
+	for (const issue of error.issues) {
+		const field = toField(issue.path.map((segment) => (typeof segment === 'symbol' ? String(segment) : segment)));
+		if (field && !fieldErrors[field]) fieldErrors[field] = fieldMessage(field);
+	}
+	return fieldErrors;
+};
+
+const toBackendFieldErrors = (details: unknown): ObjectEditFieldErrors => {
+	if (!Array.isArray(details)) return {};
+
+	const fieldErrors: ObjectEditFieldErrors = {};
+	for (const detail of details) {
+		if (!detail || typeof detail !== 'object' || !('path' in detail) || typeof detail.path !== 'string') continue;
+		const field = toField(detail.path.replaceAll('[', '.').replaceAll(']', '').split('.'));
+		if (field && !fieldErrors[field]) fieldErrors[field] = fieldMessage(field);
+	}
+	return fieldErrors;
+};
 
 const objectEditMetadataSchema = z
 	.object({
-		title: z.string(),
+		title: z.string().trim().min(1),
 		publicationDate: z.string(),
 		datePrecision: z.enum(['none', 'year', 'month', 'day']),
 		dateApproximate: z.boolean(),
 		language: z.string().nullable(),
-		tags: z.array(z.string()),
-		people: z.array(z.string()),
+		tags: z.array(z.string().trim().min(1)),
+		people: z.array(z.string().trim().min(1)),
 		description: z.string().nullable(),
 	})
 	.refine(
@@ -33,12 +95,22 @@ const objectEditRightsSchema = z.object({
 	sensitivityNote: z.string().nullable(),
 });
 
-const objectEditPagesSchema = z.array(
-	z.object({
-		pageNumber: z.number().int().positive(),
-		curatedText: z.string(),
-	}),
-);
+const objectEditPagesSchema = z
+	.array(
+		z.object({
+			pageNumber: z.number().int().positive(),
+			curatedText: z.string(),
+		}),
+	)
+	.superRefine((pages, context) => {
+		const pageNumbers = new Set<number>();
+		for (const [index, page] of pages.entries()) {
+			if (pageNumbers.has(page.pageNumber)) {
+				context.addIssue({ code: z.ZodIssueCode.custom, path: [index, 'pageNumber'] });
+			}
+			pageNumbers.add(page.pageNumber);
+		}
+	});
 
 const parseOptionalJsonFormField = (formData: FormData, name: string): unknown | undefined => {
 	const value = formData.get(name);
@@ -54,20 +126,27 @@ type SaveDraftPayload = {
 	pages: Array<{ pageNumber: number; curatedText: string }> | null;
 };
 
-const parseSaveDraftPayload = (formData: FormData): SaveDraftPayload | null => {
+type SaveDraftPayloadParseResult =
+	| { payload: SaveDraftPayload; fieldErrors: ObjectEditFieldErrors }
+	| { payload: null; fieldErrors: ObjectEditFieldErrors };
+
+const parseSaveDraftPayload = (formData: FormData): SaveDraftPayloadParseResult => {
 	try {
 		const revision = z.coerce.number().int().min(0).parse(formData.get('revision'));
 		const rawMetadata = parseOptionalJsonFormField(formData, 'metadata');
 		const rawRights = parseOptionalJsonFormField(formData, 'rights');
-		if ((rawMetadata === undefined) !== (rawRights === undefined)) return null;
+		if ((rawMetadata === undefined) !== (rawRights === undefined)) return { payload: null, fieldErrors: {} };
 		const metadata = rawMetadata === undefined ? null : objectEditMetadataSchema.parse(rawMetadata);
 		const rights = rawRights === undefined ? null : objectEditRightsSchema.parse(rawRights);
 		const rawPages = parseOptionalJsonFormField(formData, 'pages');
 		const pages = rawPages === undefined ? null : objectEditPagesSchema.parse(rawPages);
-		if (!metadata && !pages?.length) return null;
-		return { revision, metadata, rights, pages };
-	} catch {
-		return null;
+		if (!metadata && !pages?.length) return { payload: null, fieldErrors: {} };
+		return { payload: { revision, metadata, rights, pages }, fieldErrors: {} };
+	} catch (cause) {
+		return {
+			payload: null,
+			fieldErrors: cause instanceof z.ZodError ? toZodFieldErrors(cause) : {},
+		};
 	}
 };
 
@@ -106,6 +185,12 @@ const refreshEditPayload = async (
 	} catch {
 		return null;
 	}
+};
+
+const isProjectionUnavailableError = (cause: unknown): cause is ApiClientError => {
+	if (!isApiClientError(cause) || cause.status !== 409) return false;
+	if (!cause.details || typeof cause.details !== 'object' || Array.isArray(cause.details)) return false;
+	return 'code' in cause.details && cause.details.code === 'PROJECTION_UNAVAILABLE';
 };
 
 export const load = async ({ params, locals, cookies, fetch }: RequestEvent) => {
@@ -162,10 +247,14 @@ export const actions: Actions = {
 			return fail(404, { error: 'Object not found.' });
 		}
 
-		const payload = parseSaveDraftPayload(await request.formData());
-		if (!payload) {
-			return fail(400, { error: 'Invalid form payload.' });
+		const parsedPayload = parseSaveDraftPayload(await request.formData());
+		if (!parsedPayload.payload) {
+			return fail(400, {
+				error: Object.keys(parsedPayload.fieldErrors).length > 0 ? 'Check the highlighted fields.' : 'Invalid form payload.',
+				fieldErrors: parsedPayload.fieldErrors,
+			});
 		}
+		const payload = parsedPayload.payload;
 
 		const context = { fetchFn: fetch, token };
 		let metadataSaved = false;
@@ -230,20 +319,33 @@ export const actions: Actions = {
 				}
 			}
 
+			const fieldErrors =
+				isApiClientError(cause) && cause.code === 'VALIDATION_FAILED'
+					? toBackendFieldErrors(cause.details)
+					: null;
+
 			if (metadataSaved) {
 				if (refreshed) {
 					return fail(isApiClientError(cause) ? cause.status || 502 : 502, {
 						error: 'Metadata saved, but document curation failed. Review the refreshed values before retrying.',
 						recovery: toRecovery('partial', refreshed, true),
+						...(fieldErrors ? { fieldErrors } : {}),
 					});
 				}
 
 				return fail(isApiClientError(cause) ? cause.status || 502 : 502, {
 					error: 'Metadata saved, but document curation failed. Refresh before retrying.',
+					...(fieldErrors ? { fieldErrors } : {}),
 				});
 			}
 
 			if (isApiClientError(cause)) {
+				if (cause.code === 'VALIDATION_FAILED') {
+					return fail(422, {
+						error: 'Check the highlighted fields and try again.',
+						fieldErrors,
+					});
+				}
 				return fail(cause.status || 502, {
 					error: cause.requestId
 						? `Failed to save draft (request: ${cause.requestId}).`
@@ -276,8 +378,14 @@ export const actions: Actions = {
 
 		try {
 			const editPayload = await objectEditService.getObjectEditPayload({ context, objectId });
+			if (editPayload.curation.kind !== 'document' || editPayload.curation.pages.length === 0) {
+				return fail(409, {
+					error: 'OCR pages are unavailable. Synchronize this object before publishing curated OCR.',
+					projectionUnavailable: true,
+				});
+			}
 			if (!editPayload.capabilities.canSubmitReview) {
-				return fail(403, { error: 'You do not have permission to submit this object for review.' });
+				return fail(403, { error: 'You do not have permission to publish curated OCR.' });
 			}
 			if (revision.data !== editPayload.revision) {
 				return fail(409, {
@@ -319,15 +427,24 @@ export const actions: Actions = {
 				}
 			}
 
-			if (isApiClientError(cause)) {
-				return fail(cause.status || 502, {
+			if (isProjectionUnavailableError(cause)) {
+				return fail(409, {
 					error: cause.requestId
-						? `Failed to submit curation (request: ${cause.requestId}).`
-						: 'Failed to submit curation.',
+						? `OCR pages are unavailable. Synchronize this object before publishing curated OCR (request: ${cause.requestId}).`
+						: 'OCR pages are unavailable. Synchronize this object before publishing curated OCR.',
+					projectionUnavailable: true,
 				});
 			}
 
-			return fail(502, { error: 'Failed to submit curation.' });
+			if (isApiClientError(cause)) {
+				return fail(cause.status || 502, {
+					error: cause.requestId
+						? `Failed to publish curated OCR (request: ${cause.requestId}).`
+						: 'Failed to publish curated OCR.',
+				});
+			}
+
+			return fail(502, { error: 'Failed to publish curated OCR.' });
 		}
 	},
 };

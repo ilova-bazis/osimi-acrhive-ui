@@ -7,7 +7,7 @@ export type ArchiveRequest = {
 	targetId: string;
 	actionType: string;
 	requestedBy: string;
-	dedupeKey: string;
+	dedupeKey: string | null;
 	status: ArchiveRequestStatus;
 	failureReason: string | null;
 	createdAt: string;
@@ -18,7 +18,7 @@ export type ArchiveRequest = {
 export type ArchiveRequestsFilters = {
 	targetType?: 'object' | 'ingestion';
 	targetId?: string;
-	actionType?: 'object_resync' | 'artifact_fetch';
+	actionType?: 'object_resync' | 'artifact_fetch' | 'curation_apply';
 	activeOnly?: boolean;
 	limit?: number;
 	cursor?: string;
