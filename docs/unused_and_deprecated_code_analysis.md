@@ -181,3 +181,4 @@ This is a large file (4,542 lines) containing significant chunks of dead or dupl
 - **Line 111**: `{#each waveform as _, index (`bar-${index}`)}`
 - **Comment/Rationale**: An unused `_` parameter inside the each block loop. Can be simplified/ignored depending on configuration, but triggers `@typescript-eslint/no-unused-vars` under strict setups.
 - [OpenCode fact-check] Confirmed. `npm run lint` reports `_` as unused at this line.
+> Historical analysis: prototype routes and the prototype-only object view/edit stacks discussed here have been removed. See `docs/prototype-production-boundary.md` for the current enforced boundary.

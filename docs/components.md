@@ -1,12 +1,10 @@
 # UI Components
 
-This document describes reusable UI components used across production routes, internal previews, and
-legacy prototype surfaces.
+This document describes reusable UI components used by production routes.
 
 ## Overview
 
 - Components live in `src/lib/components`.
-- Isolated component previews live in `src/routes/components`.
 - UI strings are sourced from `src/lib/i18n/translations.ts`.
 
 ## Services (Data Sources)
@@ -24,90 +22,9 @@ Location:
 
 ## Layout Components
 
-### PageHeader
+### AppHeader (Legacy)
 
-Purpose: Main header with title, subtitle, session label, language switcher, and text-size control.
-
-Props:
-
-| Name | Type | Required | Notes |
-| --- | --- | --- | --- |
-| library | string | yes | Header kicker text |
-| title | string | yes | Main page title |
-| subtitle | string | yes | Supporting copy |
-| sessionLabel | string | yes | Label for session pill |
-| sessionValue | string | yes | Session display value |
-| locales | { key: string; label: string }[] | yes | UI locale options |
-| locale | string | yes | Active locale key |
-| onLocaleChange | (value: string) => void | yes | Locale change handler |
-| textSizes | { key: string; label: string }[] | yes | Text size options |
-| textSize | string | yes | Active text size key |
-| onTextSizeChange | (value: string) => void | yes | Text size handler |
-| textSizeLabel | string | no | Defaults to “Text size” |
-| localeLabel | string | no | Defaults to “UI” |
-
-```svelte
-<PageHeader
-  library="Osimi Digital Library"
-  title="Batch Ingestion"
-  subtitle="Human intent first. Machines assist, people decide."
-  sessionLabel="Session"
-  sessionValue="NoorMags Issue 76-79"
-  locales={[{ key: 'en', label: 'EN' }, { key: 'ru', label: 'RU' }]}
-  locale={locale}
-  textSizes={[{ key: 'small', label: 'A-' }, { key: 'default', label: 'A' }, { key: 'large', label: 'A+' }]}
-  textSize={textSize}
-  textSizeLabel="Text size"
-  localeLabel="UI"
-  onLocaleChange={(value) => (locale = value)}
-  onTextSizeChange={(value) => (textSize = value)}
-/>
-```
-
-### AppHeader
-
-Purpose: Global authenticated header with user role and logout action.
-
-Props:
-
-| Name | Type | Required | Notes |
-| --- | --- | --- | --- |
-| library | string | yes | Header kicker text |
-| title | string | yes | Main title (e.g., “Dashboard”) |
-| username | string | yes | Signed-in username |
-| role | string | yes | User role label |
-| logoutLabel | string | no | Defaults to “Sign out” |
-| onLogout | () => Promise<void> \| void | no | Logout callback handler |
-
-```svelte
-<AppHeader
-  library="Osimi Digital Library"
-  title="Dashboard"
-  username="admin"
-  role="admin"
-  logoutLabel="Sign out"
-/>
-```
-
-### FooterActions
-
-Purpose: Footer note with primary and secondary actions.
-
-Props:
-
-| Name | Type | Required | Notes |
-| --- | --- | --- | --- |
-| note | string | yes | Footer supporting copy |
-| primaryLabel | string | yes | Primary CTA label |
-| secondaryLabel | string | yes | Secondary CTA label |
-
-```svelte
-<FooterActions
-  note="Human intent confirmed. Review everything before ingestion starts."
-  secondaryLabel="Download catalog.json"
-  primaryLabel="Start ingestion"
-/>
-```
+Purpose: Former global authenticated top header used before the v2 sidebar layout. It is no longer rendered by any production route. It has been superseded by `AppSidebar` (desktop) and `AppMobileHeader` (mobile), which own the current navigation, user profile, logout, and language selection. Kept for reference only; do not wire it back into the route graph.
 
 ## UI Building Blocks
 
@@ -324,133 +241,9 @@ Props:
 />
 ```
 
-### DropzonePanel
-
-Purpose: Upload staging area with archival emphasis.
-
-Props:
-
-| Name | Type | Required | Notes |
-| --- | --- | --- | --- |
-| label | string | yes | Section label |
-| headline | string | yes | Dropzone headline |
-| support | string | yes | Supporting text |
-| badges | string[] | no | Optional chip labels |
-
-```svelte
-<DropzonePanel
-  label="Dropzone"
-  headline="Drag files here or click to browse"
-  support="Images, PDFs, audio, video, and archives. No upload until review."
-  badges={['Creates local staging batch', 'Supports batch defaults']}
-/>
-```
-
-### StatusLegendPanel
-
-Purpose: Visual legend of file states using palette-approved badges.
-
-Props:
-
-| Name | Type | Required | Notes |
-| --- | --- | --- | --- |
-| title | string | yes | Section title |
-| subtitle | string | yes | Supporting text |
-| countLabel | string | yes | Count label |
-| statuses | { key: string; label: string }[] | yes | Status map |
-
-```svelte
-<StatusLegendPanel
-  title="Status Legend"
-  subtitle="Only one attention color. Text always explains state."
-  countLabel="8 states"
-  statuses={[{ key: 'queued', label: 'Queued' }, { key: 'needs-review', label: 'Needs Review' }]}
-/>
-```
-
-### FileListPanel
-
-Purpose: File list with selection behavior and per-row state badges.
-
-Props:
-
-| Name | Type | Required | Notes |
-| --- | --- | --- | --- |
-| title | string | yes | Section title |
-| subtitle | string | yes | Supporting text |
-| files | FileItem[] | yes | List of files |
-| selectedId | number \| undefined | yes | Active file id |
-| statusLabels | Record<FileStatus, string> | yes | Label map |
-| onSelect | (file: FileItem) => void | no | Selection handler |
-
-```svelte
-<FileListPanel
-  title="Files"
-  subtitle="Select a file to preview overrides and human context."
-  files={files}
-  selectedId={selectedId}
-  statusLabels={statusLabels}
-  onSelect={(file) => (selectedId = file.id)}
-/>
-```
-
-### BatchIntentPanel
-
-Purpose: Human intent block with structured defaults and tags.
-
-Props:
-
-| Name | Type | Required | Notes |
-| --- | --- | --- | --- |
-| title | string | yes | Panel title |
-| heading | string | no | Defaults to session heading |
-| description | string | yes | Supporting text |
-| fields | { label: string; value: string }[] | yes | Structured fields |
-| tags | string[] | yes | Tag list |
-| tagsLabel | string | no | Defaults to “Tags” |
-
-```svelte
-<BatchIntentPanel
-  title="Batch Intent"
-  description="Scanned newspaper issues from 1971. Human notes drive all pipelines."
-  fields={[{ label: 'Primary language', value: 'Persian' }]}
-  tags={['Tehran', 'Cultural review']}
-  tagsLabel="Tags"
-  heading="NoorMags Issue 76-79"
-/>
-```
-
-### FileOverridePanel
-
-Purpose: Per-file override block with pipeline badges and human notes.
-
-Props:
-
-| Name | Type | Required | Notes |
-| --- | --- | --- | --- |
-| title | string | yes | Panel title |
-| subtitle | string | yes | Supporting text |
-| fields | { label: string; value: string }[] | yes | Override fields |
-| badges | { label: string; tone: 'system' \| 'attention' }[] | yes | Tone-driven chips |
-| note | string | yes | Human note |
-
-```svelte
-<FileOverridePanel
-  title="Per-file Overrides"
-  subtitle="Overrides for the selected file take precedence over batch defaults."
-  fields={[{ label: 'Language', value: 'Persian' }]}
-  badges={[
-    { label: 'Layout OCR', tone: 'system' },
-    { label: 'Image tagging', tone: 'system' },
-    { label: 'Needs human review', tone: 'attention' }
-  ]}
-  note="Note: Page 1 has hand annotations. Preserve margins during OCR."
-/>
-```
-
 ## ObjectMetadataPanel
 
-Per-object metadata editor shown in the right panel of the ingestion setup screen. Displays an empty state when nothing is selected, or a form with title, date, tags, description, and people fields when a file or group is active.
+Per-object metadata editor shown inside the expanded per-object metadata cards of the ingestion setup screen. Displays an empty state when nothing is selected, or the object file rail followed by a form with title, date, tags, description, and people fields when a file or group is active.
 
 **Props:**
 
@@ -458,85 +251,81 @@ Per-object metadata editor shown in the right panel of the ingestion setup scree
 | --- | --- | --- | --- |
 | objectKey | string \| null | yes | Key for the active object (`group.id` or `` `file:${localId}` ``); null = empty state |
 | objectLabel | string | yes | Display name shown as context header |
+| files | IngestionPreviewItem[] | no | Presentation model for every file of the active object; drives the object file rail |
 | metadata | ObjectItemMetadata | yes | Current metadata values for the active object |
 | batchTitle | string | yes | Placeholder for the title field |
 | batchTags | string[] | yes | Batch tags shown as read-only hint chips |
 | batchDate | `{ value: string \| null; approximate: boolean } \| null` | yes | Placeholder for the date field |
 | batchDescription | string | yes | Placeholder for the description field |
+| peopleEditable | boolean | no | Enables people editing; defaults to false |
 | onMetadataChange | `(patch: Partial<ObjectItemMetadata>) => void` | yes | Called with a partial patch whenever a field changes |
+| onFilePreview | `(fileId: string) => void` | yes | Opens the object-scoped preview gallery at the given file |
+| onCheckPreviewAgain | `(fileId: string) => void` | no | Re-checks preview readiness after a client-side check timeout |
 
 ```svelte
 <ObjectMetadataPanel
   objectKey={activeObjectKey}
   objectLabel={activeObjectLabel}
+  files={panelFiles}
   metadata={activeObjectMeta}
   batchTitle={batchDefaults.title}
   batchTags={summaryTags}
   batchDate={null}
   batchDescription={batchDefaults.summaryText}
   onMetadataChange={(patch) => setObjectMeta(activeObjectKey, patch)}
+  onFilePreview={(fileId) => openPreviewGallery(group.fileIds, Number(fileId))}
+  onCheckPreviewAgain={(fileId) => checkPreviewAgain(Number(fileId))}
 />
 ```
 
-## Object View Prototype Components
+**Localization contract:**
 
-These read-only components power the object-view prototype at `src/routes/prototype/objects/[id]/+page.svelte`. They keep media presentation separate from metadata so a later edit mode can swap in editing workbenches without disturbing the viewing shell.
+- All stable panel copy (required hints, placeholder text, removal controls, people-edit tooltip) comes from the `ingestionSetup.objectMetadata.fields.*` dictionary and retranslates when the locale changes.
+- Value-bearing removal controls use localized templates with the removed value interpolated: `ingestionSetup.objectMetadata.fields.removeTag` (`Remove tag {tag}`) and `removePerson` (`Remove person {person}`). The visible chip text itself is user content and stays raw.
+- Placeholders fall back to the batch values first (user content) and to localized dictionary placeholders otherwise.
+- `YYYY` is a technical date token, not UI copy; it is only ever used as an input placeholder when no batch date exists.
 
-### ObjectTopBar
+## IngestionFilePreview
 
-Minimal sticky header for object viewing with back navigation, status, info toggle, and view/edit mode affordance.
+Horizontal, always-visible rail of every file belonging to one ingestion object. Replaces the former truncated thumbnail strip. Every tile is actionable and opens the preview gallery; no `+more` or expand/collapse controls exist. Files keep their source order and carry a sequence number, filename, size, and an explicit textual preview state. State is never communicated by color alone.
 
-Props:
+**Props:**
 
-| Name | Type | Required | Notes |
+| Prop | Type | Required | Description |
 | --- | --- | --- | --- |
-| backHref | string | yes | Back-link target for the prototype flow |
-| title | string | yes | Truncated object title |
-| status | `ObjectViewStatus` | yes | `READY`, `PROCESSING`, or `NEEDS_REVIEW` |
-| reviewLabel | string | yes | Secondary read-only context line |
-| onInfoToggle | () => void | yes | Opens the metadata drawer |
+| files | IngestionPreviewItem[] | yes | Ordered presentation model for all files of the object |
+| onPreview | `(fileId: string) => void` | yes | Opens the gallery for the clicked file |
+| onCheckAgain | `(fileId: string) => void` | no | Offered only for `check-timeout` previews; absent for terminal backend failures |
 
-### ObjectInfoDrawer
+**Preview states rendered:**
 
-Right-side metadata drawer that stays hidden by default and reveals read-only object information on demand.
+| State | Tile treatment | Secondary action |
+| --- | --- | --- |
+| `ready` | Image thumbnail; load failure falls back to an accessible unavailable state | None |
+| `pending` | Pale Sky system state with reduced-motion-safe spinner | None |
+| `check-timeout` | Burnt Peach attention treatment | Check again |
+| `failed` | Burnt Peach attention treatment, terminal | None |
+| `purged` | Neutral unavailable state | None |
+| `unsupported` | File-kind icon and "No visual preview" | None |
 
-Props:
+## IngestionPreviewOverlay
 
-| Name | Type | Required | Notes |
+Modal object-scoped gallery for previewing ingestion files. Built on a native `<dialog>` with `showModal()`, so modality, background inertness, and focus containment come from the browser. Focus enters on Close, Escape flows through the native `cancel` path, and focus returns to the invoking tile after closing.
+
+**Props:**
+
+| Prop | Type | Required | Description |
 | --- | --- | --- | --- |
-| open | boolean | yes | Controls drawer visibility |
-| metadata | `ObjectViewMetadata` | yes | Read-only title, dates, tags, rights, and descriptive fields |
-| onClose | () => void | yes | Close handler for overlay and close button |
+| open | boolean | yes | Controlled open state |
+| items | IngestionPreviewItem[] | yes | Object-scoped presentation model; single-item lists render in one-file mode without navigation or filmstrip |
+| activeIndex | number | yes | Currently selected file index |
+| onSelect | `(index: number) => void` | yes | Selection changes from buttons, filmstrip, or keyboard |
+| onCheckAgain | `(fileId: string) => void` | no | Re-checks readiness for `check-timeout` previews |
+| onClose | `() => void` | yes | Close request from button, Escape/cancel, or backdrop |
 
-### DocumentViewer
+**Keyboard behavior:** `ArrowLeft`/`ArrowRight` move between files, `Home`/`End` jump to the first/last file, `Escape` closes through the dialog cancel path, and `Tab`/`Shift+Tab` stay within the modal. Navigation is clamped at the object boundaries.
 
-Continuous page viewer for document objects with zoom controls, floating page indicator, lazy-loaded page images, and an optional read-only OCR overlay.
-
-### ImageViewer
-
-Media-first image canvas with dark presentation backdrop, zoom controls, and drag-to-pan inspection when zoomed.
-
-### AudioViewer
-
-Prototype audio player with waveform-style playback UI, progress indicator, and optional read-only transcript panel.
-
-### VideoViewer
-
-Prototype video player with poster canvas, playback timeline, captions toggle, and optional transcript reveal.
-
-### ObjectMediaGate
-
-Read-only access gate for object media that appears when the source file is not yet deliverable. It keeps preview artifacts visible while presenting request-required, request-pending, or unavailable states directly inside the media canvas.
-
-Props:
-
-| Name | Type | Required | Notes |
-| --- | --- | --- | --- |
-| mediaType | `document` \\| `image` \\| `audio` \\| `video` | yes | Tunes the visual treatment to the media being requested |
-| access | object | yes | Current request state, helper text, preview artifacts, and optional pending request metadata |
-| onRequest | () => void | yes | Prototype callback used to simulate requesting source media |
-
----
+**States:** the viewer renders explicit panels for `pending`, `check-timeout`, `failed`, `purged`, and `unsupported` previews, and a large image for `ready` files with a deterministic load-failure fallback. Retry is only ever presented as "Check again" and only for client-side readiness timeouts; backend-terminal `failed` previews are non-actionable until the backend offers preview regeneration.
 
 ## Shell & Layout Components (v2 Sidebar Layout)
 
@@ -544,7 +333,7 @@ These components support the full-width persistent sidebar layout introduced in 
 
 ### AppSidebar
 
-Purpose: Persistent 232px sidebar replacing the old top-bar. Renders brand mark, primary navigation, active batch progress, and user profile.
+Purpose: Persistent 232px desktop sidebar (visible at `lg` and above) replacing the old top-bar. Renders brand mark, primary navigation, active batch progress, language selection, and user profile.
 
 Props:
 
@@ -556,11 +345,61 @@ Props:
 | activeBatches | `{id, name, done, total, status}[]` | no | Drives the mini progress list; defaults to `[]` |
 | onLogout | () => void | yes | Logout callback |
 
-Nav links use `resolve` from `$app/paths` with the fixed internal navigation targets supported by the component.
+Behavior:
+
+- Nav links use `resolve` from `$app/paths` with the shared destinations and route matching from `src/lib/navigation/appShell.ts`.
+- The active link exposes `aria-current="page"` and primary navigation has a localized `aria-label` (`header.nav.primaryLabel`).
+- All shell strings come from the translation dictionaries (`header.*` and `ingestionOverview.statuses.*`); unknown batch statuses fall back to the raw backend value.
+- The icon-only logout button carries a localized `aria-label` and `title` (`header.signOut`); the adjacent brand logo is decorative (`alt=""`).
+- Renders `LocaleSwitcher` so the whole shell follows the active locale without reload.
+
+### AppMobileHeader
+
+Purpose: Compact authenticated mobile header shown below the `lg` breakpoint, where the desktop sidebar is hidden. Closes the responsive-shell gap by providing brand identity, language selection, logout, and primary navigation.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| currentPath | string | yes | Used to compute active nav state |
+| onLogout | () => void | yes | Logout callback |
+
+Behavior:
+
+- Uses the same shared destinations, route matching, and translation keys as `AppSidebar`.
+- Primary navigation is a horizontally scrollable row; links remain keyboard reachable and the active link exposes `aria-current="page"`.
+- Renders `LocaleSwitcher` and a localized icon-only logout button (`header.signOut`).
+- Below `lg` it is a `shrink-0` row outside the authenticated route scrollport (see `docs/localization.md`); it must not cover page content or create page-level horizontal overflow. It is hidden at `lg` and above.
+
+### LocaleSwitcher
+
+Purpose: Reusable interface-language selector backed by the locale store.
+
+Props: none. The component subscribes to `src/lib/i18n/locale.ts` directly and calls `locale.setLocale()` on selection.
+
+Behavior:
+
+- Renders one native `button type="button"` per top-level translation dictionary locale; option labels are the uppercase locale codes. Adding a new dictionary locale automatically adds a selector option.
+- Exposes selection through `aria-pressed` and a localized group name (`header.localeSelector`).
+- Changing the locale updates the interface immediately and persists the preference under `localStorage['osimi-locale']`; see `docs/localization.md` for details.
+- Selected/unselected treatment uses background and border contrast, never color alone, and preserves visible keyboard focus.
 
 ---
 
 ## Primitive Components (v2)
+
+### BaseDialog
+
+Purpose: Shared accessible modal dialog. Provides `role="dialog"`, `aria-modal`, `aria-labelledby`, initial focus on the first focusable element (or the dialog itself), Escape close, Tab focus containment, click-outside close, and focus restoration to the trigger. Reused by the object-detail resync confirmation and the object-edit publish dialog.
+
+Props:
+
+| Name | Type | Required | Notes |
+| --- | --- | --- | --- |
+| open | boolean | yes | Renders the dialog when true |
+| labelledBy | string | yes | ID of the visible heading used as the accessible name |
+| onClose | () => void | yes | Called on Escape, backdrop click, and should be wired to explicit close buttons |
+| children | () => unknown | yes | Dialog content |
 
 ### Icon
 
@@ -590,7 +429,14 @@ Props:
 | current | number | yes | Zero-based index of the active step |
 | onJump | (index: number) => void | no | Called when a completed step bubble is clicked |
 
-States: `done` (filled `bg-text-ink`, checkmark, clickable only with `onJump`), `current` (`bg-burnt-peach`, `aria-current="step"`), `todo` (outline, opacity-45, non-interactive). Step buttons include accessible labels such as `Intent, step 1 of 3`.
+States: `done` (filled `bg-text-ink`, checkmark, clickable only with `onJump`), `current` (`bg-burnt-peach`, `aria-current="step"`), `todo` (outline, opacity-45, non-interactive).
+
+Localization contract:
+
+- `steps[].label` is **consumer-supplied and must already be localized**. Production callers pass translated labels (`t(...)`) and the component does not translate them itself.
+- Labels and the accessible name are fully reactive: when the active locale changes, the rendered step labels and the `aria-label` retranslate through the consumer's `$derived` dictionary.
+- The accessible name is built from the localized `stepper.ariaLabel` template (`{label}, step {current} of {total}` in EN, localized in RU), so screen readers announce the localized step name, position, and total.
+- The current step is exposed with `aria-current="step"`.
 
 ### ChoiceCard
 
@@ -667,11 +513,15 @@ Props:
 
 | Name | Type | Required | Notes |
 | --- | --- | --- | --- |
+| top | snippet | no | Centered status row above the main bar — long status messages |
 | left | snippet | no | Left slot — typically step counter + `Stepper` |
 | right | snippet | no | Right slot — typically navigation buttons |
 
 ```svelte
 <FootnoteBar>
+  {#snippet top()}
+    <span>Title, date, and at least one tag are required for each object.</span>
+  {/snippet}
   {#snippet left()}
     <span>Step 1 of 3</span>
     <Stepper steps={STEPS} current={0} />

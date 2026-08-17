@@ -23,6 +23,7 @@ This document does not define transcript or caption editing payloads yet.
 - `PATCH /api/objects/:object_id/metadata`
 - `PUT /api/objects/:object_id/curation/document`
 - `POST /api/objects/:object_id/curation/submit`
+- `DELETE /api/objects/:object_id/edit-lock`
 - `GET /api/objects/:object_id/curation/history`
 
 ## Source of Truth
@@ -31,16 +32,16 @@ This document does not define transcript or caption editing payloads yet.
 - UI writes metadata edits, OCR page edits, and curation submits to backend only.
 - Backend owns edit revisioning and conflict detection.
 - Archive integration is asynchronous and not part of the UI request path for this V1 slice.
+- `src/lib/api/objectEdit.contract.json` is a vendored copy of the backend-owned `osimi-backend/docs/object-edit-contract-fixtures.json`; update both files in the same change and run their contract tests.
 
 ## GET `/api/objects/:object_id/edit`
 
 ### Purpose
 
-Load the current editing state for one object.
+Load the current editing state for one object. Calling this endpoint auto-acquires a 60-minute lock for the current user, or extends their active lock. Another user's active lock still returns `200`, but all edit capabilities are `false`.
 
 ### Roles
 
-- `viewer`
 - `archiver`
 - `admin`
 
@@ -52,6 +53,11 @@ Load the current editing state for one object.
   "media_type": "document",
   "revision": 1,
   "curation_state": "needs_review",
+  "lock": {
+    "locked": true,
+    "locked_by": "10000000-0000-0000-0000-000000000001",
+    "locked_until": "2026-08-04T12:00:00.000Z"
+  },
   "draft": {
     "updated_at": "2026-04-14T10:32:44.000Z",
     "updated_by": "10000000-0000-0000-0000-000000000001"
@@ -106,21 +112,23 @@ Load the current editing state for one object.
   - required on every metadata write, OCR page save, and submit
 - `draft`
   - `null` until the first successful metadata write in the current backend edit model
-  - `updated_by` is currently a user id, not a display name
+  - `updated_by` is a user id or `null`, not a display name
+- `lock`
+  - contains the active owner and expiry when a lock is held
+  - when owned by another user, every edit capability is `false`
 - `media_type`
   - one of `document|image|audio|video|other`
 - `rights.access_level`
   - read-only in this contract
   - provided so the editor can display current access context alongside editable notes
 - `capabilities.can_edit_metadata`
-  - `true` for archiver and admin roles
-  - `false` for viewer role
+  - `true` for authorized archiver and admin roles when no other user owns the active lock
 - `capabilities.can_curate_text`
-  - `true` for document objects when role is archiver or admin
-  - `false` for non-document objects or viewer role
+  - `true` for document objects when the caller is authorized and no other user owns the active lock
+  - `false` for non-document objects or a foreign active lock
 - `capabilities.can_submit_review`
-  - `true` for document objects when role is archiver or admin
-  - `false` for non-document objects or viewer role
+  - `true` for document objects when the caller is authorized and no other user owns the active lock
+  - `false` for non-document objects or a foreign active lock
 - `curation_payload.kind`
   - currently mirrors `media_type`
   - for `document`, `curation_payload.pages[]` contains OCR editing data
@@ -221,9 +229,8 @@ HTTP `409`
   "request_id": "uuid",
   "error": {
     "code": "REVISION_CONFLICT",
-    "message": "Object edit revision is stale.",
+    "message": "Object metadata revision is stale.",
     "details": {
-      "object_id": "OBJ-20260213-ABC123",
       "latest_revision": 2
     }
   }
@@ -285,7 +292,8 @@ Submit the current OCR curation state for archive-side apply.
 
 - currently supported for document OCR curation only
 - submit is revision-guarded just like metadata and OCR page saves
-- `review_note` is nullable; omit or send `null` when no note is needed
+- `review_note` is a required nullable transport field; send `null` when no note is needed
+- the UI presents it as an optional publication note stored in edit history, not a message to a human reviewer
 - backend assembles the current curated document text and enqueues `curation_apply`
 
 ### Success Response
@@ -314,7 +322,8 @@ Same shape as other revision-guarded write endpoints.
 ### UI Handling Requirements
 
 - On success, UI should treat the returned revision as the new current editor revision
-- UI may surface request status from the returned `request`
+- UI should label this operation "Publish curated OCR"; no human review queue is implied
+- UI may surface initial status from the returned request and query the latest object-scoped `curation_apply` request for subsequent status
 - UI should not assume archive apply completed synchronously
 - On `409 REVISION_CONFLICT`
   - UI should refetch `GET /edit`
@@ -323,7 +332,7 @@ Same shape as other revision-guarded write endpoints.
   - Object is not a document type; UI should not allow submit for this object
 - On `409 CONFLICT` with `code: PROJECTION_UNAVAILABLE`
   - Document has no page projection available for OCR submission
-  - UI should surface this as an error condition; the document may lack OCR data
+  - UI should disable publication while continuing to allow metadata editing
 
 ## PUT `/api/objects/:object_id/curation/document`
 
@@ -382,9 +391,8 @@ HTTP `409`
   "request_id": "uuid",
   "error": {
     "code": "REVISION_CONFLICT",
-    "message": "Object edit revision is stale.",
+    "message": "Document curation revision is stale.",
     "details": {
-      "object_id": "OBJ-20260213-ABC123",
       "latest_revision": 2
     }
   }
@@ -521,4 +529,3 @@ UI can start implementation when it assumes the following:
 - caption editing payloads
 - archive apply progress surfaced to UI
 - stale-against-machine UI flags
-

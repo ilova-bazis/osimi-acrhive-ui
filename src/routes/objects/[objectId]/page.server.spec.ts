@@ -220,7 +220,7 @@ describe('/objects/[objectId] +page.server', () => {
 			backHref: '/objects',
 			viewer: null,
 			artifacts: [],
-			artifactsError: 'Failed to load object artifacts (request: req-123).',
+			artifactsError: { code: 'loadFailed', requestId: 'req-123' },
 			availableFiles: [],
 			availableFilesError: null,
 			pendingRequests: [],
@@ -283,7 +283,7 @@ describe('/objects/[objectId] +page.server', () => {
 			fetch: vi.fn()
 		} as never);
 
-		expect(result).toMatchObject({ status: 400, data: { error: 'Invalid available file id.' } });
+		expect(result).toMatchObject({ status: 400, data: { errorCode: 'invalidFileId' } });
 		expect(createObjectDownloadRequestMock).not.toHaveBeenCalled();
 	});
 
@@ -309,7 +309,7 @@ describe('/objects/[objectId] +page.server', () => {
 		).resolves.toMatchObject({
 			detail,
 			availableFiles: [],
-			availableFilesError: 'Failed to load available archive files (request: req-files).'
+			availableFilesError: { code: 'loadFailed', requestId: 'req-files' }
 		});
 	});
 
@@ -335,7 +335,7 @@ describe('/objects/[objectId] +page.server', () => {
 		).resolves.toMatchObject({
 			detail,
 			pendingRequests: [],
-			pendingRequestsError: 'Failed to load pending requests (request: req-pending).'
+			pendingRequestsError: { code: 'loadFailed', requestId: 'req-pending' }
 		});
 	});
 });

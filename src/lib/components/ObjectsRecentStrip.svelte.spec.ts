@@ -4,10 +4,15 @@ import { render } from 'vitest-browser-svelte';
 import type { ObjectRow } from '$lib/services/objects';
 
 vi.mock('$app/paths', () => ({
-	resolve: (path: string, params?: Record<string, string>) =>
-		params ? Object.entries(params).reduce((result, [key, value]) => result.replace(`[${key}]`, value), path) : path,
+	resolve: (path: string, params?: Record<string, string>) => {
+		if (!path.startsWith('/')) {
+			throw new Error(`Cannot use \`resolve(...)\` with a non-absolute pathname or route ID (got "${path}").`);
+		}
+		return params ? Object.entries(params).reduce((result, [key, value]) => result.replace(`[${key}]`, value), path) : path;
+	},
 }));
 
+import { locale } from '$lib/i18n/locale';
 import ObjectsRecentStrip from './ObjectsRecentStrip.svelte';
 
 const recent: ObjectRow = {
@@ -29,5 +34,48 @@ describe('ObjectsRecentStrip', () => {
 			'/objects/OBJ-20260804-RECENT1?returnTo=%2Fobjects%3Fq%3Drecent%26sort%3Dupdated_at_desc',
 		);
 		await expect.element(page.getByText('Prototype object not found.')).not.toBeInTheDocument();
+	});
+});
+
+describe('ObjectsRecentStrip plural counts', () => {
+	it('renders Russian plural forms for recent counts', async () => {
+		locale.setLocale('ru');
+		try {
+			const single: ObjectRow = { ...recent };
+			render(ObjectsRecentStrip, { recent: [single], returnTo: '/objects' });
+			await expect.element(page.getByText('Последний 1 объект')).toBeInTheDocument();
+
+			const two = Array.from({ length: 2 }, (_, index) => ({
+				...recent,
+				id: `OBJ-20260804-RECENT${index + 2}`,
+				objectId: `OBJ-20260804-RECENT${index + 2}`,
+			}));
+			render(ObjectsRecentStrip, { recent: two, returnTo: '/objects' });
+			await expect.element(page.getByText('Последние 2 объекта')).toBeInTheDocument();
+
+			const many = Array.from({ length: 5 }, (_, index) => ({
+				...recent,
+				id: `OBJ-20260804-RECENT${index + 2}`,
+				objectId: `OBJ-20260804-RECENT${index + 2}`,
+			}));
+			render(ObjectsRecentStrip, { recent: many, returnTo: '/objects' });
+			await expect.element(page.getByText('Последние 5 объектов')).toBeInTheDocument();
+		} finally {
+			locale.setLocale('en');
+		}
+	});
+
+	it('renders English plural forms for recent counts', async () => {
+		const single: ObjectRow = { ...recent };
+		render(ObjectsRecentStrip, { recent: [single], returnTo: '/objects' });
+		await expect.element(page.getByText('Last 1 object')).toBeInTheDocument();
+
+		const many = Array.from({ length: 5 }, (_, index) => ({
+			...recent,
+			id: `OBJ-20260804-RECENT${index + 2}`,
+			objectId: `OBJ-20260804-RECENT${index + 2}`,
+		}));
+		render(ObjectsRecentStrip, { recent: many, returnTo: '/objects' });
+		await expect.element(page.getByText('Last 5 objects')).toBeInTheDocument();
 	});
 });

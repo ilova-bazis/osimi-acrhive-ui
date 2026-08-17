@@ -34,7 +34,7 @@ describe('/login +page.server', () => {
 		loginWithBackendMock.mockResolvedValue({ token: 'token-1' });
 	});
 
-	it('rejects invalid request origins', async () => {
+	it('rejects invalid request origins with a stable code', async () => {
 		const form = new FormData();
 		form.set('username', 'admin');
 		form.set('password', 'secret');
@@ -43,11 +43,14 @@ describe('/login +page.server', () => {
 			makeEvent(makeLoginRequest(form, { origin: 'https://evil.test' }))
 		);
 
-		expect(result).toMatchObject({ status: 403, data: { error: 'Invalid request origin.' } });
+		expect(result).toMatchObject({
+			status: 403,
+			data: { errorCode: 'invalidOrigin' }
+		});
 		expect(loginWithBackendMock).not.toHaveBeenCalled();
 	});
 
-	it('returns validation errors for missing credentials', async () => {
+	it('returns a stable code for missing credentials', async () => {
 		const form = new FormData();
 		form.set('username', ' admin ');
 
@@ -55,7 +58,7 @@ describe('/login +page.server', () => {
 
 		expect(result).toMatchObject({
 			status: 400,
-			data: { error: 'Username and password are required.', username: 'admin' }
+			data: { errorCode: 'credentialsRequired', username: 'admin' }
 		});
 		expect(loginWithBackendMock).not.toHaveBeenCalled();
 	});
@@ -73,7 +76,7 @@ describe('/login +page.server', () => {
 		expect(setSessionCookieMock).toHaveBeenCalledWith(expect.any(Object), 'token-1');
 	});
 
-	it('maps backend API auth errors and preserves username', async () => {
+	it('maps backend auth errors to a stable code without leaking messages', async () => {
 		const form = new FormData();
 		form.set('username', 'admin');
 		form.set('password', 'wrong');
@@ -85,12 +88,14 @@ describe('/login +page.server', () => {
 
 		expect(result).toMatchObject({
 			status: 401,
-			data: { error: 'Invalid credentials', username: 'admin' }
+			data: { errorCode: 'invalidCredentials', username: 'admin' }
 		});
+		expect((result as { data: Record<string, unknown> }).data).not.toHaveProperty('message');
+		expect((result as { data: Record<string, unknown> }).data).not.toHaveProperty('error');
 		expect(setSessionCookieMock).not.toHaveBeenCalled();
 	});
 
-	it('maps unexpected login errors to 401', async () => {
+	it('maps unexpected login errors to a stable code without leaking messages', async () => {
 		const form = new FormData();
 		form.set('username', 'admin');
 		form.set('password', 'secret');
@@ -100,7 +105,8 @@ describe('/login +page.server', () => {
 
 		expect(result).toMatchObject({
 			status: 401,
-			data: { error: 'backend unavailable', username: 'admin' }
+			data: { errorCode: 'loginFailed', username: 'admin' }
 		});
+		expect(JSON.stringify(result)).not.toContain('backend unavailable');
 	});
 });

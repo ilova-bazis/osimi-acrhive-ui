@@ -3,21 +3,28 @@
 	import Chip from '$lib/components/Chip.svelte';
 	import ObjectThumbnail from '$lib/components/ObjectThumbnail.svelte';
 	import { locale } from '$lib/i18n/locale';
-	import { translations } from '$lib/i18n/translations';
-	import { formatTemplate, translate } from '$lib/i18n/translate';
+	import { translations, type TranslationKey } from '$lib/i18n/translations';
+	import { availabilityStateKeys, knownObjectTypeKey } from '$lib/i18n/domainLabels';
+	import { formatCount } from '$lib/i18n/format';
+	import { formatPlural, formatTemplate, translate } from '$lib/i18n/translate';
 	import { withObjectsReturnTo } from '$lib/objects/navigation';
 	import type { ObjectRow } from '$lib/services/objects';
 
 	let { recent, returnTo } = $props<{ recent: ObjectRow[]; returnTo: string }>();
 	const objectHref = (objectId: string): string =>
-		withObjectsReturnTo(resolve('/objects/[objectId]', { objectId }), returnTo);
+		withObjectsReturnTo(`/objects/${objectId}`, returnTo);
 
 	const dictionary = $derived(translations[$locale]);
-	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
+	const t = (key: TranslationKey) => translate(dictionary, key);
 
 	const titleFallback = (row: ObjectRow) =>
 		formatTemplate(t('objects.recent.untitled'), { suffix: row.objectId.slice(-6) });
-	const availabilityLabel = (value: ObjectRow['availabilityState']) => value.replace(/_/g, ' ');
+	const availabilityLabel = (value: ObjectRow['availabilityState']) => t(availabilityStateKeys[value]);
+	const objectTypeLabel = (type: string): string => {
+		const key = knownObjectTypeKey(type);
+		return key ? t(key) : type;
+	};
+
 </script>
 
 {#if recent.length > 0}
@@ -27,7 +34,7 @@
 			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.recent.title')}</p>
 			<p class="mt-1 text-sm text-text-muted">{t('objects.recent.subtitle')}</p>
 		</div>
-		<p class="text-xs text-text-muted">{formatTemplate(t('objects.recent.lastCount'), { count: recent.length })}</p>
+		<p class="text-xs text-text-muted">{formatTemplate(formatPlural(dictionary, 'objects.recent.lastCount', recent.length, $locale), { count: formatCount(recent.length, $locale) })}</p>
 	</div>
 	<div class="mt-4 flex gap-4 overflow-x-auto pb-2">
 		{#each recent as item (item.id)}
@@ -42,7 +49,7 @@
 					class="h-28 w-full"
 				/>
 				<p class="mt-3 line-clamp-2 text-sm font-medium text-text-ink">{item.title ?? titleFallback(item)}</p>
-				<p class="mt-1 text-xs text-text-muted">{item.type}</p>
+				<p class="mt-1 text-xs text-text-muted">{objectTypeLabel(item.type)}</p>
 				<div class="mt-2 flex items-center gap-2">
 					<Chip class="border-blue-slate/30 bg-pale-sky/20 text-xs text-blue-slate">
 						{availabilityLabel(item.availabilityState)}

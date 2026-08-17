@@ -8,9 +8,11 @@
 		IngestionStatus
 	} from '$lib/services/ingestionOverview';
 	import { locale } from '$lib/i18n/locale';
-	import { translations } from '$lib/i18n/translations';
-	import { formatTemplate, translate } from '$lib/i18n/translate';
-	import type { FileStatus } from '$lib/types';
+import { translations, type TranslationKey } from '$lib/i18n/translations';
+import { formatCount, formatDateTime } from '$lib/i18n/format';
+import { formatTemplate, translate } from '$lib/i18n/translate';
+import { batchStatusKey, batchStatusTone } from '$lib/i18n/statusLabels';
+import type { FileStatus } from '$lib/types';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 
 	let { data } = $props<{ data: { summary: IngestionOverviewSummary; activePage: number; draftPage: number } }>();
@@ -38,29 +40,7 @@
 		goto(resolve('/ingestion') + qs);
 	};
  	const dictionary = $derived(translations[$locale]);
-	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
-
-	const statusLabelMap = $derived({
-		draft: t('ingestionOverview.statuses.draft'),
-		uploading: t('ingestionOverview.statuses.uploading'),
-		queued: t('ingestionOverview.statuses.queued'),
-		ingesting: t('ingestionOverview.statuses.ingesting'),
-		completed: t('ingestionOverview.statuses.completed'),
-		completed_with_errors: t('ingestionOverview.statuses.completed_with_errors'),
-		failed: t('ingestionOverview.statuses.failed'),
-		canceled: t('ingestionOverview.statuses.canceled')
-	});
-
-	const statusToneMap: Record<string, FileStatus> = {
-		draft: 'queued',
-		uploading: 'processing',
-		queued: 'processing',
-		ingesting: 'processing',
-		completed: 'approved',
-		completed_with_errors: 'needs-review',
-		failed: 'failed',
-		canceled: 'blocked'
-	};
+	const t = (key: TranslationKey) => translate(dictionary, key);
 
 	const actionLabelMap = $derived({
 		view: t('ingestionOverview.actions.view'),
@@ -71,9 +51,11 @@
 		delete: t('ingestionOverview.actions.delete')
 	});
 
-	const getStatusTone = (status: IngestionStatus) => statusToneMap[status] ?? 'queued';
-	const getStatusLabel = (status: IngestionStatus) =>
-		statusLabelMap[status as keyof typeof statusLabelMap] ?? status;
+	const getStatusTone = (status: IngestionStatus | null): FileStatus => batchStatusTone(status);
+	const getStatusLabel = (batch: IngestionBatch): string => {
+		const key = batchStatusKey(batch.status);
+		return key ? t(key) : batch.statusRaw || t('values.unknown');
+	};
 	const getActionLabel = (action: IngestionAction) =>
 		actionLabelMap[action as keyof typeof actionLabelMap] ?? action;
 
@@ -157,7 +139,8 @@
 
 	const isActionRunning = (batchId: string): boolean => actingBatchId === batchId;
 
-	const formatDate = (value: string) => new Date(value).toLocaleString();
+	const formatDate = (value: string) =>
+		formatDateTime(value, $locale, t('values.unknown'));
 
 	const emptyState = $derived(activeAndRecent.length === 0 && drafts.length === 0);
 </script>
@@ -167,8 +150,8 @@
 	<div class="flex items-start justify-between gap-6">
 		<div>
 			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate font-medium">{t('ingestionOverview.title')}</p>
-			<h1 class="mt-1 font-display text-2xl text-text-ink leading-tight">Batch Overview</h1>
-			<p class="mt-1 text-sm text-text-muted">{summary.stats.totalBatches} batches · {summary.stats.inProgress} in progress</p>
+			<h1 class="mt-1 font-display text-2xl text-text-ink leading-tight">{t('ingestionOverview.heading')}</h1>
+			<p class="mt-1 text-sm text-text-muted">{formatTemplate(t('ingestionOverview.statsLine'), { total: formatCount(summary.stats.totalBatches, $locale), inProgress: formatCount(summary.stats.inProgress, $locale) })}</p>
 		</div>
 		<div class="flex shrink-0 items-center gap-3 pt-1">
 			<a
@@ -196,22 +179,22 @@
 		<section class="grid gap-3 md:grid-cols-4">
 			<div class="rounded-2xl border border-border-soft bg-surface-white px-4 py-4">
 				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionOverview.stats.totalBatches')}</p>
-				<p class="mt-2 text-2xl font-semibold text-text-ink">{summary.stats.totalBatches}</p>
+				<p class="mt-2 text-2xl font-semibold text-text-ink">{formatCount(summary.stats.totalBatches, $locale)}</p>
 				<p class="mt-1 text-xs text-text-muted">{t('ingestionOverview.stats.totalBatchesHint')}</p>
 			</div>
 			<div class="rounded-2xl border border-border-soft bg-surface-white px-4 py-4">
 				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionOverview.stats.objectsCreated')}</p>
-				<p class="mt-2 text-2xl font-semibold text-text-ink">{summary.stats.objectsCreated}</p>
+				<p class="mt-2 text-2xl font-semibold text-text-ink">{formatCount(summary.stats.objectsCreated, $locale)}</p>
 				<p class="mt-1 text-xs text-text-muted">{t('ingestionOverview.stats.objectsCreatedHint')}</p>
 			</div>
 			<div class="rounded-2xl border border-border-soft bg-surface-white px-4 py-4">
 				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionOverview.stats.inProgress')}</p>
-				<p class="mt-2 text-2xl font-semibold text-text-ink">{summary.stats.inProgress}</p>
+				<p class="mt-2 text-2xl font-semibold text-text-ink">{formatCount(summary.stats.inProgress, $locale)}</p>
 				<p class="mt-1 text-xs text-text-muted">{t('ingestionOverview.stats.inProgressHint')}</p>
 			</div>
 			<div class="rounded-2xl border border-border-soft bg-surface-white px-4 py-4">
 				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionOverview.stats.needsAttention')}</p>
-				<p class="mt-2 text-2xl font-semibold text-text-ink">{summary.stats.needsAttention}</p>
+				<p class="mt-2 text-2xl font-semibold text-text-ink">{formatCount(summary.stats.needsAttention, $locale)}</p>
 				<p class="mt-1 text-xs text-text-muted">{t('ingestionOverview.stats.needsAttentionHint')}</p>
 			</div>
 		</section>
@@ -244,13 +227,13 @@
 									<a href={resolve(`/ingestion/${batch.id}`)} class="text-sm font-medium text-text-ink hover:underline">{batch.name}</a>
 									<p class="mt-1 text-xs text-text-muted">{batch.id}</p>
 								</div>
-								<StatusBadge status={getStatusTone(batch.status)} label={getStatusLabel(batch.status)} />
+								<StatusBadge status={getStatusTone(batch.status)} label={getStatusLabel(batch)} />
 							</div>
 							<p class="text-xs text-text-muted">{formatDate(batch.createdAt)}</p>
 							<p class="text-xs text-text-muted">
 								{formatTemplate(t('ingestionOverview.table.objects'), {
-									completed: batch.progress.completed,
-									total: batch.progress.total
+									completed: formatCount(batch.progress.completed, $locale),
+									total: formatCount(batch.progress.total, $locale)
 								})}
 							</p>
 							<div class="flex justify-start md:justify-end">
@@ -323,7 +306,7 @@
 										<a href={resolve(`/ingestion/${batch.id}`)} class="text-sm font-medium text-text-ink hover:underline">{batch.name}</a>
 										<p class="mt-1 text-xs text-text-muted">{batch.id}</p>
 									</div>
-									<StatusBadge status={getStatusTone(batch.status)} label={getStatusLabel(batch.status)} />
+									<StatusBadge status={getStatusTone(batch.status)} label={getStatusLabel(batch)} />
 								</div>
 								<p class="text-xs text-text-muted">{formatDate(batch.createdAt)}</p>
 								<p class="text-xs text-text-muted">

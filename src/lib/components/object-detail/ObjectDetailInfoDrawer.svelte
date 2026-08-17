@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { fly } from 'svelte/transition';
 	import Chip from '$lib/components/Chip.svelte';
+	import { knownLanguageKey, knownMediaTypeKey } from '$lib/i18n/domainLabels';
+	import { locale } from '$lib/i18n/locale';
+	import { translate } from '$lib/i18n/translate';
+import { translations, type TranslationKey } from '$lib/i18n/translations';
 
 	let {
 		open,
@@ -32,18 +36,34 @@
 		onClose: () => void;
 	}>();
 
+	const dictionary = $derived(translations[$locale]);
+	const t = (key: TranslationKey) => translate(dictionary, key);
+
+	const knownTypeKey = $derived(knownMediaTypeKey(type));
+	const knownLanguageKeyForValue = $derived(
+		language ? knownLanguageKey(language) : null
+	);
+	const typeLabel = $derived(knownTypeKey ? t(knownTypeKey) : type);
+	const languageLabel = $derived(
+		language
+			? knownLanguageKeyForValue
+				? t(knownLanguageKeyForValue)
+				: language
+			: t('values.unknown')
+	);
+
 	const details = $derived([
-		{ label: 'Type', value: type },
-		{ label: 'Language', value: language ?? '-' },
-		{ label: 'Created', value: createdAt },
-		{ label: 'Updated', value: updatedAt },
-		{ label: 'Batch', value: sourceBatchLabel ?? '-' },
-		{ label: 'Ingestion', value: sourceIngestionId ?? '-' }
+		{ label: t('objects.detail.info.type'), value: typeLabel },
+		{ label: t('objects.detail.info.language'), value: languageLabel },
+		{ label: t('objects.detail.info.created'), value: createdAt },
+		{ label: t('objects.detail.info.updated'), value: updatedAt },
+		{ label: t('objects.detail.info.batch'), value: sourceBatchLabel ?? t('values.unknown') },
+		{ label: t('objects.detail.info.ingestion'), value: sourceIngestionId ?? t('values.unknown') }
 	]);
 </script>
 
 {#if open}
-	<button type="button" class="fixed inset-0 z-30 bg-blue-slate/18 backdrop-blur-[1px]" aria-label="Close details" onclick={onClose}></button>
+	<button type="button" class="fixed inset-0 z-30 bg-blue-slate/18 backdrop-blur-[1px]" aria-label={t('objects.detail.info.closeBackdrop')} onclick={onClose}></button>
 	<aside
 		class="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-border-soft bg-surface-white shadow-[-12px_0_40px_rgba(31,47,56,0.18)]"
 		in:fly={{ x: 24, duration: 180 }}
@@ -51,11 +71,11 @@
 	>
 		<div class="flex items-start justify-between gap-3 border-b border-border-soft px-5 py-5">
 			<div>
-				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Object info</p>
+				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.detail.info.kicker')}</p>
 				<h2 class="mt-2 font-display text-2xl text-text-ink">{title}</h2>
-				<p class="mt-2 text-sm text-text-muted">Metadata remains secondary so the object itself stays central in view mode.</p>
+				<p class="mt-2 text-sm text-text-muted">{t('objects.detail.info.description')}</p>
 			</div>
-			<button type="button" class="rounded-full border border-border-soft p-2 text-text-muted transition hover:text-blue-slate" aria-label="Close info panel" onclick={onClose}>
+			<button type="button" class="rounded-full border border-border-soft p-2 text-text-muted transition hover:text-blue-slate" aria-label={t('objects.detail.info.close')} onclick={onClose}>
 				<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" class="h-4 w-4" aria-hidden="true">
 					<path d="M5 5l10 10M15 5L5 15" stroke-linecap="round" />
 				</svg>
@@ -74,7 +94,7 @@
 
 			{#if tags.length > 0}
 				<section>
-					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Tags</p>
+					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.detail.info.tags')}</p>
 					<div class="mt-3 flex flex-wrap gap-2">
 						{#each tags as tag (tag)}
 							<Chip class="border-blue-slate/20 bg-pale-sky/25 text-xs uppercase tracking-[0.2em] text-blue-slate">{tag}</Chip>
@@ -84,20 +104,20 @@
 			{/if}
 
 			<section>
-				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Description</p>
-				<p class="mt-3 text-sm leading-relaxed text-text-ink">{description ?? 'No description available.'}</p>
+				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.detail.info.descriptionTitle')}</p>
+				<p class="mt-3 text-sm leading-relaxed text-text-ink">{description ?? t('objects.detail.info.noDescription')}</p>
 			</section>
 
 			{#if rightsNote}
 				<section>
-					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Rights note</p>
+					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.detail.info.rightsNote')}</p>
 					<p class="mt-3 rounded-2xl border border-pearl-beige bg-pearl-beige/45 px-4 py-4 text-sm leading-relaxed text-text-ink">{rightsNote}</p>
 				</section>
 			{/if}
 
 			{#if sensitivityNote}
 				<section>
-					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">Sensitivity note</p>
+					<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.detail.info.sensitivityNote')}</p>
 					<p class="mt-3 rounded-2xl border border-burnt-peach/25 bg-pearl-beige/40 px-4 py-4 text-sm leading-relaxed text-text-ink">{sensitivityNote}</p>
 				</section>
 			{/if}

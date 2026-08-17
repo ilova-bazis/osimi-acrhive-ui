@@ -3,6 +3,7 @@ import type {
 	IngestionStatus,
 	StagingPurge
 } from './ingestionOverview';
+import type { IngestionFileStatus, IngestionItemStatus } from '$lib/i18n/statusLabels';
 import type {
 	IngestionSummaryDto,
 	classificationTypeSchema,
@@ -16,7 +17,8 @@ type ItemKind = z.infer<typeof itemKindSchema>;
 export type IngestionDetailFile = {
 	id: string;
 	name: string;
-	status: string;
+	status: IngestionFileStatus | null;
+	statusRaw: string;
 	contentType: string | null;
 	sizeBytes: number | null;
 	createdAt: string | null;
@@ -40,7 +42,8 @@ export type IngestionDetailItem = {
 	id: string;
 	itemIndex: number;
 	label?: string;
-	status: string;
+	status: IngestionItemStatus | null;
+	statusRaw: string;
 	summary: Record<string, unknown>;
 	files: IngestionDetailItemFile[];
 };
@@ -48,7 +51,8 @@ export type IngestionDetailItem = {
 export type IngestionDetail = {
 	id: string;
 	batchLabel: string;
-	status: IngestionStatus;
+	status: IngestionStatus | null;
+	statusRaw: string;
 	actionCapabilities: IngestionActionCapabilities;
 	stagingPurge: StagingPurge;
 	classificationType: ClassificationType;

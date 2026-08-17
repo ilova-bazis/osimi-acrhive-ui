@@ -128,9 +128,10 @@ Active filters appear as removable chips below the row.
 
 #### Content Indicators
 Small icons:
-- OCR text available
-- Transcript available
-- Embeddings available
+- Materialized PDF derivative available
+- Materialized OCR text available
+
+Transcript and embedding indicators remain future work until their availability has a first-class list projection. Content indicators describe materialized artifacts and do not grant download access.
 
 ---
 
@@ -261,4 +262,3 @@ CTA:
   - Text / Transcript
   - Metadata
   - Activity log
-

@@ -1,20 +1,32 @@
 <script lang="ts">
+	import LocaleSwitcher from '$lib/components/LocaleSwitcher.svelte';
 	import { locale } from '$lib/i18n/locale';
-	import { translations } from '$lib/i18n/translations';
+	import { translations, type TranslationKey } from '$lib/i18n/translations';
 	import { translate } from '$lib/i18n/translate';
+	import { loginErrorKeys, type LoginErrorCode } from '$lib/auth/loginErrors';
 
-	let { form } = $props<{ form?: { error?: string; username?: string } }>();
+	let { form } = $props<{ form?: { errorCode?: LoginErrorCode; username?: string } }>();
 
 	let username = $state('');
 	let password = $state('');
 	let isSubmitting = $state(false);
-	const errorMessage = $derived(form?.error ?? '');
 	const dictionary = $derived(translations[$locale]);
-	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
+	const t = (key: TranslationKey) => translate(dictionary, key);
+	const errorMessage = $derived.by(() => {
+		const code: string | undefined = form?.errorCode;
+		if (!code) return '';
+		return code in loginErrorKeys
+			? t(loginErrorKeys[code as LoginErrorCode])
+			: t('login.errors.generic');
+	});
+	const hasError = $derived(errorMessage !== '');
 
 	$effect(() => {
-		if (form?.error) {
+		if (form?.errorCode) {
 			isSubmitting = false;
+		}
+		if (form?.username) {
+			username = form.username;
 		}
 	});
 </script>
@@ -32,7 +44,12 @@
 			</div>
 		</section>
 
-		<section class="order-1 flex w-full flex-col gap-4 rounded-2xl border border-border-soft bg-surface-white p-6 shadow-[0_18px_45px_rgba(79,109,122,0.15)] lg:order-2">
+		<section
+			class="order-1 flex w-full flex-col gap-4 rounded-2xl border border-border-soft bg-surface-white p-6 shadow-[0_18px_45px_rgba(79,109,122,0.15)] lg:order-2"
+		>
+			<div class="flex justify-end">
+				<LocaleSwitcher />
+			</div>
 			<div>
 				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('login.signIn')}</p>
 				<h2 class="mt-2 font-display text-2xl text-text-ink">{t('login.continue')}</h2>
@@ -48,6 +65,8 @@
 						name="username"
 						type="text"
 						autocomplete="username"
+						aria-invalid={hasError ? 'true' : undefined}
+						aria-describedby={hasError ? 'login-error' : undefined}
 						class="w-full rounded-xl border border-border-soft bg-surface-white px-4 py-3 text-sm text-text-ink focus:outline-none focus:ring-2 focus:ring-blue-slate/30"
 						bind:value={username}
 						required
@@ -62,13 +81,20 @@
 						name="password"
 						type="password"
 						autocomplete="current-password"
+						aria-invalid={hasError ? 'true' : undefined}
+						aria-describedby={hasError ? 'login-error' : undefined}
 						class="w-full rounded-xl border border-border-soft bg-surface-white px-4 py-3 text-sm text-text-ink focus:outline-none focus:ring-2 focus:ring-blue-slate/30"
 						bind:value={password}
 						required
 					/>
 				</div>
 				{#if errorMessage}
-					<p class="rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach">
+					<p
+						id="login-error"
+						role="alert"
+						aria-live="assertive"
+						class="rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach"
+					>
 						{errorMessage}
 					</p>
 				{/if}

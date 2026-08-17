@@ -31,9 +31,9 @@ describe('mapDashboardSummary', () => {
 		expect(mapped.metrics.activeBatches).toBe(12);
 		expect(mapped.metrics.needsReview).toBe(2);
 		expect(mapped.metrics.pendingUploads).toBe(4);
-		expect(mapped.roleTagline).toBe('Prepare and validate ingestion batches.');
-		expect(mapped.recentActivity[0]?.title).toBe('Ingestion Completed');
-		expect(mapped.recentActivity[0]?.description).toBe('Ingestion ing-1 updated.');
+		expect(mapped.roleCopyCode).toBe('archiver');
+		expect(mapped.recentActivity[0]?.eventCode).toBe('INGESTION_COMPLETED');
+		expect(mapped.recentActivity[0]?.description).toEqual({ code: 'ingestionUpdated', id: 'ing-1' });
 	});
 
 	it('falls back to viewer copy for unknown roles', () => {
@@ -54,7 +54,27 @@ describe('mapDashboardSummary', () => {
 			}
 		});
 
-		expect(mapped.primaryAction).toBe('Open latest releases');
-		expect(mapped.secondaryAction).toBe('View activity summary');
+		expect(mapped.roleCopyCode).toBe('viewer');
+	});
+
+	it('preserves unknown event types and payload messages as raw external values', () => {
+		const mapped = mapDashboardSummary({
+			role: 'viewer',
+			summaryResponse: {
+				summary: { total_ingestions: 0, total_objects: 0, processed_today: 0, processed_week: 0, failed_count: 0 }
+			},
+			activityResponse: {
+				activity: [{
+					id: 'a2', event_id: 'e2', type: 'external.custom',
+					payload: { message: 'External detail' }, created_at: '2026-01-01T00:00:00.000Z'
+				}]
+			}
+		});
+
+		expect(mapped.recentActivity[0]).toMatchObject({
+			eventCode: null,
+			typeFallback: 'external.custom',
+			description: { code: 'raw', text: 'External detail' }
+		});
 	});
 });

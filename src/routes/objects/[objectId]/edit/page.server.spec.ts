@@ -166,7 +166,7 @@ describe('/objects/[objectId]/edit +page.server', () => {
 
 		expect(result).toMatchObject({
 			status: 400,
-			data: { error: 'Check the highlighted fields.', fieldErrors: { pages: 'Review the page curation values.' } },
+			data: { errorCode: 'highlightedFields', fieldErrors: { pages: 'pagesInvalid' } },
 		});
 		expect(saveObjectMetadataMock).not.toHaveBeenCalled();
 		expect(saveDocumentCurationMock).not.toHaveBeenCalled();
@@ -190,7 +190,7 @@ describe('/objects/[objectId]/edit +page.server', () => {
 
 		expect(result).toMatchObject({
 			status: 400,
-			data: { error: 'Check the highlighted fields.', fieldErrors: { publicationDate: 'Publication date does not match selected precision.' } },
+			data: { errorCode: 'highlightedFields', fieldErrors: { publicationDate: 'publicationDateInvalid' } },
 		});
 		expect(getObjectEditPayloadMock).not.toHaveBeenCalled();
 	});
@@ -202,7 +202,7 @@ describe('/objects/[objectId]/edit +page.server', () => {
 
 		expect(result).toMatchObject({
 			status: 400,
-			data: { error: 'Check the highlighted fields.', fieldErrors: { title: 'Enter a title.' } },
+			data: { errorCode: 'highlightedFields', fieldErrors: { title: 'titleRequired' } },
 		});
 		expect(saveObjectMetadataMock).not.toHaveBeenCalled();
 	});
@@ -221,7 +221,7 @@ describe('/objects/[objectId]/edit +page.server', () => {
 
 		expect(result).toMatchObject({
 			status: 400,
-			data: { fieldErrors: { pages: 'Review the page curation values.' } },
+			data: { fieldErrors: { pages: 'pagesInvalid' } },
 		});
 		expect(saveDocumentCurationMock).not.toHaveBeenCalled();
 	});
@@ -295,8 +295,8 @@ describe('/objects/[objectId]/edit +page.server', () => {
 		expect(result).toMatchObject({
 			status: 422,
 			data: {
-				error: 'Check the highlighted fields and try again.',
-				fieldErrors: { title: 'Enter a title.' },
+				errorCode: 'validationFailed',
+				fieldErrors: { title: 'titleRequired' },
 			},
 		});
 	});
@@ -311,7 +311,7 @@ describe('/objects/[objectId]/edit +page.server', () => {
 		expect(result).toMatchObject({
 			status: 502,
 			data: {
-				error: 'Metadata saved, but document curation failed. Review the refreshed values before retrying.',
+				errorCode: 'partialFailedReview',
 				recovery: { kind: 'partial', editPayload: baseEditPayload },
 			},
 		});
@@ -389,7 +389,7 @@ describe('/objects/[objectId]/edit +page.server', () => {
 
 		expect(result).toMatchObject({
 			status: 409,
-			data: { projectionUnavailable: true, error: expect.stringContaining('OCR pages are unavailable') },
+			data: { projectionUnavailable: true, errorCode: 'ocrUnavailable' },
 		});
 		expect(submitObjectCurationMock).not.toHaveBeenCalled();
 	});
@@ -409,7 +409,7 @@ describe('/objects/[objectId]/edit +page.server', () => {
 
 		expect(result).toMatchObject({
 			status: 409,
-			data: { projectionUnavailable: true, error: expect.stringContaining('req-projection') },
+			data: { projectionUnavailable: true, errorCode: 'ocrUnavailable', errorRequestId: 'req-projection' },
 		});
 	});
 

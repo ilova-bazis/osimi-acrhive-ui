@@ -1,4 +1,8 @@
 <script lang="ts">
+	import { locale } from '$lib/i18n/locale';
+	import { translations, type TranslationKey } from '$lib/i18n/translations';
+	import { formatTemplate, translate } from '$lib/i18n/translate';
+
 	type Availability = 'AVAILABLE' | 'ARCHIVED' | 'RESTORE_PENDING' | 'RESTORING' | 'UNAVAILABLE';
 
 	let {
@@ -12,6 +16,11 @@
 		variant?: 'light' | 'dark';
 		onRequest: () => void;
 	}>();
+
+	const dictionary = $derived(translations[$locale]);
+	const t = (key: TranslationKey) => translate(dictionary, key);
+
+	const media = $derived(mediaLabel.charAt(0).toUpperCase() + mediaLabel.slice(1));
 
 	const isDark = $derived(variant === 'dark');
 	const isRestoring = $derived(availability === 'RESTORE_PENDING' || availability === 'RESTORING');
@@ -46,21 +55,21 @@
 		<!-- Message -->
 		{#if availability === 'UNAVAILABLE'}
 			<div>
-				<p class="text-sm font-medium {isDark ? 'text-pale-sky/70' : 'text-text-ink'}">Not available</p>
-				<p class="mt-1 text-xs {isDark ? 'text-pale-sky/40' : 'text-text-muted'}">This {mediaLabel} is not currently available for access.</p>
+				<p class="text-sm font-medium {isDark ? 'text-pale-sky/70' : 'text-text-ink'}">{t('objects.detail.mediaRequest.unavailable')}</p>
+				<p class="mt-1 text-xs {isDark ? 'text-pale-sky/40' : 'text-text-muted'}">{formatTemplate(t('objects.detail.mediaRequest.unavailableBody'), { media })}</p>
 			</div>
 		{:else if isRestoring}
 			<div>
 				<p class="text-sm font-medium {isDark ? 'text-pearl-beige' : 'text-blue-slate'}">
 					<span class="mr-1.5 inline-block h-2 w-2 animate-pulse rounded-full {isDark ? 'bg-pearl-beige' : 'bg-blue-slate'}"></span>
-					Restoring
+					{t('objects.detail.mediaRequest.restoring')}
 				</p>
-				<p class="mt-1 text-xs {isDark ? 'text-pale-sky/40' : 'text-text-muted'}">Your {mediaLabel} will be ready shortly. This usually takes a few minutes.</p>
+				<p class="mt-1 text-xs {isDark ? 'text-pale-sky/40' : 'text-text-muted'}">{formatTemplate(t('objects.detail.mediaRequest.restoringBody'), { media })}</p>
 			</div>
 		{:else}
 			<div>
-				<p class="text-sm font-medium {isDark ? 'text-pale-sky/80' : 'text-text-ink'}">Stored in archive</p>
-				<p class="mt-1 text-xs {isDark ? 'text-pale-sky/40' : 'text-text-muted'}">This {mediaLabel} is in long-term storage. Request access to view the full file.</p>
+				<p class="text-sm font-medium {isDark ? 'text-pale-sky/80' : 'text-text-ink'}">{t('objects.detail.mediaRequest.archived')}</p>
+				<p class="mt-1 text-xs {isDark ? 'text-pale-sky/40' : 'text-text-muted'}">{formatTemplate(t('objects.detail.mediaRequest.archivedBody'), { media })}</p>
 			</div>
 			<button
 				type="button"
@@ -69,7 +78,7 @@
 					: 'bg-blue-slate text-surface-white hover:bg-blue-slate-mid-dark'}"
 				onclick={onRequest}
 			>
-				Request access
+				{t('objects.detail.mediaRequest.requestAccess')}
 			</button>
 		{/if}
 	</div>

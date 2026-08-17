@@ -7,6 +7,7 @@ import type {
 	StagingPurge
 } from '$lib/services/ingestionOverview';
 import { actionsFromCapabilities } from '$lib/services/ingestionOverview';
+import { resolveBatchStatus } from '$lib/i18n/statusLabels';
 
 const resolveIngestionId = (dto: IngestionResourceDto, index: number): string =>
 	dto.id ?? dto.ingestion_id ?? dto.batch_id ?? dto.batch_label ?? `ingestion-${index + 1}`;
@@ -16,36 +17,7 @@ const resolveBatchName = (dto: IngestionResourceDto, fallbackId: string): string
 const resolveCreatedAt = (dto: IngestionResourceDto): string =>
 	dto.created_at ?? dto.updated_at ?? new Date(0).toISOString();
 
-export const mapIngestionStatus = (rawStatus: string | undefined): IngestionStatus => {
-	const normalized = (rawStatus ?? '').toLowerCase();
-
-	if (normalized.includes('draft')) return 'draft';
-	if (normalized.includes('upload')) return 'uploading';
-	if (normalized.includes('cancel')) return 'canceled';
-	if (normalized.includes('complete') && normalized.includes('error')) {
-		return 'completed_with_errors';
-	}
-	if (normalized.includes('fail') || normalized.includes('error')) {
-		return 'failed';
-	}
-	if (normalized.includes('complete') || normalized.includes('done') || normalized.includes('success')) {
-		return 'completed';
-	}
-	if (normalized.includes('queue') || normalized.includes('submitted')) {
-		return 'queued';
-	}
-	if (
-		normalized.includes('ingest') ||
-		normalized.includes('process') ||
-		normalized.includes('running')
-	) {
-		return 'ingesting';
-	}
-
-	return 'draft';
-};
-
-const toProgress = (dto: IngestionResourceDto, status: IngestionStatus): IngestionBatch['progress'] => {
+const toProgress = (dto: IngestionResourceDto, status: IngestionStatus | null): IngestionBatch['progress'] => {
 	const completed =
 		dto.processed_objects ?? dto.objects_processed ?? dto.completed_count ?? (status === 'completed' ? 1 : 0);
 	const total = dto.total_objects ?? dto.object_count ?? dto.total_count ?? (completed > 0 ? completed : 1);
@@ -72,15 +44,16 @@ const toStagingPurge = (dto: IngestionResourceDto): StagingPurge => ({
 
 const toBatch = (dto: IngestionResourceDto, index: number): IngestionBatch => {
 	const id = resolveIngestionId(dto, index);
-	const status = mapIngestionStatus(dto.status);
+	const statusResolution = resolveBatchStatus(dto.status);
 	const actionCapabilities = toActionCapabilities(dto);
 
 	return {
 		id,
 		name: resolveBatchName(dto, id),
 		createdAt: resolveCreatedAt(dto),
-		status,
-		progress: toProgress(dto, status),
+		status: statusResolution.value,
+		statusRaw: statusResolution.raw,
+		progress: toProgress(dto, statusResolution.value),
 		actionCapabilities,
 		stagingPurge: toStagingPurge(dto),
 		actions: ['view', ...actionsFromCapabilities(actionCapabilities)]

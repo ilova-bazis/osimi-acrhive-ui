@@ -2,20 +2,13 @@
 	import { untrack } from 'svelte';
 	import type { ObjectItemMetadata } from '$lib/models';
 	import { locale } from '$lib/i18n/locale';
-	import { translations } from '$lib/i18n/translations';
+import { translate, formatTemplate } from '$lib/i18n/translate';
+import { translations, type TranslationKey } from '$lib/i18n/translations';
 	import IngestionFilePreview from '$lib/components/IngestionFilePreview.svelte';
-	import type { IngestionMediaKind } from '$lib/services/ingestionCapabilities';
+	import type { IngestionPreviewItem } from '$lib/ingestion/previewPresentation';
 
 	const dictionary = $derived(translations[$locale]);
-	const t = (key: string): string => {
-		const segments = key.split('.');
-		let current: Record<string, unknown> = dictionary as Record<string, unknown>;
-		for (const segment of segments) {
-			if (typeof current[segment] === 'undefined') return key;
-			current = current[segment] as Record<string, unknown>;
-		}
-		return current as unknown as string;
-	};
+	const t = (key: TranslationKey) => translate(dictionary, key);
 
 	let {
 		objectKey,
@@ -27,17 +20,13 @@
 		batchDate,
 		batchDescription,
 		peopleEditable = false,
-		onMetadataChange
+		onMetadataChange,
+		onFilePreview,
+		onCheckPreviewAgain
 	} = $props<{
 		objectKey: string | null;
 		objectLabel: string;
-		files?: Array<{
-			id: string;
-			name: string;
-			mediaType: IngestionMediaKind;
-			size: string;
-			previewUrl?: string | null;
-		}>;
+		files?: IngestionPreviewItem[];
 		metadata: ObjectItemMetadata;
 		batchTitle: string;
 		batchTags: string[];
@@ -45,6 +34,8 @@
 		batchDescription: string;
 		peopleEditable?: boolean;
 		onMetadataChange: (patch: Partial<ObjectItemMetadata>) => void;
+		onFilePreview: (fileId: string) => void;
+		onCheckPreviewAgain?: (fileId: string) => void;
 	}>();
 
 	type DatePrecision = 'none' | 'year' | 'month' | 'day';
@@ -125,7 +116,7 @@
 	const dateInputValue = $derived(metadata.date?.value ?? '');
 </script>
 
-<div class="rounded-2xl border border-border-soft bg-surface-white px-6 py-6">
+<div class="flex flex-col gap-4">
 	<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionSetup.objectMetadata.title')}</p>
 
 	{#if objectKey === null}
@@ -133,15 +124,17 @@
 			{t('ingestionSetup.objectMetadata.empty')}
 		</p>
 	{:else}
-		<p class="mt-1 truncate text-sm font-medium text-text-ink">{objectLabel}</p>
+		<p class="truncate text-sm font-medium text-text-ink">{objectLabel}</p>
 
 		{#if files.length > 0}
-			<div class="mt-3">
-				<IngestionFilePreview {files} maxVisible={4} />
-			</div>
+			<IngestionFilePreview
+				{files}
+				onPreview={onFilePreview}
+				onCheckAgain={onCheckPreviewAgain}
+			/>
 		{/if}
 
-		<div class="mt-4 space-y-4">
+		<div class="mt-4 space-y-4 border-t border-border-soft pt-4">
 			<!-- Title -->
 			<div>
 				<label
@@ -160,7 +153,7 @@
 						onMetadataChange({ title: e.currentTarget.value.trim() })}
 				/>
 				{#if !(metadata.title ?? '').trim()}
-					<p class="mt-1 text-[10px] text-burnt-peach">Required</p>
+					<p class="mt-1 text-[10px] text-burnt-peach">{t('ingestionSetup.objectMetadata.fields.required')}</p>
 				{/if}
 			</div>
 
@@ -211,7 +204,7 @@
 					{/if}
 				</div>
 				{#if metadata.date?.value == null}
-					<p class="mt-1 text-[10px] text-burnt-peach">Required</p>
+					<p class="mt-1 text-[10px] text-burnt-peach">{t('ingestionSetup.objectMetadata.fields.required')}</p>
 				{/if}
 				{#if localDatePrecision !== 'none'}
 					<label class="mt-2 flex items-center gap-2 text-xs text-text-muted">
@@ -254,7 +247,7 @@
 					</button>
 				</div>
 				{#if !(metadata.tags ?? []).length}
-					<p class="mt-1 text-[10px] text-burnt-peach">Required — add at least one tag</p>
+					<p class="mt-1 text-[10px] text-burnt-peach">{t('ingestionSetup.objectMetadata.fields.requiredTag')}</p>
 				{/if}
 				{#if (metadata.tags && metadata.tags.length > 0) || batchTags.length > 0}
 					<div class="mt-2 flex flex-wrap gap-2">
@@ -262,6 +255,7 @@
 							<button
 								type="button"
 								onclick={() => removeTag(tag)}
+								aria-label={formatTemplate(t('ingestionSetup.objectMetadata.fields.removeTag'), { tag })}
 								class="rounded-full border border-blue-slate/40 bg-pale-sky/20 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-blue-slate"
 							>
 								{tag} ×
@@ -308,7 +302,7 @@
 						class="w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
 						aria-label={t('ingestionSetup.objectMetadata.fields.people')}
 						disabled={!peopleEditable}
-						title={peopleEditable ? undefined : 'People updates are not available yet.'}
+						title={peopleEditable ? undefined : t('ingestionSetup.objectMetadata.fields.peopleUpdatesUnavailable')}
 						placeholder={t('ingestionSetup.objectMetadata.fields.peoplePlaceholder')}
 						value={personInput}
 						oninput={(e) => (personInput = e.currentTarget.value)}
@@ -335,6 +329,7 @@
 								type="button"
 								disabled={!peopleEditable}
 								onclick={() => removePerson(person)}
+								aria-label={formatTemplate(t('ingestionSetup.objectMetadata.fields.removePerson'), { person })}
 								class="rounded-full border border-blue-slate/40 bg-pale-sky/20 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-blue-slate"
 							>
 								{person} ×

@@ -4,28 +4,22 @@ import { error, fail, redirect, type Actions, type RequestEvent } from '@sveltej
 import { objectEditService } from '$lib/services';
 import type { ObjectEditMetadata, ObjectEditPayload } from '$lib/services/objectEdit';
 import { ObjectEditLockedError, ObjectEditRevisionConflictError } from '$lib/services/objectEdit';
+import type {
+	ObjectEditErrorCode,
+	ObjectEditField,
+	ObjectEditFieldErrorCode,
+	ObjectEditFieldErrors
+} from '$lib/services/objectEditErrors';
 import { AUTH_COOKIE_NAME, clearSessionCookie } from '$lib/server/auth';
 import { ApiClientError, isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
 
-type ObjectEditField =
-	| 'title'
-	| 'publicationDate'
-	| 'tags'
-	| 'people'
-	| 'description'
-	| 'rightsNote'
-	| 'sensitivityNote'
-	| 'pages';
-
-type ObjectEditFieldErrors = Partial<Record<ObjectEditField, string>>;
-
-const fieldMessage = (field: ObjectEditField): string => {
-	if (field === 'title') return 'Enter a title.';
-	if (field === 'publicationDate') return 'Publication date does not match selected precision.';
-	if (field === 'tags') return 'Tags cannot be blank.';
-	if (field === 'people') return 'People cannot be blank.';
-	if (field === 'pages') return 'Review the page curation values.';
-	return 'Enter a valid value.';
+const fieldErrorCode = (field: ObjectEditField): ObjectEditFieldErrorCode => {
+	if (field === 'title') return 'titleRequired';
+	if (field === 'publicationDate') return 'publicationDateInvalid';
+	if (field === 'tags') return 'tagsBlank';
+	if (field === 'people') return 'peopleBlank';
+	if (field === 'pages') return 'pagesInvalid';
+	return 'invalidValue';
 };
 
 const toField = (path: ReadonlyArray<string | number>): ObjectEditField | null => {
@@ -52,7 +46,7 @@ const toZodFieldErrors = (error: z.ZodError): ObjectEditFieldErrors => {
 	const fieldErrors: ObjectEditFieldErrors = {};
 	for (const issue of error.issues) {
 		const field = toField(issue.path.map((segment) => (typeof segment === 'symbol' ? String(segment) : segment)));
-		if (field && !fieldErrors[field]) fieldErrors[field] = fieldMessage(field);
+		if (field && !fieldErrors[field]) fieldErrors[field] = fieldErrorCode(field);
 	}
 	return fieldErrors;
 };
@@ -64,7 +58,7 @@ const toBackendFieldErrors = (details: unknown): ObjectEditFieldErrors => {
 	for (const detail of details) {
 		if (!detail || typeof detail !== 'object' || !('path' in detail) || typeof detail.path !== 'string') continue;
 		const field = toField(detail.path.replaceAll('[', '.').replaceAll(']', '').split('.'));
-		if (field && !fieldErrors[field]) fieldErrors[field] = fieldMessage(field);
+		if (field && !fieldErrors[field]) fieldErrors[field] = fieldErrorCode(field);
 	}
 	return fieldErrors;
 };
@@ -244,13 +238,15 @@ export const actions: Actions = {
 
 		const objectId = params.objectId;
 		if (!objectId) {
-			return fail(404, { error: 'Object not found.' });
+			return fail(404, { errorCode: 'objectNotFound' satisfies ObjectEditErrorCode });
 		}
 
 		const parsedPayload = parseSaveDraftPayload(await request.formData());
 		if (!parsedPayload.payload) {
 			return fail(400, {
-				error: Object.keys(parsedPayload.fieldErrors).length > 0 ? 'Check the highlighted fields.' : 'Invalid form payload.',
+				errorCode: (Object.keys(parsedPayload.fieldErrors).length > 0
+					? 'highlightedFields'
+					: 'invalidPayload') satisfies ObjectEditErrorCode,
 				fieldErrors: parsedPayload.fieldErrors,
 			});
 		}
@@ -263,11 +259,11 @@ export const actions: Actions = {
 		try {
 			const editPayload = await objectEditService.getObjectEditPayload({ context, objectId });
 			if (!canSaveDraft(editPayload, payload)) {
-				return fail(403, { error: 'You do not have permission to save this draft.' });
+				return fail(403, { errorCode: 'saveForbidden' satisfies ObjectEditErrorCode });
 			}
 			if (payload.revision !== editPayload.revision) {
 				return fail(409, {
-					error: 'This object changed while you were editing. Review the refreshed values before retrying.',
+					errorCode: 'changedBeforeSave' satisfies ObjectEditErrorCode,
 					recovery: toRecovery('conflict', editPayload),
 				});
 			}
@@ -311,9 +307,9 @@ export const actions: Actions = {
 				const editPayload = refreshed ?? (await refreshEditPayload(context, objectId));
 				if (editPayload) {
 					return fail(409, {
-						error: metadataSaved
-							? 'Metadata saved, but document curation needs review before retrying.'
-							: 'This object changed while you were editing. Review the refreshed values before retrying.',
+						errorCode: (metadataSaved
+							? 'partialConflict'
+							: 'changedBeforeSave') satisfies ObjectEditErrorCode,
 						recovery: toRecovery(metadataSaved ? 'partial' : 'conflict', editPayload, metadataSaved),
 					});
 				}
@@ -327,14 +323,14 @@ export const actions: Actions = {
 			if (metadataSaved) {
 				if (refreshed) {
 					return fail(isApiClientError(cause) ? cause.status || 502 : 502, {
-						error: 'Metadata saved, but document curation failed. Review the refreshed values before retrying.',
+						errorCode: 'partialFailedReview' satisfies ObjectEditErrorCode,
 						recovery: toRecovery('partial', refreshed, true),
 						...(fieldErrors ? { fieldErrors } : {}),
 					});
 				}
 
 				return fail(isApiClientError(cause) ? cause.status || 502 : 502, {
-					error: 'Metadata saved, but document curation failed. Refresh before retrying.',
+					errorCode: 'partialFailedRefresh' satisfies ObjectEditErrorCode,
 					...(fieldErrors ? { fieldErrors } : {}),
 				});
 			}
@@ -342,18 +338,17 @@ export const actions: Actions = {
 			if (isApiClientError(cause)) {
 				if (cause.code === 'VALIDATION_FAILED') {
 					return fail(422, {
-						error: 'Check the highlighted fields and try again.',
+						errorCode: 'validationFailed' satisfies ObjectEditErrorCode,
 						fieldErrors,
 					});
 				}
 				return fail(cause.status || 502, {
-					error: cause.requestId
-						? `Failed to save draft (request: ${cause.requestId}).`
-						: 'Failed to save draft.',
+					errorCode: 'saveFailed' satisfies ObjectEditErrorCode,
+					...(cause.requestId ? { errorRequestId: cause.requestId } : {}),
 				});
 			}
 
-			return fail(502, { error: 'Failed to save draft.' });
+			return fail(502, { errorCode: 'saveFailed' satisfies ObjectEditErrorCode });
 		}
 	},
 
@@ -365,14 +360,14 @@ export const actions: Actions = {
 
 		const objectId = params.objectId;
 		if (!objectId) {
-			return fail(404, { error: 'Object not found.' });
+			return fail(404, { errorCode: 'objectNotFound' satisfies ObjectEditErrorCode });
 		}
 
 		const formData = await request.formData();
 		const reviewNote = String(formData.get('reviewNote') ?? '').trim() || null;
 		const revision = z.coerce.number().int().min(0).safeParse(formData.get('revision'));
 		if (!revision.success) {
-			return fail(400, { error: 'Invalid form payload.' });
+			return fail(400, { errorCode: 'invalidPayload' satisfies ObjectEditErrorCode });
 		}
 		const context = { fetchFn: fetch, token };
 
@@ -380,16 +375,16 @@ export const actions: Actions = {
 			const editPayload = await objectEditService.getObjectEditPayload({ context, objectId });
 			if (editPayload.curation.kind !== 'document' || editPayload.curation.pages.length === 0) {
 				return fail(409, {
-					error: 'OCR pages are unavailable. Synchronize this object before publishing curated OCR.',
+					errorCode: 'ocrUnavailable' satisfies ObjectEditErrorCode,
 					projectionUnavailable: true,
 				});
 			}
 			if (!editPayload.capabilities.canSubmitReview) {
-				return fail(403, { error: 'You do not have permission to publish curated OCR.' });
+				return fail(403, { errorCode: 'publishForbidden' satisfies ObjectEditErrorCode });
 			}
 			if (revision.data !== editPayload.revision) {
 				return fail(409, {
-					error: 'This object changed while you were editing. Review the refreshed values before submitting.',
+					errorCode: 'changedBeforePublish' satisfies ObjectEditErrorCode,
 					recovery: toRecovery('conflict', editPayload),
 				});
 			}
@@ -421,7 +416,7 @@ export const actions: Actions = {
 				const editPayload = await refreshEditPayload(context, objectId);
 				if (editPayload) {
 					return fail(409, {
-						error: 'This object changed while you were editing. Review the refreshed values before submitting.',
+						errorCode: 'changedBeforePublish' satisfies ObjectEditErrorCode,
 						recovery: toRecovery('conflict', editPayload),
 					});
 				}
@@ -429,22 +424,20 @@ export const actions: Actions = {
 
 			if (isProjectionUnavailableError(cause)) {
 				return fail(409, {
-					error: cause.requestId
-						? `OCR pages are unavailable. Synchronize this object before publishing curated OCR (request: ${cause.requestId}).`
-						: 'OCR pages are unavailable. Synchronize this object before publishing curated OCR.',
+					errorCode: 'ocrUnavailable' satisfies ObjectEditErrorCode,
+					...(cause.requestId ? { errorRequestId: cause.requestId } : {}),
 					projectionUnavailable: true,
 				});
 			}
 
 			if (isApiClientError(cause)) {
 				return fail(cause.status || 502, {
-					error: cause.requestId
-						? `Failed to publish curated OCR (request: ${cause.requestId}).`
-						: 'Failed to publish curated OCR.',
+					errorCode: 'publishFailed' satisfies ObjectEditErrorCode,
+					...(cause.requestId ? { errorRequestId: cause.requestId } : {}),
 				});
 			}
 
-			return fail(502, { error: 'Failed to publish curated OCR.' });
+			return fail(502, { errorCode: 'publishFailed' satisfies ObjectEditErrorCode });
 		}
 	},
 };

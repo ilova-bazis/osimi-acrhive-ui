@@ -262,3 +262,4 @@ Missing or thin coverage:
 - Should `/ingestion-proto` be publicly accessible like `/prototype`, or should it be protected and show the normal authenticated app shell?
 - Should JSON endpoints return `401` for missing auth and `403` for invalid origin consistently, or should some browser-facing endpoints redirect to `/login`?
 - Is remote backend logout required to succeed before the UI considers the user logged out, or is local cookie clearing the authoritative logout behavior?
+> Historical analysis: prototype and ingestion-prototype route-policy findings are resolved because those routes no longer exist in the application route graph.

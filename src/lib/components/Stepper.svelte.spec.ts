@@ -1,6 +1,7 @@
 import { page } from 'vitest/browser';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
+import { locale } from '$lib/i18n/locale';
 
 import Stepper from './Stepper.svelte';
 
@@ -11,6 +12,7 @@ const steps = [
 ];
 
 describe('Stepper', () => {
+	afterEach(() => locale.setLocale('en'));
 	it('disables completed steps when no jump handler is provided', async () => {
 		render(Stepper, { steps, current: 1 });
 
@@ -31,5 +33,12 @@ describe('Stepper', () => {
 		await completedStep.click();
 
 		expect(onJump).toHaveBeenCalledWith(1);
+	});
+
+	it('retranslates the step position for Russian consumers', async () => {
+		locale.setLocale('ru');
+		render(Stepper, { steps, current: 1 });
+
+		await expect.element(page.getByRole('button', { name: 'Files, шаг 2 из 3' })).toBeInTheDocument();
 	});
 });

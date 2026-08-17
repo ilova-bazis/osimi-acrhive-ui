@@ -22,6 +22,32 @@ describe('apiObjectsService', () => {
 		backendRequestMock.mockReset();
 	});
 
+	it('sends q with URL-safe encoding while preserving filters and cursor', async () => {
+		const q = 'family archive Юникод 100%_done\\draft?! &/=#';
+		backendRequestMock.mockResolvedValue({
+			objects: [],
+			next_cursor: null,
+			total_count: 0,
+			filtered_count: 0
+		});
+
+		await apiObjectsService.listObjects({
+			context,
+			filters: {
+				q,
+				availabilityState: 'AVAILABLE',
+				cursor: 'next cursor/%'
+			}
+		});
+
+		const path = backendRequestMock.mock.calls[0][0].path as string;
+		const url = new URL(path, 'https://example.test');
+		expect(url.pathname).toBe('/api/objects');
+		expect(url.searchParams.get('q')).toBe(q);
+		expect(url.searchParams.get('availability_state')).toBe('AVAILABLE');
+		expect(url.searchParams.get('cursor')).toBe('next cursor/%');
+	});
+
 	it('maps create download request body to backend shape', async () => {
 		backendRequestMock.mockResolvedValue({
 			status: 'queued',

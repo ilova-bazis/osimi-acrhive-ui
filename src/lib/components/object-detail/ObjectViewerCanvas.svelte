@@ -1,6 +1,11 @@
 <script lang="ts">
 	import MediaRequestBanner from '$lib/components/object-detail/MediaRequestBanner.svelte';
 	import ArtifactTextPreview from '$lib/components/object-detail/ArtifactTextPreview.svelte';
+	import { locale } from '$lib/i18n/locale';
+	import { translations, type TranslationKey } from '$lib/i18n/translations';
+	import { formatCount } from '$lib/i18n/format';
+	import { mediaTypeKeys } from '$lib/i18n/domainLabels';
+	import { formatPlural, formatTemplate, translate } from '$lib/i18n/translate';
 
 	type ObjectViewerArtifactRef = {
 		available: true;
@@ -88,6 +93,16 @@
 	const artifactViewHref = (artifactId: string): string =>
 		`/objects/${encodeURIComponent(objectId)}/artifacts/${encodeURIComponent(artifactId)}/view`;
 
+	const dictionary = $derived(translations[$locale]);
+	const t = (key: TranslationKey) => translate(dictionary, key);
+
+	const localizeMediaType = (mediaType: ObjectViewer['mediaType']): string =>
+		t(mediaTypeKeys[mediaType]);
+	const mediaTypeLabel = $derived(viewer ? localizeMediaType(viewer.mediaType) : '');
+	const documentMediaLabel = $derived(t('objects.detail.viewer.documentScans'));
+	const audioMediaLabel = $derived(t('objects.detail.viewer.audioFile'));
+	const videoMediaLabel = $derived(t('objects.detail.viewer.videoFile'));
+
 	let documentZoom = $state(1);
 	let showDocumentOcr = $state(false);
 	let currentDocumentPage = $state(1);
@@ -153,7 +168,7 @@
 			.filter((page: ObjectViewerDocumentPage) => page.imageArtifactId)
 			.map((page: ObjectViewerDocumentPage) => ({
 				id: `${objectId}-page-${page.pageNumber}`,
-				label: page.label ?? `Page ${page.pageNumber}`,
+				label: page.label ?? formatTemplate(t('objects.detail.viewer.pageLabel'), { number: page.pageNumber }),
 				imageUrl: artifactViewHref(page.imageArtifactId as string),
 				ocrText: ''
 			}));
@@ -195,28 +210,28 @@
 
 {#if !viewer}
 	<section class="min-h-[70vh] rounded-[2rem] bg-surface-white/70 p-8">
-		<p class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">Viewer unavailable</p>
-		<p class="mt-3 text-sm leading-relaxed text-text-muted">This object does not yet expose a media viewer contract.</p>
+		<p class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">{t('objects.detail.viewer.unavailable')}</p>
+		<p class="mt-3 text-sm leading-relaxed text-text-muted">{t('objects.detail.viewer.unavailableBody')}</p>
 	</section>
 
 {:else if viewer.viewerPayload.kind === 'document'}
 	<div class="relative min-h-[76vh] overflow-hidden rounded-[2rem] bg-[linear-gradient(180deg,#f5f2eb_0%,#ece6d8_100%)]">
 		<div class="flex shrink-0 items-center justify-between gap-3 border-b border-[#d7ccb4]/50 bg-[#faf7f0]/80 px-4 py-2 backdrop-blur sm:px-6">
 			<div class="flex items-center gap-2">
-				<p class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">Document</p>
+				<p class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">{t(mediaTypeKeys.document)}</p>
 				<span class="h-3 w-px bg-blue-slate/20"></span>
-				<p class="text-[10px] text-text-muted">{viewer.viewerPayload.pageCount ?? totalDocumentPages} pages</p>
+				<p class="text-[10px] text-text-muted">{formatTemplate(formatPlural(dictionary, 'objects.detail.viewer.pages', viewer.viewerPayload.pageCount ?? totalDocumentPages, $locale), { count: formatCount(viewer.viewerPayload.pageCount ?? totalDocumentPages, $locale) })}</p>
 				{#if !isAvailable}
 					<span class="h-3 w-px bg-blue-slate/20"></span>
-					<p class="text-[10px] text-burnt-peach">Preview quality</p>
+					<p class="text-[10px] text-burnt-peach">{t('objects.detail.viewer.previewQuality')}</p>
 				{/if}
 			</div>
 			<div class="flex items-center gap-1.5">
-				<button type="button" class="rounded-full border border-border-soft bg-surface-white px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20 disabled:cursor-not-allowed disabled:opacity-35" onclick={() => (documentZoom = clampDocumentZoom(documentZoom - 0.1))} disabled={!isAvailable}>-</button>
+				<button type="button" class="rounded-full border border-border-soft bg-surface-white px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20 disabled:cursor-not-allowed disabled:opacity-35" onclick={() => (documentZoom = clampDocumentZoom(documentZoom - 0.1))} disabled={!isAvailable} aria-label={t('objects.detail.viewer.zoomOut')}>-</button>
 				<span class="min-w-[3.5rem] rounded-full border border-border-soft bg-surface-white px-2.5 py-1 text-center text-[10px] uppercase tracking-[0.2em] text-text-ink">{Math.round(documentZoom * 100)}%</span>
-				<button type="button" class="rounded-full border border-border-soft bg-surface-white px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20 disabled:cursor-not-allowed disabled:opacity-35" onclick={() => (documentZoom = clampDocumentZoom(documentZoom + 0.1))} disabled={!isAvailable}>+</button>
+				<button type="button" class="rounded-full border border-border-soft bg-surface-white px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20 disabled:cursor-not-allowed disabled:opacity-35" onclick={() => (documentZoom = clampDocumentZoom(documentZoom + 0.1))} disabled={!isAvailable} aria-label={t('objects.detail.viewer.zoomIn')}>+</button>
 				{#if ocrHref}
-					<button type="button" class={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] transition ${showDocumentOcr ? 'border-blue-slate bg-blue-slate text-surface-white' : 'border-border-soft bg-surface-white text-blue-slate hover:bg-pale-sky/20'}`} onclick={() => (showDocumentOcr = !showDocumentOcr)}>OCR</button>
+					<button type="button" class={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] transition ${showDocumentOcr ? 'border-blue-slate bg-blue-slate text-surface-white' : 'border-border-soft bg-surface-white text-blue-slate hover:bg-pale-sky/20'}`} onclick={() => (showDocumentOcr = !showDocumentOcr)}>{t('objects.detail.viewer.ocr')}</button>
 				{/if}
 			</div>
 		</div>
@@ -224,7 +239,7 @@
 		<div bind:this={documentScrollContainer} class="h-[calc(76vh-3.25rem)] overflow-y-auto overflow-x-hidden" onscroll={updateDocumentPage}>
 			{#if !isAvailable}
 				<div class="mx-auto max-w-xl px-4 pt-6">
-					<MediaRequestBanner availability={availability} mediaLabel="document scans" variant="light" onRequest={onRequest} />
+					<MediaRequestBanner availability={availability} mediaLabel={documentMediaLabel} variant="light" onRequest={onRequest} />
 				</div>
 			{/if}
 
@@ -237,7 +252,7 @@
 							</div>
 							{#if showDocumentOcr && ocrHref}
 								<div class="mt-2 overflow-hidden rounded-lg border border-blue-slate/10 bg-surface-white/90 px-4 py-3">
-									<ArtifactTextPreview title={`OCR excerpt - ${page.label}`} url={ocrHref} compact={true} emptyLabel="No OCR preview is available." />
+									<ArtifactTextPreview title={formatTemplate(t('objects.detail.viewer.ocrExcerpt'), { page: page.label })} url={ocrHref} compact={true} emptyLabel={t('objects.detail.viewer.noOcrPreview')} />
 								</div>
 							{/if}
 							<p class="mt-2 text-center text-xs text-text-muted/50">{page.label}</p>
@@ -270,18 +285,18 @@
 		{#if !isAvailable}
 			<div class="absolute inset-0 flex items-center justify-center p-8">
 				<div class="w-full max-w-sm">
-					<MediaRequestBanner availability={availability} mediaLabel="image" variant="dark" onRequest={onRequest} />
+					<MediaRequestBanner availability={availability} mediaLabel={mediaTypeLabel} variant="dark" onRequest={onRequest} />
 				</div>
 			</div>
 		{:else}
 			<div class="absolute inset-x-0 bottom-0 flex items-center justify-between gap-4 bg-gradient-to-t from-black/50 to-transparent px-6 pb-5 pt-12">
-				<p class="text-xs text-white/35">{imageZoom > 1.02 ? 'Drag to pan' : 'Zoom to inspect'}</p>
+				<p class="text-xs text-white/35">{imageZoom > 1.02 ? t('objects.detail.viewer.dragToPan') : t('objects.detail.viewer.zoomToInspect')}</p>
 				<div class="flex items-center gap-1.5">
-					<button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/8 text-sm text-pale-sky backdrop-blur transition hover:bg-white/15" onclick={() => (imageZoom = clampImageZoom(imageZoom - 0.3))} aria-label="Zoom out">-</button>
+					<button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/8 text-sm text-pale-sky backdrop-blur transition hover:bg-white/15" onclick={() => (imageZoom = clampImageZoom(imageZoom - 0.3))} aria-label={t('objects.detail.viewer.zoomOut')}>-</button>
 					<span class="min-w-[3rem] rounded-full border border-white/15 bg-white/8 px-2 py-1 text-center text-[10px] text-white/80 backdrop-blur">{Math.round(imageZoom * 100)}%</span>
-					<button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/8 text-sm text-pale-sky backdrop-blur transition hover:bg-white/15" onclick={() => (imageZoom = clampImageZoom(imageZoom + 0.3))} aria-label="Zoom in">+</button>
+					<button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/8 text-sm text-pale-sky backdrop-blur transition hover:bg-white/15" onclick={() => (imageZoom = clampImageZoom(imageZoom + 0.3))} aria-label={t('objects.detail.viewer.zoomIn')}>+</button>
 					{#if imageZoom > 1.02}
-						<button type="button" class="ml-1 rounded-full border border-white/15 bg-white/8 px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] text-pale-sky backdrop-blur transition hover:bg-white/15" onclick={() => { imageZoom = 1; imageOffsetX = 0; imageOffsetY = 0; }}>Reset</button>
+						<button type="button" class="ml-1 rounded-full border border-white/15 bg-white/8 px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] text-pale-sky backdrop-blur transition hover:bg-white/15" onclick={() => { imageZoom = 1; imageOffsetX = 0; imageOffsetY = 0; }}>{t('objects.detail.viewer.reset')}</button>
 					{/if}
 				</div>
 			</div>
@@ -294,13 +309,13 @@
 				<div class="mx-auto w-full max-w-3xl">
 					{#if isAvailable}
 						<div class="rounded-[1.6rem] border border-white/6 bg-[#162228] px-5 py-5">
-							<p class="text-[10px] uppercase tracking-[0.2em] text-pale-sky/45">Listening room</p>
+							<p class="text-[10px] uppercase tracking-[0.2em] text-pale-sky/45">{t('objects.detail.viewer.listeningRoom')}</p>
 							<audio controls class="mt-4 w-full" src={artifactViewHref(viewer.viewerPayload.artifactId)}>
 								<track kind="captions" />
 							</audio>
 						</div>
 					{:else}
-						<MediaRequestBanner availability={availability} mediaLabel="audio file" variant="dark" onRequest={onRequest} />
+						<MediaRequestBanner availability={availability} mediaLabel={audioMediaLabel} variant="dark" onRequest={onRequest} />
 					{/if}
 				</div>
 			</div>
@@ -309,10 +324,10 @@
 				<div class="mx-auto max-w-3xl px-6 py-4">
 					<div class="grid gap-4">
 						{#if transcriptHref}
-							<ArtifactTextPreview title="Transcript" url={transcriptHref} emptyLabel="Transcript is not available." />
+							<ArtifactTextPreview title={t('objects.detail.viewer.transcript')} url={transcriptHref} emptyLabel={t('objects.detail.viewer.transcriptEmpty')} />
 						{/if}
 						{#if captionsHref}
-							<ArtifactTextPreview title="Captions" url={captionsHref} compact={true} emptyLabel="Captions are not available." />
+							<ArtifactTextPreview title={t('objects.detail.viewer.captions')} url={captionsHref} compact={true} emptyLabel={t('objects.detail.viewer.captionsEmpty')} />
 						{/if}
 					</div>
 				</div>
@@ -324,14 +339,14 @@
 		<div class="flex h-full flex-col lg:flex-row">
 			<div class="relative min-w-0 flex-1">
 				{#if viewer.viewerPayload.posterArtifactId}
-					<img src={artifactViewHref(viewer.viewerPayload.posterArtifactId)} alt="Video preview" class={`h-full w-full object-contain ${!isAvailable ? 'opacity-40' : ''}`} draggable="false" />
+					<img src={artifactViewHref(viewer.viewerPayload.posterArtifactId)} alt={t('objects.detail.viewer.videoPreview')} class={`h-full w-full object-contain ${!isAvailable ? 'opacity-40' : ''}`} draggable="false" />
 				{/if}
 				<div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20"></div>
 
 				{#if !isAvailable}
 					<div class="absolute inset-0 flex items-center justify-center p-8">
 						<div class="w-full max-w-sm">
-							<MediaRequestBanner availability={availability} mediaLabel="video file" variant="dark" onRequest={onRequest} />
+							<MediaRequestBanner availability={availability} mediaLabel={videoMediaLabel} variant="dark" onRequest={onRequest} />
 						</div>
 					</div>
 				{:else}
@@ -349,19 +364,19 @@
 				<aside class="flex w-full shrink-0 flex-col border-t border-white/8 bg-[#0e181e] lg:w-80 lg:border-l lg:border-t-0">
 					<div class="shrink-0 border-b border-white/6 px-4 py-3">
 						<div class="flex items-center justify-between">
-							<p class="text-[10px] uppercase tracking-[0.2em] text-pale-sky/40">Scene notes</p>
+							<p class="text-[10px] uppercase tracking-[0.2em] text-pale-sky/40">{t('objects.detail.viewer.sceneNotes')}</p>
 							{#if !isAvailable}
-								<span class="text-[9px] uppercase tracking-[0.15em] text-pale-sky/25">Preview available</span>
+								<span class="text-[9px] uppercase tracking-[0.15em] text-pale-sky/25">{t('objects.detail.viewer.previewAvailable')}</span>
 							{/if}
 						</div>
 					</div>
 					<div class="flex-1 overflow-y-auto px-3 py-3">
 						<div class="grid gap-3">
 							{#if transcriptHref}
-								<ArtifactTextPreview title="Transcript" url={transcriptHref} compact={true} emptyLabel="Transcript is not available." />
+								<ArtifactTextPreview title={t('objects.detail.viewer.transcript')} url={transcriptHref} compact={true} emptyLabel={t('objects.detail.viewer.transcriptEmpty')} />
 							{/if}
 							{#if captionsHref}
-								<ArtifactTextPreview title="Captions" url={captionsHref} compact={true} emptyLabel="Captions are not available." />
+								<ArtifactTextPreview title={t('objects.detail.viewer.captions')} url={captionsHref} compact={true} emptyLabel={t('objects.detail.viewer.captionsEmpty')} />
 							{/if}
 						</div>
 					</div>
@@ -371,6 +386,6 @@
 	</div>
 {:else}
 	<div class="min-h-[76vh] rounded-[2rem] bg-surface-white/70 p-8">
-		<MediaRequestBanner availability={availability} mediaLabel={viewer.mediaType} variant={viewer.mediaType === 'document' ? 'light' : 'dark'} onRequest={onRequest} />
+		<MediaRequestBanner availability={availability} mediaLabel={mediaTypeLabel} variant={viewer.mediaType === 'document' ? 'light' : 'dark'} onRequest={onRequest} />
 	</div>
 {/if}

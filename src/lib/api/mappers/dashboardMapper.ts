@@ -4,40 +4,30 @@ import type {
 	DashboardSummaryResponse
 } from '$lib/api/schemas/dashboard';
 import type { DashboardActivity, DashboardSummary } from '$lib/services/dashboard';
+import type {
+	DashboardActivityDescription,
+	DashboardActivityEventCode,
+	DashboardRoleCopyCode
+} from '$lib/services/dashboard';
 
-type RoleDashboardCopy = {
-	primaryAction: string;
-	secondaryAction: string;
-	roleTagline: string;
+const activityEventCodes = new Set<DashboardActivityEventCode>([
+	'INGESTION_SUBMITTED', 'INGESTION_QUEUED', 'INGESTION_PROCESSING', 'INGESTION_COMPLETED',
+	'INGESTION_FAILED', 'INGESTION_CANCELED', 'LEASE_GRANTED', 'LEASE_RENEWED', 'LEASE_EXPIRED',
+	'LEASE_RELEASED', 'FILE_VALIDATED', 'FILE_FAILED', 'PIPELINE_STEP_STARTED',
+	'PIPELINE_STEP_COMPLETED', 'PIPELINE_STEP_FAILED', 'INGESTION_ITEM_CREATED',
+	'INGESTION_ITEM_UPDATED', 'INGESTION_ITEM_PROCESSING', 'INGESTION_ITEM_COMPLETED',
+	'INGESTION_ITEM_FAILED', 'OBJECT_CREATED', 'ARTIFACT_CREATED'
+]);
+
+const toEventCode = (value: string): DashboardActivityEventCode | null => {
+	const normalized = value.replace(/[.]/g, '_').toUpperCase();
+	return activityEventCodes.has(normalized as DashboardActivityEventCode)
+		? (normalized as DashboardActivityEventCode)
+		: null;
 };
 
-const dashboardCopyByRole: Record<string, RoleDashboardCopy> = {
-	admin: {
-		primaryAction: 'Review access requests',
-		secondaryAction: 'Audit recent activity',
-		roleTagline: 'System oversight and access control.'
-	},
-	archiver: {
-		primaryAction: 'Start a new batch',
-		secondaryAction: 'Review flagged items',
-		roleTagline: 'Prepare and validate ingestion batches.'
-	},
-	viewer: {
-		primaryAction: 'Open latest releases',
-		secondaryAction: 'View activity summary',
-		roleTagline: 'Browse approved materials and reports.'
-	}
-};
-
-const humanizeType = (value: string): string => {
-	const cleaned = value.replace(/[_.]/g, ' ').trim();
-	if (!cleaned) return 'Activity event';
-
-	return cleaned
-		.split(' ')
-		.map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-		.join(' ');
-};
+const toRoleCopyCode = (role: Role): DashboardRoleCopyCode =>
+	role === 'admin' || role === 'archiver' ? role : 'viewer';
 
 const readPayloadMessage = (payload: unknown): string | null => {
 	if (!payload || typeof payload !== 'object') {
@@ -53,35 +43,33 @@ const readPayloadMessage = (payload: unknown): string | null => {
 };
 
 const toActivityDescription = (
-	item: DashboardActivityResponse['activity'][number],
-	defaultMessage: string
-): string => {
+	item: DashboardActivityResponse['activity'][number]
+): DashboardActivityDescription => {
 	const payloadMessage = readPayloadMessage(item.payload);
 	if (payloadMessage) {
-		return payloadMessage;
+		return { code: 'raw', text: payloadMessage };
 	}
 
 	if (item.ingestion_id) {
-		return `Ingestion ${item.ingestion_id} updated.`;
+		return { code: 'ingestionUpdated', id: item.ingestion_id };
 	}
 
 	if (item.object_id) {
-		return `Object ${item.object_id} updated.`;
+		return { code: 'objectUpdated', id: item.object_id };
 	}
 
-	return defaultMessage;
+	return { code: 'recorded' };
 };
 
 export const mapActivity = (
 	activityResponse: DashboardActivityResponse
 ): DashboardActivity[] =>
 	activityResponse.activity.slice(0, 12).map((item) => {
-		const title = humanizeType(item.type);
-
 		return {
 			id: item.id,
-			title,
-			description: toActivityDescription(item, `${title} recorded.`),
+			eventCode: toEventCode(item.type),
+			typeFallback: item.type,
+			description: toActivityDescription(item),
 			timestamp: item.created_at,
 			type: item.type,
 			ingestionId: item.ingestion_id ?? null,
@@ -96,7 +84,6 @@ export const mapDashboardSummary = (params: {
 	summaryResponse: DashboardSummaryResponse;
 	activityResponse: DashboardActivityResponse;
 }): DashboardSummary => {
-	const copy = dashboardCopyByRole[params.role] ?? dashboardCopyByRole.viewer;
 	const summary = params.summaryResponse.summary;
 
 	return {
@@ -105,9 +92,7 @@ export const mapDashboardSummary = (params: {
 			needsReview: summary.failed_count,
 			pendingUploads: summary.processed_today
 		},
-		primaryAction: copy.primaryAction,
-		secondaryAction: copy.secondaryAction,
-		roleTagline: copy.roleTagline,
+		roleCopyCode: toRoleCopyCode(params.role),
 		recentActivity: mapActivity(params.activityResponse)
 	};
 };

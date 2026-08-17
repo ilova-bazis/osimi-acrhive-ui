@@ -42,15 +42,16 @@ Each row shows:
   * Draft
   * Ingesting
   * Completed
+  * Completed with errors (terminal partial success; review completed objects and failures)
   * Failed
 * **Progress**
 
   * e.g. `3 / 12 objects`
 * **Action**
 
-  * View
-  * Resume (if draft)
-  * Retry (if failed)
+  * View is always available for visible batches
+  * Resume, Retry, Cancel, Restore, and Delete are shown only when the backend row's `action_capabilities` permits them
+  * Status labels describe lifecycle state and never authorize actions
 
 Rows are clickable → go to **Batch Detail View**.
 

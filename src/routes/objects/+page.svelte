@@ -3,8 +3,15 @@
 	import ObjectsRecentStrip from '$lib/components/ObjectsRecentStrip.svelte';
 	import ObjectsTable from '$lib/components/ObjectsTable.svelte';
 	import { locale } from '$lib/i18n/locale';
-	import { translations } from '$lib/i18n/translations';
-	import { formatTemplate, translate } from '$lib/i18n/translate';
+	import { translations, type TranslationKey } from '$lib/i18n/translations';
+	import {
+		accessLevelKeys,
+		availabilityStateKeys,
+		knownLanguageKey,
+		knownObjectTypeKey
+	} from '$lib/i18n/domainLabels';
+	import { formatCount } from '$lib/i18n/format';
+	import { formatPlural, formatTemplate, translate } from '$lib/i18n/translate';
 	import type {
 		AccessLevel,
 		AvailabilityState,
@@ -28,7 +35,7 @@
 	let resyncRunning = $state(false);
 	let resyncMessage = $state<{ type: 'success' | 'error'; text: string } | null>(null);
 	const dictionary = $derived(translations[$locale]);
-	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
+	const t = (key: TranslationKey) => translate(dictionary, key);
 	const canRequestResync = $derived(data.session?.role === 'archiver' || data.session?.role === 'admin');
 
 	const availabilityOptions: AvailabilityState[] = [
@@ -118,7 +125,7 @@
 				const total = objectIds.length;
 				resyncMessage = {
 					type: succeeded === total ? 'success' : 'error',
-					text: formatTemplate(t('objects.resync.resyncDone'), { succeeded, total })
+					text: formatTemplate(t('objects.resync.resyncDone'), { succeeded: formatCount(succeeded, $locale), total: formatCount(total, $locale) })
 				};
 				selectedIds = [];
 			}
@@ -129,8 +136,16 @@
 		}
 	};
 
-	const availabilityLabel = (value: AvailabilityState): string => value.replace(/_/g, ' ');
-	const accessLabel = (value: AccessLevel): string => value.charAt(0).toUpperCase() + value.slice(1);
+	const availabilityLabel = (value: AvailabilityState): string => t(availabilityStateKeys[value]);
+	const accessLabel = (value: AccessLevel): string => t(accessLevelKeys[value]);
+	const languageFilterLabel = (value: string): string => {
+		const key = knownLanguageKey(value);
+		return key ? t(key) : value;
+	};
+	const typeFilterLabel = (value: string): string => {
+		const key = knownObjectTypeKey(value);
+		return key ? t(key) : value;
+	};
 	const compactDate = (value: string): string => {
 		const parsed = new Date(value);
 		if (Number.isNaN(parsed.getTime())) {
@@ -185,7 +200,7 @@
 		}
 		if (data.filters.language) {
 			chips.push({
-				label: `${t('objects.filters.language')}: ${data.filters.language}`,
+				label: `${t('objects.filters.language')}: ${languageFilterLabel(data.filters.language)}`,
 				href: toHref(withoutCursor({ ...data.filters, language: undefined }))
 			});
 		}
@@ -197,7 +212,7 @@
 		}
 		if (data.filters.type) {
 			chips.push({
-				label: `${t('objects.filters.type')}: ${data.filters.type}`,
+				label: `${t('objects.filters.type')}: ${typeFilterLabel(data.filters.type)}`,
 				href: toHref(withoutCursor({ ...data.filters, type: undefined }))
 			});
 		}
@@ -235,13 +250,13 @@
 <div class="page-inner">
 	<div class="flex items-start justify-between gap-6">
 		<div>
-			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate font-medium">Catalog</p>
-			<h1 class="mt-1 font-display text-2xl text-text-ink leading-tight">Objects</h1>
+			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate font-medium">{t('objects.header.kicker')}</p>
+			<h1 class="mt-1 font-display text-2xl text-text-ink leading-tight">{t('objects.header.title')}</h1>
 			{#if hasActiveFilters()}
-				<p class="mt-1 text-sm text-text-muted">{data.list.filteredCount.toLocaleString()} matching · {data.list.totalCount.toLocaleString()} total</p>
+				<p class="mt-1 text-sm text-text-muted">{formatTemplate(formatPlural(dictionary, 'objects.header.matching', data.list.filteredCount, $locale), { filtered: formatCount(data.list.filteredCount, $locale), total: formatCount(data.list.totalCount, $locale) })}</p>
 			{/if}
 		</div>
-		<p class="shrink-0 pt-1 font-mono text-xs text-text-muted">{data.list.totalCount.toLocaleString()} total</p>
+		<p class="shrink-0 pt-1 font-mono text-xs text-text-muted">{formatTemplate(t('objects.header.totalCount'), { total: formatCount(data.list.totalCount, $locale) })}</p>
 	</div>
 	<ObjectsFilterPanel
 		filters={data.filters}
@@ -257,10 +272,10 @@
 		<div class="flex items-center gap-3">
 			{#if selectedIds.length > 0}
 				<span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-slate text-[10px] font-semibold text-surface-white">
-					{selectedIds.length}
+					{formatCount(selectedIds.length, $locale)}
 				</span>
 				<p class="text-xs text-blue-slate">
-					{formatTemplate(t('objects.header.selectionState'), { selected: selectedIds.length, visible: data.list.rows.length })}
+					{formatTemplate(t('objects.header.selectionState'), { selected: formatCount(selectedIds.length, $locale), visible: formatCount(data.list.rows.length, $locale) })}
 				</p>
 			{:else}
 				<p class="text-xs text-text-muted">{t('objects.header.subtitle')}</p>
@@ -328,14 +343,14 @@
 {#if showResyncConfirm}
 	<button
 		type="button"
-		aria-label="Close"
+		aria-label={t('common.close')}
 		class="fixed inset-0 z-40 bg-blue-slate/35"
 		onclick={() => (showResyncConfirm = false)}
 	></button>
 	<div class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border-soft bg-surface-white p-6 shadow-[0_30px_80px_rgba(31,47,56,0.35)]">
 		<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.resync.confirmTitle')}</p>
 		<p class="mt-3 text-sm text-text-muted">
-			{formatTemplate(t('objects.resync.confirmBodyBulk'), { count: selectedIds.length })}
+			{formatTemplate(t('objects.resync.confirmBodyBulk'), { count: formatCount(selectedIds.length, $locale) })}
 		</p>
 		<div class="mt-5 flex justify-end gap-3">
 			<button

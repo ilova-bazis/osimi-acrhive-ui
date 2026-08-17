@@ -1,23 +1,13 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { locale } from '$lib/i18n/locale';
-	import { translations } from '$lib/i18n/translations';
+	import { formatCount } from '$lib/i18n/format';
+	import { formatPlural, formatTemplate, translate } from '$lib/i18n/translate';
+import { translations, type TranslationKey } from '$lib/i18n/translations';
 
 	const dictionary = $derived(translations[$locale]);
-	const t = (key: string): string => {
-		const segments = key.split('.');
-		let current: Record<string, unknown> = dictionary as Record<string, unknown>;
-		for (const segment of segments) {
-			if (typeof current[segment] === 'undefined') return key;
-			current = current[segment] as Record<string, unknown>;
-		}
-		return current as unknown as string;
-	};
+	const t = (key: TranslationKey) => translate(dictionary, key);
 
-	const format = (template: string, values: Record<string, string | number>) =>
-		template.replace(/\{(\w+)\}/g, (match, key) =>
-			Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match
-		);
 
 	let {
 		groupId,
@@ -80,9 +70,9 @@
 	};
 
 	const fileCountLabel = $derived(
-		fileCount === 1
-			? format(t('ingestionSetup.objectGroup.fileCountOne'), { count: fileCount })
-			: format(t('ingestionSetup.objectGroup.fileCount'), { count: fileCount })
+		formatTemplate(formatPlural(dictionary, 'ingestionSetup.objectGroup.fileCount', fileCount, $locale), {
+			count: formatCount(fileCount, $locale)
+		})
 	);
 </script>
 
@@ -99,7 +89,7 @@
 		ondragover={onDragOver}
 		ondragleave={onDragLeave}
 		ondrop={onDrop}
-		aria-label={label ?? format(t('ingestionSetup.objectGroup.defaultLabel'), { id: groupId.slice(0, 6) })}
+		aria-label={label ?? formatTemplate(t('ingestionSetup.objectGroup.defaultLabel'), { id: groupId.slice(0, 6) })}
 	>
 		<button
 			type="button"
@@ -136,16 +126,16 @@
 					e.stopPropagation();
 					void startLabelEdit();
 				}}
-				title="Click to rename"
+				title={t('ingestionSetup.objectGroup.renameHint')}
 			>
-				{label || format(t('ingestionSetup.objectGroup.defaultLabel'), { id: groupId.slice(0, 6) })}
+				{label || formatTemplate(t('ingestionSetup.objectGroup.defaultLabel'), { id: groupId.slice(0, 6) })}
 			</button>
 		{/if}
 
 		<span class="shrink-0 text-xs text-text-muted">— {fileCountLabel}</span>
 
 		{#if incomplete}
-			<span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-burnt-peach" title="Missing required metadata (title, date, tags)"></span>
+			<span class="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-burnt-peach" title={t('ingestionSetup.objectGroup.missingMetadataHint')}></span>
 		{/if}
 
 		<button

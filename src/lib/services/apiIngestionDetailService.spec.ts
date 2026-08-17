@@ -149,6 +149,8 @@ describe('apiIngestionDetailService', () => {
 			canDelete: false
 		});
 		expect(detail.files[0]?.preview?.status).toBe('purged');
+		expect(detail.files[0]?.status).toBe('uploaded');
+		expect(detail.files[0]?.statusRaw).toBe('UPLOADED');
 	});
 
 	it('preserves a retention-purged preview when mapping detail files', async () => {
@@ -226,7 +228,8 @@ describe('apiIngestionDetailService', () => {
 			id: 'item-1',
 			itemIndex: 1,
 			label: 'Stored title',
-			status: 'DRAFT',
+			status: null,
+			statusRaw: 'DRAFT',
 			summary,
 			files: []
 		});

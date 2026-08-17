@@ -1,8 +1,9 @@
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import type { IngestionCapabilities } from '$lib/services/ingestionCapabilities';
-import type { IngestionDetailFile } from '$lib/services/ingestionDetail';
+import type { IngestionDetailFile, IngestionDetailItem } from '$lib/services/ingestionDetail';
+import { locale } from '$lib/i18n/locale';
 
 const { beforeNavigateMock, gotoMock } = vi.hoisted(() => ({
 	beforeNavigateMock: vi.fn(),
@@ -59,7 +60,35 @@ const capabilities: IngestionCapabilities = {
 	mimeAliases: {}
 };
 
-const pageData = () => ({
+const pageData = (): {
+	batchId: string;
+	capabilities: IngestionCapabilities;
+	existingFiles: IngestionDetailFile[];
+	items: IngestionDetailItem[];
+	metadata: {
+		classificationType:
+			| 'newspaper_article'
+			| 'magazine_article'
+			| 'book_chapter'
+			| 'book'
+			| 'letter'
+			| 'speech'
+			| 'interview'
+			| 'report'
+			| 'manuscript'
+			| 'image'
+			| 'document'
+			| 'other';
+		itemKind?: 'photo' | 'audio' | 'video' | 'scanned_document' | 'document' | 'other';
+		languageCode: string;
+		pipelinePreset: string;
+		accessLevel: 'private' | 'family' | 'public';
+		embargoUntil: string | null;
+		rightsNote: string | null;
+		sensitivityNote: string | null;
+		summary: Record<string, unknown>;
+	};
+} => ({
 	batchId: 'batch-1',
 	capabilities,
 	existingFiles: [
@@ -67,6 +96,7 @@ const pageData = () => ({
 			id: 'file-1',
 			name: 'page-1.jpg',
 			status: 'uploaded',
+			statusRaw: 'uploaded',
 			contentType: 'image/jpeg',
 			sizeBytes: 100,
 			createdAt: null,
@@ -76,6 +106,7 @@ const pageData = () => ({
 			id: 'file-2',
 			name: 'page-2.jpg',
 			status: 'uploaded',
+			statusRaw: 'uploaded',
 			contentType: 'image/jpeg',
 			sizeBytes: 100,
 			createdAt: null,
@@ -87,7 +118,8 @@ const pageData = () => ({
 			id: 'item-1',
 			itemIndex: 1,
 			label: 'Object one',
-			status: 'DRAFT',
+			status: null,
+			statusRaw: 'DRAFT',
 			summary: itemSummary,
 			files: [
 				{ id: 'link-1', ingestionFileId: 'file-1', sortOrder: 1 },
@@ -128,6 +160,15 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 
 	afterEach(() => {
 		vi.useRealTimers();
+		locale.setLocale('en');
+	});
+
+	it('localizes the setup stepper position in Russian', async () => {
+		locale.setLocale('ru');
+		render(SetupPage, { data: pageData() });
+
+		await expect.element(page.getByText('Шаг 2 из 3')).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'Загрузка, шаг 2 из 3' })).toBeInTheDocument();
 	});
 
 	it('blocks Continue and surfaces an HTTP mutation failure', async () => {
@@ -231,6 +272,66 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 			.toBeInTheDocument();
 		await vi.advanceTimersByTimeAsync(2_001);
 		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it('marks timed-out preview checks as re-checkable and recovers on demand', async () => {
+		vi.useFakeTimers();
+		const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 404 }));
+		vi.stubGlobal('fetch', fetchMock);
+		const pendingData = pageData();
+		pendingData.existingFiles[0] = {
+			...pendingData.existingFiles[0]!,
+			preview: {
+				status: 'pending',
+				contentType: null,
+				width: null,
+				height: null,
+				url: null
+			}
+		};
+
+		render(SetupPage, { data: pendingData });
+
+		await vi.advanceTimersByTimeAsync(2_001);
+		expect(fetchMock).toHaveBeenCalled();
+
+		fetchMock.mockClear();
+		await vi.advanceTimersByTimeAsync(18_000);
+		await expect
+			.element(page.getByRole('button', { name: 'Check again' }).first())
+			.toBeInTheDocument();
+
+		fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
+		await page.getByRole('button', { name: 'Check again' }).first().click();
+		await vi.advanceTimersByTimeAsync(2_001);
+		expect(fetchMock).toHaveBeenCalled();
+		await expect
+			.element(page.getByRole('button', { name: 'Check again' }))
+			.not.toBeInTheDocument();
+	});
+
+	it('polls a ready preview immediately without the initial two-second delay', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+		vi.stubGlobal('fetch', fetchMock);
+		const pendingData = pageData();
+		pendingData.existingFiles[0] = {
+			...pendingData.existingFiles[0]!,
+			preview: {
+				status: 'pending',
+				contentType: null,
+				width: null,
+				height: null,
+				url: null
+			}
+		};
+
+		render(SetupPage, { data: pendingData });
+
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		await expect
+			.element(page.getByRole('img', { name: 'page-1.jpg' }))
+			.toBeInTheDocument();
 	});
 
 	it('retries only unfinished standalone item work after metadata save failure', async () => {
@@ -455,4 +556,303 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 		expect(gotoMock).not.toHaveBeenCalledWith('/ingestion');
 	});
 
+	it('keeps grouped card headers as a single expansion control', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		render(SetupPage, { data: pageData() });
+
+		await page.getByRole('button', { name: 'Continue' }).click();
+
+		const header = page.getByRole('button', { name: /Object one/ }).last();
+		await expect.element(header).toBeInTheDocument();
+		expect(header.element().querySelectorAll('button').length).toBe(0);
+		expect(header.element().querySelectorAll('[role="button"]').length).toBe(0);
+	});
+
+	it('opens an object-scoped gallery from an expanded grouped card', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const readyData = pageData();
+		readyData.existingFiles[0] = {
+			...readyData.existingFiles[0]!,
+			preview: { status: 'ready', contentType: 'image/jpeg', width: 10, height: 10, url: null }
+		};
+		readyData.existingFiles[1] = {
+			...readyData.existingFiles[1]!,
+			preview: { status: 'ready', contentType: 'image/jpeg', width: 10, height: 10, url: null }
+		};
+		render(SetupPage, { data: readyData });
+
+		const organizeContinue = page.getByRole('button', { name: 'Continue' });
+		await expect.element(organizeContinue).not.toBeDisabled();
+		await organizeContinue.click();
+		await page.getByRole('button', { name: /Object one/ }).last().click();
+
+		await expect.element(page.getByText('2 items')).toBeInTheDocument();
+		await page
+			.getByRole('button', { name: 'Preview page-2.jpg, 2 of 2' })
+			.click();
+
+		await expect.element(page.getByText('2 of 2')).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Next file' }))
+			.toBeDisabled();
+		await expect
+			.element(page.getByRole('button', { name: 'Previous file' }))
+			.not.toBeDisabled();
+
+		await userEvent.keyboard('{Escape}');
+		await expect
+			.element(page.getByRole('button', { name: 'Preview page-2.jpg, 2 of 2' }))
+			.toHaveFocus();
+	});
+
+	it('opens a one-file gallery for standalone files', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const standaloneData = pageData();
+		standaloneData.existingFiles = [
+			{
+				...standaloneData.existingFiles[0]!,
+				preview: { status: 'ready', contentType: 'image/jpeg', width: 10, height: 10, url: null }
+			}
+		];
+		standaloneData.items = [];
+		render(SetupPage, { data: standaloneData });
+
+		await page.getByRole('button', { name: 'Continue' }).click();
+		await page.getByRole('button', { name: /page-1\.jpg/ }).last().click();
+
+		await expect.element(page.getByText('1 item')).toBeInTheDocument();
+		await page
+			.getByRole('button', { name: 'Preview page-1.jpg, 1 of 1' })
+			.click();
+
+		await expect.element(page.getByText('1 of 1')).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Next file' }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Previous file' }))
+			.not.toBeInTheDocument();
+	});
+
+	it('opens a one-file gallery from an organize-step thumbnail', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const readyData = pageData();
+		readyData.existingFiles[0] = {
+			...readyData.existingFiles[0]!,
+			preview: { status: 'ready', contentType: 'image/jpeg', width: 10, height: 10, url: null }
+		};
+		render(SetupPage, { data: readyData });
+
+		await page
+			.getByRole('button', { name: 'Expand preview of page-1.jpg' })
+			.click();
+
+		await expect.element(page.getByText('1 of 1')).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Next file' }))
+			.not.toBeInTheDocument();
+	});
+
+	it('shows backend preview failures without a Check again action', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const failedData = pageData();
+		failedData.existingFiles[0] = {
+			...failedData.existingFiles[0]!,
+			preview: {
+				status: 'failed',
+				contentType: null,
+				width: null,
+				height: null,
+				url: null
+			}
+		};
+		render(SetupPage, { data: failedData });
+
+		await page.getByRole('button', { name: 'Continue' }).click();
+		await page.getByRole('button', { name: /Object one/ }).last().click();
+
+		await expect.element(page.getByText('Preview failed')).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Check again' }))
+			.not.toBeInTheDocument();
+
+		await page
+			.getByRole('button', { name: 'Preview page-1.jpg, 1 of 2' })
+			.click();
+		await expect.element(page.getByRole('dialog')).toBeInTheDocument();
+		await expect
+			.element(
+				page.getByText('The preview could not be generated for this file.')
+			)
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Check again' }))
+			.not.toBeInTheDocument();
+	});
+
+	it('does not poll for purged or unsupported previews', async () => {
+		vi.useFakeTimers();
+		const fetchMock = vi.fn();
+		vi.stubGlobal('fetch', fetchMock);
+		const purgedData = pageData();
+		purgedData.existingFiles[0] = {
+			...purgedData.existingFiles[0]!,
+			preview: { status: 'purged', contentType: null, width: null, height: null, url: null }
+		};
+		purgedData.existingFiles[1] = {
+			...purgedData.existingFiles[1]!,
+			preview: { status: 'unsupported', contentType: null, width: null, height: null, url: null }
+		};
+		render(SetupPage, { data: purgedData });
+
+		await vi.advanceTimersByTimeAsync(2_001);
+		expect(fetchMock).not.toHaveBeenCalled();
+
+		await page.getByRole('button', { name: 'Continue' }).click();
+		await page.getByRole('button', { name: /Object one/ }).last().click();
+		await expect.element(page.getByText('Preview purged')).toBeInTheDocument();
+		await expect
+			.element(page.getByText('No visual preview', { exact: true }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Check again' }))
+			.not.toBeInTheDocument();
+	});
+
+	it('shows localized backend file status labels for server files', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const standaloneData = pageData();
+		standaloneData.existingFiles = [standaloneData.existingFiles[0]!];
+		standaloneData.items = [];
+		render(SetupPage, { data: standaloneData });
+
+		await expect
+			.element(page.getByText('Uploaded', { exact: true }).first())
+			.toBeInTheDocument();
+	});
+
+	it('shows localized backend file status labels in Russian', async () => {
+		locale.setLocale('ru');
+		vi.stubGlobal('fetch', vi.fn());
+		const standaloneData = pageData();
+		standaloneData.existingFiles = [standaloneData.existingFiles[0]!];
+		standaloneData.items = [];
+		render(SetupPage, { data: standaloneData });
+
+		await expect
+			.element(page.getByText('Загружен', { exact: true }).first())
+			.toBeInTheDocument();
+	});
+
+	it('keeps unknown backend file statuses visible as raw values', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const unknownData = pageData();
+		unknownData.existingFiles = [
+			{ ...unknownData.existingFiles[0]!, status: null, statusRaw: 'Future_File_State' }
+		];
+		unknownData.items = [];
+		render(SetupPage, { data: unknownData });
+
+		await expect
+			.element(page.getByText('Future_File_State', { exact: true }))
+			.toBeInTheDocument();
+	});
+
+	it('labels validated backend files with their own localized status', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const validatedData = pageData();
+		validatedData.existingFiles = [
+			{ ...validatedData.existingFiles[0]!, status: 'validated', statusRaw: 'VALIDATED' }
+		];
+		validatedData.items = [];
+		render(SetupPage, { data: validatedData });
+
+		await expect
+			.element(page.getByText('Validated', { exact: true }).first())
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByText('VALIDATED', { exact: true }))
+			.not.toBeInTheDocument();
+	});
+
+	it('localizes header, step, and footer copy in Russian', async () => {
+		locale.setLocale('ru');
+		render(SetupPage, { data: pageData() });
+
+		await expect.element(page.getByText('Загрузка').first()).toBeInTheDocument();
+		await expect.element(page.getByText('Черновик · ещё не отправлен')).toBeInTheDocument();
+		await expect.element(page.getByText('Отменить')).toBeInTheDocument();
+		await expect.element(page.getByText('1 · Организация')).toBeInTheDocument();
+		await expect.element(page.getByText('2 · Метаданные')).toBeInTheDocument();
+		await expect
+			.element(page.getByText('Автогруппировка по имени файла'))
+			.toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: /Продолжить/ })).toBeInTheDocument();
+		await expect.element(page.getByRole('link', { name: /Назад/ })).toBeInTheDocument();
+
+		await page.getByRole('button', { name: /Продолжить/ }).first().click();
+		await expect.element(page.getByText('Метаданные по объектам')).toBeInTheDocument();
+	});
+
+	it('localizes mutation failure labels reactively in Russian', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(JSON.stringify({ error: 'Item is locked.' }), {
+				status: 409,
+				headers: { 'content-type': 'application/json' }
+			})
+		);
+		vi.stubGlobal('fetch', fetchMock);
+
+		render(SetupPage, { data: pageData() });
+		await page.getByRole('button', { name: 'Continue' }).click();
+		await page.getByRole('button', { name: /Object one/ }).last().click();
+		await page.getByRole('textbox', { name: 'Title' }).last().fill('Changed title');
+		await new Promise((resolve) => setTimeout(resolve, 350));
+
+		await expect
+			.element(page.getByText('Object metadata could not be saved'))
+			.toBeInTheDocument();
+
+		locale.setLocale('ru');
+		await expect
+			.element(page.getByText('Не удалось сохранить: Метаданные объекта'))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByText('Перезагрузите сохранённую настройку перед дальнейшими изменениями.'))
+			.toBeInTheDocument();
+	});
+
+	it('localizes the empty-batch abandon dialog in Russian', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const emptyData = pageData();
+		emptyData.existingFiles = [];
+		emptyData.items = [];
+		locale.setLocale('ru');
+		render(SetupPage, { data: emptyData });
+		openEmptyBatchDialog();
+
+		await expect.element(page.getByText('Пустая партия')).toBeInTheDocument();
+		await expect.element(page.getByText('Файлы ещё не загружены')).toBeInTheDocument();
+		await expect
+			.element(page.getByText(/Вы ещё не загрузили ни одного файла/))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Оставить как черновик' }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Удалить партию' }))
+			.toBeInTheDocument();
+	});
+
+	it('localizes organize counts in Russian with plural forms', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		locale.setLocale('ru');
+		render(SetupPage, { data: pageData() });
+
+		await expect.element(page.getByText('Каждая группа станет')).toBeInTheDocument();
+		await expect.element(page.getByText('ОДНИМ объектом')).toBeInTheDocument();
+		await expect.element(page.getByText('в вашей библиотеке.')).toBeInTheDocument();
+		await expect.element(page.getByText('1 объект', { exact: false }).first()).toBeInTheDocument();
+		await expect.element(page.getByText('2 файла', { exact: false }).first()).toBeInTheDocument();
+	});
 });

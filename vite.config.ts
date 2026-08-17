@@ -3,6 +3,14 @@ import { playwright } from "@vitest/browser-playwright";
 import tailwindcss from "@tailwindcss/vite";
 import { sveltekit } from "@sveltejs/kit/vite";
 
+if (process.env.VITEST === "true") {
+  const testGlobal = globalThis as typeof globalThis & {
+    __vitest_browser_runner__?: { wrapDynamicImport: <T>(loader: () => Promise<T>) => Promise<T> };
+  };
+  // Vitest browser mode currently applies its dynamic-import wrapper to SvelteKit SSR modules.
+  testGlobal.__vitest_browser_runner__ ??= { wrapDynamicImport: (loader) => loader() };
+}
+
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
   server: {

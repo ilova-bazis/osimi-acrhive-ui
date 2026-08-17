@@ -3,7 +3,8 @@
 	import BaseButton from '$lib/components/BaseButton.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import { locale } from '$lib/i18n/locale';
-	import { translations } from '$lib/i18n/translations';
+	import { translations, type TranslationKey } from '$lib/i18n/translations';
+	import { availabilityStateKeys, objectTypeKeys } from '$lib/i18n/domainLabels';
 	import { formatTemplate, translate } from '$lib/i18n/translate';
 	import type {
 		AccessLevel,
@@ -41,7 +42,7 @@
 	let drawerToDate = $state('');
 	let drawerLimit = $state('25');
 	const dictionary = $derived(translations[$locale]);
-	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
+	const t = (key: TranslationKey) => translate(dictionary, key);
 
 	const sortLabelMap = $derived<Record<ObjectsSort, string>>({
 		created_at_desc: t('objects.sorts.created_at_desc'),
@@ -64,6 +65,8 @@
 	]);
 
 	const objectTypeOptions = ['GENERIC', 'IMAGE', 'AUDIO', 'VIDEO', 'DOCUMENT'] as const;
+	const availabilityOptionLabel = (value: AvailabilityState): string => t(availabilityStateKeys[value]);
+	const objectTypeOptionLabel = (value: string): string => t(objectTypeKeys[value] ?? 'values.unknown');
 	const accessOptionLabel = (value: AccessLevel): string =>
 		value === 'private'
 			? t('ingestionSetup.batchIntent.accessLevels.private')
@@ -172,6 +175,7 @@
 				type="search"
 				name="q"
 				value={filters.q ?? ''}
+				maxlength="256"
 				placeholder={t('objects.filters.searchPlaceholder')}
 				class="h-11 min-w-[220px] flex-1 rounded-full border border-border-soft bg-surface-white px-4 text-sm text-text-ink"
 			/>
@@ -188,7 +192,7 @@
 				>
 					<option value="">{t('objects.filters.all')}</option>
 					{#each availabilityOptions as option (option)}
-						<option value={option} selected={filters.availabilityState === option}>{option}</option>
+						<option value={option} selected={filters.availabilityState === option}>{availabilityOptionLabel(option)}</option>
 					{/each}
 				</select>
 			</label>
@@ -287,7 +291,7 @@
 				<select bind:value={drawerType} class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-4 py-2">
 					<option value="">{t('objects.filters.anyType')}</option>
 					{#each objectTypeOptions as option (option)}
-						<option value={option}>{option}</option>
+						<option value={option}>{objectTypeOptionLabel(option)}</option>
 					{/each}
 				</select>
 				<p class="mt-1 text-[11px] text-text-muted">{t('objects.filters.typeHint')}</p>

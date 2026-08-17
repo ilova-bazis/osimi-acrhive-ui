@@ -460,8 +460,8 @@ The worker pipeline for `curation_apply` MUST be idempotent by `(object_id, revi
 
 ## Compatibility and Migration
 
-- Existing `PATCH /api/objects/:object_id` MAY remain for legacy title-only clients.
-- New editing clients MUST use `/metadata` + `/curation/*` endpoints.
+- Object title changes MUST use `/metadata`; the legacy title-only route is not supported.
+- Editing clients MUST use `/metadata` + `/curation/*` endpoints.
 - Existing viewer contracts remain unchanged.
 
 ## Acceptance Criteria

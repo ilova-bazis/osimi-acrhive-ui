@@ -50,6 +50,15 @@ const normalizeText = (value: string | null): string | undefined => {
 	return normalized ? normalized : undefined;
 };
 
+const normalizeSearchQuery = (value: string | null): string | undefined => {
+	const normalized = normalizeText(value);
+	if (normalized && normalized.length > 256) {
+		throw error(400, { message: 'Search query must be 256 characters or fewer.' });
+	}
+
+	return normalized;
+};
+
 const normalizeLimit = (value: string | null): number => {
 	const parsed = Number(value ?? '25');
 	if (Number.isNaN(parsed)) {
@@ -76,7 +85,7 @@ export const _parseObjectsFilters = (url: URL): ObjectsFilters => {
 	const accessLevel = normalizeEnum(url.searchParams.get('access_level'), allowedAccessLevels);
 
 	return {
-		q: normalizeText(url.searchParams.get('q')),
+		q: normalizeSearchQuery(url.searchParams.get('q')),
 		sort,
 		availabilityState,
 		accessLevel,
@@ -100,13 +109,32 @@ export const load: PageServerLoad = async ({ locals, cookies, fetch, url }) => {
 	try {
 		const filters = _parseObjectsFilters(url);
 		const context = { fetchFn: fetch, token };
-		const [recent, list] = await Promise.all([
+		const [recentResult, listResult] = await Promise.allSettled([
 			objectsService.listRecent({ context }),
 			objectsService.listObjects({
 				context,
 				filters
 			})
 		]);
+
+		if (recentResult.status === 'rejected' && isUnauthorizedError(recentResult.reason)) {
+			throw recentResult.reason;
+		}
+
+		if (listResult.status === 'rejected' && isUnauthorizedError(listResult.reason)) {
+			throw listResult.reason;
+		}
+
+		if (recentResult.status === 'rejected') {
+			throw recentResult.reason;
+		}
+
+		if (listResult.status === 'rejected') {
+			throw listResult.reason;
+		}
+
+		const recent = recentResult.value;
+		const list = listResult.value;
 
 		return {
 			recent,
@@ -122,6 +150,10 @@ export const load: PageServerLoad = async ({ locals, cookies, fetch, url }) => {
 		}
 
 		if (isApiClientError(cause)) {
+			if (cause.status === 400) {
+				throw error(400, { message: cause.message });
+			}
+
 			throw error(502, {
 				message: cause.requestId
 					? `Failed to load objects (request: ${cause.requestId}).`

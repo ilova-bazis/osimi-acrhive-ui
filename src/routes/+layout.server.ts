@@ -1,10 +1,18 @@
 import { ingestionOverviewService } from '$lib/services';
 import { AUTH_COOKIE_NAME } from '$lib/server/auth';
+import type { IngestionStatus } from '$lib/services/ingestionOverview';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async ({ locals, cookies, fetch }) => {
 	const token = cookies.get(AUTH_COOKIE_NAME);
-	let activeBatches: { id: string; name: string; done: number; total: number; status: string }[] = [];
+	let activeBatches: {
+		id: string;
+		name: string;
+		done: number;
+		total: number;
+		status: IngestionStatus | null;
+		statusRaw: string;
+	}[] = [];
 
 	if (locals.session && token) {
 		try {
@@ -17,6 +25,7 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch }) => {
 					done: b.progress.completed,
 					total: b.progress.total,
 					status: b.status,
+					statusRaw: b.statusRaw
 				}));
 		} catch {
 			// non-fatal — sidebar shows empty batch list

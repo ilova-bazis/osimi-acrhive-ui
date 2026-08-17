@@ -2,6 +2,8 @@ import { fail, redirect } from '@sveltejs/kit';
 import { ingestionNewService } from '$lib/services';
 import { AUTH_COOKIE_NAME, clearSessionCookie } from '$lib/server/auth';
 import { isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
+import { translate, formatTemplate } from '$lib/i18n/translate';
+import { translations, type LocaleKey } from '$lib/i18n/translations';
 import type { Actions } from './$types';
 
 const DEFAULTS = {
@@ -34,12 +36,16 @@ const parseTags = (value: string): string[] =>
 		)
 	);
 
-const toBatchLabel = (value: string): string => {
+const toBatchLabel = (value: string, localeKey: string): string => {
 	const normalized = value.trim();
 	if (normalized.length > 0) return normalized;
 
+	const locale = localeKey in translations ? (localeKey as LocaleKey) : 'en';
+	const dictionary = translations[locale];
 	const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
-	return `Untitled ingestion ${stamp}`;
+	return formatTemplate(translate(dictionary, 'ingestionNew.untitledBatch'), {
+		stamp
+	});
 };
 
 const classificationFromItemKind = (
@@ -70,7 +76,10 @@ export const actions: Actions = {
 		}
 
 		const data = await request.formData();
-		const name = toBatchLabel(String(data.get('name') ?? ''));
+		const name = toBatchLabel(
+			String(data.get('name') ?? ''),
+			String(data.get('locale') ?? '')
+		);
 		const inputClassificationType =
 			(String(data.get('classificationType') ?? data.get('documentType') ?? '').trim() as
 				| 'newspaper_article'

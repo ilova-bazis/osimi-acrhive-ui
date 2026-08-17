@@ -1,4 +1,8 @@
 <script lang="ts">
+	import { locale } from '$lib/i18n/locale';
+	import { translate } from '$lib/i18n/translate';
+import { translations, type TranslationKey } from '$lib/i18n/translations';
+
 	let {
 		title,
 		url,
@@ -11,14 +15,17 @@
 		compact?: boolean;
 	}>();
 
+	const dictionary = $derived(translations[$locale]);
+	const t = (key: TranslationKey) => translate(dictionary, key);
+
 	let text = $state<string | null>(null);
 	let loading = $state(false);
-	let error = $state<string | null>(null);
+	let failed = $state(false);
 
 	$effect(() => {
 		if (!url) {
 			text = null;
-			error = null;
+			failed = false;
 			loading = false;
 			return;
 		}
@@ -26,7 +33,7 @@
 		let cancelled = false;
 		loading = true;
 		text = null;
-		error = null;
+		failed = false;
 
 		void fetch(url)
 			.then(async (response) => {
@@ -41,7 +48,7 @@
 			})
 			.catch(() => {
 				if (cancelled) return;
-				error = 'Unable to load preview.';
+				failed = true;
 			})
 			.finally(() => {
 				if (cancelled) return;
@@ -58,12 +65,12 @@
 	<div class="flex items-center justify-between gap-3">
 		<p class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">{title}</p>
 		{#if loading}
-			<p class="text-xs text-text-muted">Loading</p>
+			<p class="text-xs text-text-muted">{t('objects.detail.viewer.loading')}</p>
 		{/if}
 	</div>
 
-	{#if error}
-		<p class="mt-3 text-sm text-burnt-peach">{error}</p>
+	{#if failed}
+		<p class="mt-3 text-sm text-burnt-peach">{t('objects.detail.viewer.loadFailed')}</p>
 	{:else if text}
 		<div class={`mt-3 overflow-y-auto rounded-2xl border border-border-soft bg-alabaster-grey/30 p-4 text-sm leading-relaxed text-text-ink ${compact ? 'max-h-48' : 'max-h-72'}`}>
 			<p class="whitespace-pre-wrap">{text}</p>

@@ -35,11 +35,14 @@ To create a production version of your app:
 
 ```sh
 npm run build
+npm start
 ```
 
 You can preview the production build with `npm run preview`.
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+The production build uses `@sveltejs/adapter-node` and runs as a Node server from
+`build/`. Set `NODE_ENV=production`, `ORIGIN`, `HOST`, `PORT`, and `APP_BUILD_ID`
+for the deployed process. Use an active Node LTS release.
 
 ## API and Direct Upload Environment
 

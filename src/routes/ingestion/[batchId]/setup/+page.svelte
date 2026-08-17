@@ -8,12 +8,25 @@
     import type { IngestionDetailFile } from "$lib/services/ingestionDetail";
     import type { FileStatus } from "$lib/types";
     import { locale } from "$lib/i18n/locale";
-    import { translations } from "$lib/i18n/translations";
+    import { formatCount, formatFileSize } from "$lib/i18n/format";
+    import { formatPlural, formatTemplate, translate } from "$lib/i18n/translate";
+    import { translations, type TranslationKey } from "$lib/i18n/translations";
+    import {
+        fileStatusKey,
+        fileStatusTone,
+        presentationStatusKey,
+        type IngestionFileStatus,
+    } from "$lib/i18n/statusLabels";
+    import {
+        knownSetupLanguageKey,
+        knownSetupPipelinePresetKey,
+    } from "$lib/i18n/domainLabels";
     import { SvelteMap } from "svelte/reactivity";
     import { untrack, onDestroy } from "svelte";
     import StatusBadge from "$lib/components/StatusBadge.svelte";
     import ObjectGroupRow from "$lib/components/ObjectGroupRow.svelte";
     import ObjectMetadataPanel from "$lib/components/ObjectMetadataPanel.svelte";
+    import IngestionPreviewOverlay from "$lib/components/IngestionPreviewOverlay.svelte";
     import type { ObjectGroup, ObjectItemMetadata } from "$lib/models";
     import type {
         IngestionDetailItem,
@@ -44,6 +57,7 @@
         type SetupItemIndexAllocator,
     } from "$lib/ingestion/setupItemIndexAllocator";
     import { hydrateIngestionItems } from "$lib/ingestion/setupItemHydration";
+    import type { IngestionPreviewItem } from "$lib/ingestion/previewPresentation";
 
     let { data } = $props<{
         data: {
@@ -72,30 +86,8 @@
     const dictionary = $derived(translations[$locale]);
     let itemIndexAllocator: SetupItemIndexAllocator | null = null;
 
-    const t = (key: string) => {
-        const segments = key.split(".");
-        let current: Record<string, unknown> = dictionary as Record<
-            string,
-            unknown
-        >;
-        for (const segment of segments) {
-            if (typeof current[segment] === "undefined") {
-                return key;
-            }
-            current = current[segment] as Record<string, unknown>;
-        }
-        return current as unknown as string;
-    };
-
-    const format = (
-        template: string,
-        values: Record<string, string | number>,
-    ) =>
-        template.replace(/\{(\w+)\}/g, (match, key) =>
-            Object.prototype.hasOwnProperty.call(values, key)
-                ? String(values[key])
-                : match,
-        );
+    const t = (key: TranslationKey) => translate(dictionary, key);
+    const format = formatTemplate;
 
     type LocalIngestionFile = {
         id: number;
@@ -104,8 +96,11 @@
         name: string;
         type: string;
         mediaType: BatchMediaType;
-        size: string;
+        contentType: string | null;
+        sizeBytes: number;
         status: FileStatus;
+        backendStatus: IngestionFileStatus | null;
+        backendStatusRaw: string;
         backendFileId?: string;
         uploadError?: string;
         preview?: IngestionDetailFile["preview"];
@@ -121,6 +116,92 @@
     let isGlobalDragging = $state(false);
     let fileInput = $state<HTMLInputElement | null>(null);
     let previewUrls = $state<Record<number, string>>({});
+    type PreviewProbeStatus = "polling" | "timed-out";
+    let previewProbeStatus = $state<Record<number, PreviewProbeStatus>>({});
+    let previewGalleryFileIds = $state<number[]>([]);
+    let previewGalleryActiveFileId = $state<number | null>(null);
+
+    const toPreviewItem = (file: LocalIngestionFile): IngestionPreviewItem => {
+        const url = previewUrls[file.id];
+        let preview: IngestionPreviewItem["preview"];
+        if (url) {
+            preview = { status: "ready", url };
+        } else if (previewProbeStatus[file.id] === "timed-out") {
+            preview = { status: "check-timeout" };
+        } else if (previewProbeStatus[file.id] === "polling") {
+            preview = { status: "pending" };
+        } else if (file.preview?.status === "failed") {
+            preview = { status: "failed" };
+        } else if (file.preview?.status === "purged") {
+            preview = { status: "purged" };
+        } else if (file.preview?.status === "unsupported") {
+            preview = { status: "unsupported" };
+        } else if (
+            file.preview?.status === "pending" ||
+            (file.mediaType !== "audio" &&
+                file.mediaType !== "document" &&
+                file.status === "approved")
+        ) {
+            preview = { status: "pending" };
+        } else {
+            preview = { status: "unsupported" };
+        }
+        return {
+            id: String(file.id),
+            name: file.name,
+            mediaType: file.mediaType,
+            contentType: file.contentType,
+            sizeBytes: file.sizeBytes,
+            preview,
+        };
+    };
+
+    const isPreviewGalleryOpen = $derived(
+        previewGalleryActiveFileId !== null &&
+            previewGalleryFileIds.includes(previewGalleryActiveFileId),
+    );
+    const previewGalleryItems = $derived(
+        previewGalleryFileIds
+            .map((id) => filesById.get(id))
+            .filter(
+                (file): file is LocalIngestionFile => file !== undefined,
+            )
+            .map(toPreviewItem),
+    );
+    const previewGalleryActiveIndex = $derived(
+        previewGalleryActiveFileId === null
+            ? 0
+            : Math.max(
+                  0,
+                  previewGalleryFileIds.indexOf(previewGalleryActiveFileId),
+              ),
+    );
+
+    const openPreviewGallery = (
+        fileIds: number[],
+        activeFileId: number | null,
+    ): void => {
+        previewGalleryFileIds = fileIds;
+        previewGalleryActiveFileId =
+            activeFileId && fileIds.includes(activeFileId)
+                ? activeFileId
+                : (fileIds[0] ?? null);
+    };
+
+    const closePreviewGallery = (): void => {
+        previewGalleryFileIds = [];
+        previewGalleryActiveFileId = null;
+    };
+
+    const selectPreviewGalleryAt = (index: number): void => {
+        const fileId = previewGalleryFileIds[index];
+        if (fileId === undefined) return;
+        previewGalleryActiveFileId = fileId;
+    };
+
+    const openSinglePreview = (fileId: number): void => {
+        openPreviewGallery([fileId], fileId);
+    };
 
     const languages = ["en", "ru", "fa", "tg", "mixed"] as const;
 
@@ -164,11 +245,11 @@
         }
     }
 
-    const itemMutationLabels: Record<ItemMutationOperation, string> = {
-        metadata: "Object metadata",
-        rename: "Object rename",
-        attach: "File attachment",
-        reorder: "File order",
+    const itemMutationLabels: Record<ItemMutationOperation, TranslationKey> = {
+        metadata: "ingestionSetup.mutations.labels.metadata",
+        rename: "ingestionSetup.mutations.labels.rename",
+        attach: "ingestionSetup.mutations.labels.attach",
+        reorder: "ingestionSetup.mutations.labels.reorder",
     };
 
     // Debounce timers and queue state for existing-item mutations.
@@ -217,7 +298,14 @@
                     message:
                         cause instanceof Error && cause.message
                             ? cause.message
-                            : `${itemMutationLabels[operation]} failed to save.`,
+                            : formatTemplate(
+                                  t("ingestionSetup.mutations.failedToSave"),
+                                  {
+                                      label: t(
+                                          itemMutationLabels[operation],
+                                      ),
+                                  },
+                              ),
                 };
             } finally {
                 activeItemMutationCount -= 1;
@@ -267,7 +355,7 @@
                         itemId: serverId,
                         metadata,
                     },
-                    "Failed to save object metadata.",
+                    t("ingestionSetup.mutations.fallbackSaveMetadata"),
                 ),
             );
         }, 300);
@@ -887,7 +975,7 @@
                         itemId: group.serverId,
                         label: label || "",
                     },
-                    "Failed to rename the object.",
+                    t("ingestionSetup.mutations.fallbackRename"),
                 ),
             );
         }
@@ -920,7 +1008,7 @@
                         fileId: backendFileId,
                         sortOrder,
                     },
-                    "Failed to attach the file to the object.",
+                    t("ingestionSetup.mutations.fallbackAttach"),
                 ),
             );
         }
@@ -967,19 +1055,11 @@
                             itemId: group.serverId,
                             files: fileEntries,
                         },
-                        "Failed to reorder object files.",
+                        t("ingestionSetup.mutations.fallbackReorder"),
                     ),
                 );
             }
         }
-    };
-
-    const toReadableSize = (bytes: number) => {
-        if (bytes < 1024) return `${bytes} B`;
-        const kb = bytes / 1024;
-        if (kb < 1024) return `${kb.toFixed(1)} KB`;
-        const mb = kb / 1024;
-        return `${mb.toFixed(1)} MB`;
     };
 
     const mediaKinds = $derived(capabilities.mediaKinds);
@@ -1186,40 +1266,6 @@
         queueBatchMetadataSave();
     };
 
-    const toExistingFileStatus = (backendStatus: string): FileStatus => {
-        const normalized = backendStatus.toLowerCase();
-
-        if (normalized.includes("failed") || normalized.includes("error")) {
-            return "failed";
-        }
-
-        if (
-            normalized.includes("uploading") ||
-            normalized.includes("presigned") ||
-            normalized.includes("pending")
-        ) {
-            return "processing";
-        }
-
-        if (
-            normalized.includes("uploaded") ||
-            normalized.includes("validated") ||
-            normalized.includes("committed")
-        ) {
-            return "approved";
-        }
-
-        if (
-            normalized.includes("queue") ||
-            normalized.includes("pending") ||
-            normalized.includes("processing")
-        ) {
-            return "processing";
-        }
-
-        return "queued";
-    };
-
     const toExistingFileType = (
         file: IngestionDetailFile,
     ): { type: string; mediaType: BatchMediaType } => {
@@ -1271,8 +1317,11 @@
                     name: file.name,
                     type: inferred.type,
                     mediaType: inferred.mediaType,
-                    size: toReadableSize(file.sizeBytes ?? 0),
-                    status: toExistingFileStatus(file.status),
+                    contentType: file.contentType,
+                    sizeBytes: file.sizeBytes ?? 0,
+                    status: fileStatusTone(file.status),
+                    backendStatus: file.status,
+                    backendStatusRaw: file.statusRaw,
                     backendFileId: file.id,
                     preview: file.preview,
                 };
@@ -1382,8 +1431,11 @@
                 name: file.name,
                 type,
                 mediaType,
-                size: toReadableSize(file.size),
+                contentType: file.type || null,
+                sizeBytes: file.size,
                 status: "queued" as FileStatus,
+                backendStatus: null,
+                backendStatusRaw: "",
             });
         }
 
@@ -1609,15 +1661,22 @@
             ),
     );
 
-    const statusKey = (status: FileStatus) =>
-        status === "needs-review" ? "needsReview" : status;
-    const statusLabel = (status: FileStatus) =>
-        t(`statuses.${statusKey(status)}`);
-
-    const languageLabel = (value: string) =>
-        value ? t(`ingestionSetup.languages.${value}`) : t("values.unknown");
-    const pipelineLabel = (value: string) =>
-        t(`ingestionSetup.pipelinePresets.${value}`);
+    const statusLabel = (file: LocalIngestionFile) => {
+        if (file.source === "server") {
+            const key = fileStatusKey(file.backendStatus);
+            return key ? t(key) : file.backendStatusRaw || t("values.unknown");
+        }
+        return t(presentationStatusKey(file.status));
+    };
+    const languageLabel = (value: string) => {
+        if (!value) return t("values.unknown");
+        const key = knownSetupLanguageKey(value);
+        return key ? t(key) : value;
+    };
+    const pipelineLabel = (value: string) => {
+        const key = knownSetupPipelinePresetKey(value);
+        return key ? t(key) : value;
+    };
 
     let showConfirm = $state(false);
 
@@ -1860,8 +1919,11 @@
         for (const timer of Object.values(itemUpdateTimers)) {
             clearTimeout(timer);
         }
+        for (const fileId of previewPollHandles.keys()) {
+            cancelPreviewPoll(fileId);
+        }
         for (const url of Object.values(previewUrls)) {
-            URL.revokeObjectURL(url);
+            if (url.startsWith("blob:")) URL.revokeObjectURL(url);
         }
     });
 
@@ -1938,7 +2000,7 @@
                     await goto(resolve("/login"));
                 } catch {
                     setupNavigationBypass = false;
-                    abandonDeleteError = "Your session expired. Please sign in again.";
+                    abandonDeleteError = t("ingestionSetup.abandon.sessionExpired");
                 }
                 return;
             }
@@ -1946,8 +2008,8 @@
             const deleted = res.status === 404 || (res.ok && (await res.json().catch(() => null))?.ok === true);
             if (!deleted) {
                 abandonDeleteError = !res.ok
-                    ? await readErrorMessage(res, "Failed to delete the batch. Check your connection and try again.")
-                    : "Failed to confirm the batch was deleted. Check your connection and try again.";
+                    ? await readErrorMessage(res, t("ingestionSetup.abandon.deleteFailed"))
+                    : t("ingestionSetup.abandon.deleteUnconfirmed");
                 return;
             }
 
@@ -1959,7 +2021,7 @@
                 abandonNavigateBypass = false;
             }
         } catch {
-            abandonDeleteError = "Failed to delete the batch. Check your connection and try again.";
+            abandonDeleteError = t("ingestionSetup.abandon.deleteFailed");
         } finally {
             abandonDeleting = false;
         }
@@ -2033,7 +2095,7 @@
             throw new Error(
                 await readErrorMessage(
                     response,
-                    "Failed to update ingestion defaults.",
+                    t("ingestionSetup.mutations.fallbackUpdateDefaults"),
                 ),
             );
         }
@@ -2157,7 +2219,7 @@
         });
         await requireSetupActionOk(
             response,
-            "Failed to save object metadata.",
+            t("ingestionSetup.mutations.fallbackSaveMetadata"),
         );
     };
 
@@ -2266,7 +2328,10 @@
                 throw new Error(
                     await readErrorMessage(
                         presignResponse,
-                        `Failed to prepare upload for ${file.name}.`,
+                        formatTemplate(
+                            t("ingestionSetup.mutations.fallbackPrepareUpload"),
+                            { name: file.name },
+                        ),
                     ),
                 );
             }
@@ -2298,7 +2363,11 @@
             });
 
             if (!uploadResponse.ok) {
-                throw new Error(`Failed to upload ${file.name}.`);
+                throw new Error(
+                    formatTemplate(t("ingestionSetup.mutations.fallbackUpload"), {
+                        name: file.name,
+                    }),
+                );
             }
 
             const checksumSha256 = await sha256Hex(file.rawFile);
@@ -2320,7 +2389,10 @@
                 throw new Error(
                     await readErrorMessage(
                         commitResponse,
-                        `Failed to commit ${file.name}.`,
+                        formatTemplate(
+                            t("ingestionSetup.mutations.fallbackCommit"),
+                            { name: file.name },
+                        ),
                     ),
                 );
             }
@@ -2332,7 +2404,6 @@
             setFileStatus(file.id, "approved", presigned.fileId);
             releaseRawFile(file.id);
             if (file.mediaType === "image") {
-                revokePreviewUrl(file.id);
                 void pollFilePreview(file.id, presigned.fileId);
             } else if (file.mediaType === "video") {
                 void pollFilePreview(file.id, presigned.fileId);
@@ -2345,7 +2416,10 @@
             const message =
                 error instanceof Error
                     ? error.message
-                    : `Failed to upload ${file.name}.`;
+                    : formatTemplate(
+                        t("ingestionSetup.mutations.fallbackUpload"),
+                        { name: file.name },
+                    );
             setFileStatus(file.id, "failed");
             setFileUploadError(file.id, message);
         } finally {
@@ -2404,7 +2478,15 @@
         return "image";
     };
 
+    const clearPreviewProbe = (localFileId: number): void => {
+        if (!(localFileId in previewProbeStatus)) return;
+        const rest = { ...previewProbeStatus };
+        delete rest[localFileId];
+        previewProbeStatus = rest;
+    };
+
     const revokePreviewUrl = (fileId: number): void => {
+        cancelPreviewPoll(fileId);
         const url = previewUrls[fileId];
         if (url) {
             if (url.startsWith("blob:")) URL.revokeObjectURL(url);
@@ -2412,6 +2494,7 @@
             const { [fileId]: _unused, ...rest } = previewUrls;
             previewUrls = rest;
         }
+        clearPreviewProbe(fileId);
     };
 
     const filePreviewEndpoint = (backendFileId: string): string =>
@@ -2420,25 +2503,99 @@
             fileId: backendFileId,
         });
 
+    type PreviewPollHandle = {
+        generation: number;
+        controller: AbortController;
+        timer: ReturnType<typeof setTimeout> | null;
+    };
+
+    const previewPollHandles = new SvelteMap<number, PreviewPollHandle>();
+    const previewPollGenerations = new SvelteMap<number, number>();
+
+    const cancelPreviewPoll = (localFileId: number): void => {
+        const handle = previewPollHandles.get(localFileId);
+        if (!handle) return;
+        if (handle.timer !== null) clearTimeout(handle.timer);
+        handle.controller.abort();
+        previewPollHandles.delete(localFileId);
+    };
+
     const pollFilePreview = async (
         localFileId: number,
         backendFileId: string,
     ): Promise<void> => {
+        cancelPreviewPoll(localFileId);
+        const generation =
+            (previewPollGenerations.get(localFileId) ?? 0) + 1;
+        previewPollGenerations.set(localFileId, generation);
+        const controller = new AbortController();
+        const handle: PreviewPollHandle = {
+            generation,
+            controller,
+            timer: null,
+        };
+        previewPollHandles.set(localFileId, handle);
+        previewProbeStatus = {
+            ...previewProbeStatus,
+            [localFileId]: "polling",
+        };
+        const isCurrent = (): boolean =>
+            previewPollHandles.get(localFileId)?.generation === generation &&
+            findFile(localFileId) !== undefined;
+
         const url = filePreviewEndpoint(backendFileId);
         for (let i = 0; i < 10; i++) {
-            await new Promise<void>((r) => setTimeout(r, 2000));
-            if (!findFile(localFileId)) return;
+            if (i > 0) {
+                await new Promise<void>((resolveWait) => {
+                    handle.timer = setTimeout(resolveWait, 2000);
+                });
+                if (handle.timer !== null) handle.timer = null;
+            }
+            if (!isCurrent()) return;
+            let response: Response;
             try {
-                const response = await fetch(url, { method: "HEAD" });
-                if (response.ok) {
-                    previewUrls = { ...previewUrls, [localFileId]: url };
-                    return;
-                }
+                response = await fetch(url, {
+                    method: "HEAD",
+                    signal: controller.signal,
+                });
             } catch {
-                // Keep polling; transient preview endpoint failures should not
-                // surface as unhandled promise rejections.
+                if (!isCurrent()) return;
+                continue;
+            }
+            if (!isCurrent()) return;
+            if (response.ok) {
+                const oldUrl = previewUrls[localFileId];
+                if (oldUrl?.startsWith("blob:")) {
+                    URL.revokeObjectURL(oldUrl);
+                }
+                previewUrls = { ...previewUrls, [localFileId]: url };
+                previewPollHandles.delete(localFileId);
+                clearPreviewProbe(localFileId);
+                return;
+            }
+            if (
+                response.status === 401 ||
+                response.status === 403 ||
+                response.status === 415
+            ) {
+                previewPollHandles.delete(localFileId);
+                clearPreviewProbe(localFileId);
+                return;
             }
         }
+        if (!isCurrent()) return;
+        previewPollHandles.delete(localFileId);
+        previewProbeStatus = {
+            ...previewProbeStatus,
+            [localFileId]: "timed-out",
+        };
+    };
+
+    const checkPreviewAgain = (localFileId: number): void => {
+        const file = findFile(localFileId);
+        if (!file?.backendFileId) return;
+        clearPreviewProbe(localFileId);
+        void pollFilePreview(localFileId, file.backendFileId);
     };
 
     const toggleFileSelection = (fileId: number) => {
@@ -2623,7 +2780,7 @@
 
         try {
             if (!itemIndexAllocator) {
-                throw new Error("Failed to initialize item ordering.");
+                throw new Error(t("ingestionSetup.mutations.fallbackInitOrdering"));
             }
             const allocator = itemIndexAllocator;
 
@@ -2644,7 +2801,7 @@
                     });
                     await requireSetupActionOk(
                         attachResponse,
-                        "Failed to attach file to item.",
+                        t("ingestionSetup.mutations.fallbackAttachItem"),
                     );
                     attached.push(fileId);
                     attachedFileIdsByItem = {
@@ -2681,7 +2838,7 @@
                     });
                     await requireSetupActionOk(
                         createResponse,
-                        "Failed to create item for grouped files.",
+                        t("ingestionSetup.mutations.fallbackCreateGroupedItem"),
                     );
                     const result: { id: string; itemIndex: number } = await createResponse.json();
                     allocator.observe(result.itemIndex);
@@ -2714,7 +2871,7 @@
                     });
                     await requireSetupActionOk(
                         createResponse,
-                        "Failed to create item for standalone file.",
+                        t("ingestionSetup.mutations.fallbackCreateStandaloneItem"),
                     );
                     const result: { id: string; itemIndex: number } = await createResponse.json();
                     allocator.observe(result.itemIndex);
@@ -2735,7 +2892,7 @@
             submitError =
                 error instanceof Error
                     ? error.message
-                    : "Failed to submit ingestion.";
+                    : t("ingestionSetup.flow.submitFailed");
         } finally {
             isSubmitting = false;
             showConfirm = false;
@@ -2743,7 +2900,7 @@
     };
 </script>
 
-<div class="flex flex-col min-h-screen">
+<div class="flex flex-col min-h-full lg:min-h-screen">
     <!-- Sticky top-bar -->
     <header
         class="sticky top-0 z-20 border-b border-border-soft bg-alabaster-grey px-4 sm:px-6 py-4"
@@ -2755,7 +2912,7 @@
                 <div class="flex items-center gap-2 text-xs text-text-muted">
                     <span
                         class="text-xs uppercase tracking-[0.2em] text-blue-slate"
-                        >Ingestion</span
+                        >{t("ingestionSetup.flow.headerKicker")}</span
                     >
                     <Icon name="chevron-r" size={12} />
                     <span class="font-mono text-xs">{batchId}</span>
@@ -2767,12 +2924,12 @@
                 </h1>
             </div>
             <div class="flex items-center gap-3 pt-1 flex-shrink-0">
-                <Stamp>Draft · not yet submitted</Stamp>
+                <Stamp>{t("ingestionSetup.flow.draftStatus")}</Stamp>
                 <a
                     href={resolve("/ingestion")}
                     class="inline-flex items-center gap-2 rounded-full border border-border-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:bg-pale-sky/20 hover:text-text-ink transition-all"
                 >
-                    <Icon name="x" size={13} /> Discard
+                    <Icon name="x" size={13} /> {t("ingestionSetup.flow.discard")}
                 </a>
             </div>
         </div>
@@ -2797,7 +2954,7 @@
                         if (step === "metadata") step = "organize";
                     }}
                 >
-                    1 · Organize
+                    {t("ingestionSetup.flow.stepOrganize")}
                 </button>
                 <Icon name="chevron-r" size={12} />
                 <span
@@ -2805,7 +2962,7 @@
                         ? "font-semibold text-blue-slate"
                         : "text-text-muted"}
                 >
-                    2 · Metadata
+                    {t("ingestionSetup.flow.stepMetadata")}
                 </span>
             </nav>
             {#if step === "organize"}
@@ -2813,7 +2970,7 @@
                     onclick={() => autoGroupByFilename(standaloneFiles)}
                     class="rounded-full border border-border-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted transition hover:bg-pale-sky/20 hover:text-text-ink active:scale-[0.99]"
                 >
-                    Auto-group by filename
+                    {t("ingestionSetup.flow.autoGroupByFilename")}
                 </button>
             {/if}
         </section>
@@ -2827,14 +2984,19 @@
             >
                 <div class="flex items-center justify-between gap-4">
                     <p class="text-sm text-blue-slate">
-                        Each group will become <span class="font-semibold"
-                            >ONE object</span
-                        > in your library.
+                        {t("ingestionSetup.organize.contextBannerLead")} <span
+                            class="font-semibold"
+                            >{t("ingestionSetup.organize.contextBannerObject")}</span
+                        > {t("ingestionSetup.organize.contextBannerTail")}
                     </p>
                     <p class="shrink-0 text-xs text-text-muted">
-                        {organizeObjectCount}
-                        {organizeObjectCount === 1 ? "object" : "objects"} · {files.length}
-                        {files.length === 1 ? "file" : "files"} total
+                        {formatTemplate(
+                            formatPlural(dictionary, "ingestionSetup.organize.objectsCount", organizeObjectCount, $locale),
+                            { count: formatCount(organizeObjectCount, $locale) },
+                        )} · {formatTemplate(
+                            formatPlural(dictionary, "ingestionSetup.organize.filesCount", files.length, $locale),
+                            { count: formatCount(files.length, $locale) },
+                        )} {t("ingestionSetup.organize.totalSuffix")}
                     </p>
                 </div>
             </div>
@@ -2846,8 +3008,7 @@
                 >
                     <div class="flex items-center gap-3">
                         <span class="text-xs text-blue-slate"
-                            >✓ Files grouped automatically by filename. Please
-                            review and adjust.</span
+                            >{t("ingestionSetup.organize.autoGroupToast")}</span
                         >
                         <button
                             onclick={() => {
@@ -2867,8 +3028,10 @@
                 >
                     <div class="flex flex-wrap items-center gap-4">
                         <p class="text-sm text-burnt-peach">
-                            ⚠ You have {standaloneFiles.length} files that will each
-                            become their own separate object. Is this correct?
+                            {formatTemplate(
+                                formatPlural(dictionary, "ingestionSetup.organize.standaloneWarning", standaloneFiles.length, $locale),
+                                { count: formatCount(standaloneFiles.length, $locale) },
+                            )}
                         </p>
                         <div class="ml-auto flex shrink-0 gap-2">
                             <button
@@ -2876,7 +3039,7 @@
                                     autoGroupByFilename(standaloneFiles)}
                                 class="rounded-full border border-burnt-peach/60 px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-burnt-peach transition hover:bg-burnt-peach/10"
                             >
-                                Auto-group
+                                {t("ingestionSetup.organize.autoGroupAction")}
                             </button>
                             <button
                                 onclick={() => {
@@ -2884,7 +3047,7 @@
                                 }}
                                 class="rounded-full border border-burnt-peach/40 px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] text-burnt-peach/70 transition hover:border-burnt-peach/60 hover:text-burnt-peach"
                             >
-                                Yes, that's correct
+                                {t("ingestionSetup.organize.confirmStandalone")}
                             </button>
                         </div>
                     </div>
@@ -2957,7 +3120,7 @@
                         <span class="flex-1 text-sm text-text-muted">
                             {isDragging || isGlobalDragging
                                 ? t("ingestionSetup.dropzone.headlineDragging")
-                                : "Drop files to add more"}
+                                : t("ingestionSetup.organize.dropMore")}
                         </span>
                         {#if addFilesError}
                             <span class="text-xs text-burnt-peach"
@@ -3014,8 +3177,9 @@
                                     <div
                                         class="px-6 py-6 text-center text-xs italic text-text-muted"
                                     >
-                                        Drop files here to add them to this
-                                        group
+                                        {t(
+                                            "ingestionSetup.organize.dropIntoGroup",
+                                        )}
                                     </div>
                                 {/if}
                                 {#each group.fileIds as fileId, index (fileId)}
@@ -3054,19 +3218,58 @@
                                             >
                                             <span
                                                 class="shrink-0 cursor-grab select-none text-text-muted/60"
-                                                title="Drag to reorder">⠿</span
+                                                title={t(
+                                                    "ingestionSetup.organize.dragToReorder",
+                                                )}>⠿</span
                                             >
                                             <div
-                                                class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border-soft bg-alabaster-grey/50"
+                                                class="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-soft bg-alabaster-grey/50"
                                             >
-                                                {#if previewUrls[fileId] && file.mediaType === "image"}
-                                                    <img
-                                                        src={previewUrls[
-                                                            fileId
-                                                        ]}
-                                                        alt={file.name}
-                                                        class="h-full w-full object-cover"
-                                                    />
+                                                {#if previewUrls[fileId]}
+                                                    <button
+                                                        type="button"
+                                                        class="h-full w-full cursor-pointer border-0 bg-transparent p-0"
+                                                        onclick={(e) => {
+                                                            e.stopPropagation();
+                                                            openSinglePreview(fileId);
+                                                        }}
+                                                        aria-label={format(
+                                                            t(
+                                                                "ingestionSetup.files.previewExpand",
+                                                            ),
+                                                            { name: file.name },
+                                                        )}
+                                                    >
+                                                        <img
+                                                            src={previewUrls[
+                                                                fileId
+                                                            ]}
+                                                            alt={file.name}
+                                                            class="h-full w-full object-cover"
+                                                        />
+                                                    </button>
+                                                {:else if previewProbeStatus[fileId] === "timed-out"}
+                                                    <button
+                                                        type="button"
+                                                        onclick={(e) => {
+                                                            e.stopPropagation();
+                                                            checkPreviewAgain(
+                                                                fileId,
+                                                            );
+                                                        }}
+                                                        class="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-1 border-0 bg-transparent p-1 text-center"
+                                                    >
+                                                        <Icon
+                                                            name="warn"
+                                                            size={16}
+                                                        />
+                                                        <span
+                                                            class="text-[9px] leading-tight text-burnt-peach"
+                                                            >{t(
+                                                                "ingestionSetup.previewViewer.checkAgain",
+                                                            )}</span
+                                                        >
+                                                    </button>
                                                 {:else}
                                                     <span
                                                         class="text-text-muted/60"
@@ -3075,7 +3278,7 @@
                                                             name={fileKindIcon(
                                                                 file.mediaType,
                                                             )}
-                                                            size={14}
+                                                            size={20}
                                                         />
                                                     </span>
                                                 {/if}
@@ -3089,7 +3292,7 @@
                                                 <p
                                                     class="text-[10px] text-text-muted"
                                                 >
-                                                    {file.size}
+                                                    {formatFileSize(file.sizeBytes, $locale)}
                                                 </p>
                                                 {#if file.preview?.status === "purged"}
                                                     <p class="mt-1 text-[10px] text-text-muted">
@@ -3099,7 +3302,7 @@
                                             </div>
                                             <StatusBadge
                                                 status={file.status}
-                                                label={statusLabel(file.status)}
+                                                label={statusLabel(file)}
                                             />
                                             <button
                                                 type="button"
@@ -3111,8 +3314,15 @@
                                                     e.stopPropagation();
                                                     removeFile(fileId);
                                                 }}
-                                                title="Remove file"
-                                                aria-label="Remove {file.name}"
+                                                title={t(
+                                                    "ingestionSetup.organize.removeFile",
+                                                )}
+                                                aria-label={formatTemplate(
+                                                    t(
+                                                        "ingestionSetup.organize.removeFileAria",
+                                                    ),
+                                                    { name: file.name },
+                                                )}
                                                 >✕</button
                                             >
                                         </div>
@@ -3145,36 +3355,47 @@
                         >
                             <span
                                 class="text-xs font-medium uppercase tracking-[0.2em] text-text-muted"
-                                >Ungrouped</span
+                                >{t(
+                                    "ingestionSetup.organize.ungrouped",
+                                )}</span
                             >
                             <span class="font-mono text-xs text-text-muted">
-                                {standaloneFiles.length}
-                                {standaloneFiles.length === 1
-                                    ? "file"
-                                    : "files"} · each becomes its own object
+                                {formatTemplate(
+                                    formatPlural(dictionary, "ingestionSetup.organize.filesCount", standaloneFiles.length, $locale),
+                                    { count: formatCount(standaloneFiles.length, $locale) },
+                                )} · {t("ingestionSetup.organize.eachSeparate")}
                             </span>
                             {#if selectedFileIds.length > 0}
                                 <div class="ml-auto flex items-center gap-2">
                                     <span class="text-xs text-text-muted"
-                                        >{selectedFileIds.length} selected</span
+                                        >{formatTemplate(
+                                            t("ingestionSetup.organize.selectedCount"),
+                                            { count: formatCount(selectedFileIds.length, $locale) },
+                                        )}</span
                                     >
                                     <button
                                         disabled={selectedFileIds.length < 2}
                                         onclick={organizeGroupSelected}
                                         class="rounded-full border border-blue-slate px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20 disabled:cursor-not-allowed disabled:opacity-40"
-                                        >Merge</button
+                                        >{t(
+                                            "ingestionSetup.organize.merge",
+                                        )}</button
                                     >
                                     <button
                                         onclick={organizeSplitSelected}
                                         class="rounded-full border border-blue-slate/50 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-blue-slate/75 transition hover:border-blue-slate hover:text-blue-slate"
-                                        >Split</button
+                                        >{t(
+                                            "ingestionSetup.organize.split",
+                                        )}</button
                                     >
                                     <button
                                         onclick={() => {
                                             selectedFileIds = [];
                                         }}
                                         class="text-xs text-text-muted hover:text-text-ink transition"
-                                        >Clear</button
+                                        >{t(
+                                            "ingestionSetup.organize.clear",
+                                        )}</button
                                     >
                                 </div>
                             {/if}
@@ -3209,7 +3430,9 @@
                                 >
                                     <span
                                         class="select-none text-text-muted/50"
-                                        title="Drag to a group above">⠿</span
+                                        title={t(
+                                            "ingestionSetup.organize.dragToGroup",
+                                        )}>⠿</span
                                     >
                                     <input
                                         type="checkbox"
@@ -3222,21 +3445,58 @@
                                         class="h-4 w-4 shrink-0 cursor-pointer rounded border-border-soft accent-blue-slate"
                                     />
                                     <div
-                                        class="flex h-6 w-6 items-center justify-center overflow-hidden rounded border border-border-soft bg-alabaster-grey/50"
+                                        class="flex h-16 w-16 items-center justify-center overflow-hidden rounded-lg border border-border-soft bg-alabaster-grey/50"
                                     >
                                         {#if previewUrls[file.id]}
-                                            <img
-                                                src={previewUrls[file.id]}
-                                                alt={file.name}
-                                                class="h-full w-full object-cover"
-                                            />
+                                            <button
+                                                type="button"
+                                                class="h-full w-full cursor-pointer border-0 bg-transparent p-0"
+                                                onclick={(e) => {
+                                                    e.stopPropagation();
+                                                    openSinglePreview(file.id);
+                                                }}
+                                                aria-label={format(
+                                                    t(
+                                                        "ingestionSetup.files.previewExpand",
+                                                    ),
+                                                    { name: file.name },
+                                                )}
+                                            >
+                                                <img
+                                                    src={previewUrls[file.id]}
+                                                    alt={file.name}
+                                                    class="h-full w-full object-cover"
+                                                />
+                                            </button>
+                                        {:else if previewProbeStatus[file.id] === "timed-out"}
+                                            <button
+                                                type="button"
+                                                onclick={(e) => {
+                                                    e.stopPropagation();
+                                                    checkPreviewAgain(file.id);
+                                                }}
+                                                class="flex h-full w-full cursor-pointer flex-col items-center justify-center gap-1 border-0 bg-transparent p-1 text-center"
+                                                aria-label={format(
+                                                    t(
+                                                        "ingestionSetup.previewViewer.checkAgain",
+                                                    ),
+                                                    { name: file.name },
+                                                )}
+                                            >                                                <Icon name="warn" size={14} />
+                                                <span
+                                                    class="text-[9px] leading-tight text-burnt-peach"
+                                                    >{t(
+                                                        "ingestionSetup.previewViewer.checkAgain",
+                                                    )}</span
+                                                >
+                                            </button>
                                         {:else}
                                             <span class="text-text-muted/70">
                                                 <Icon
                                                     name={fileKindIcon(
                                                         file.mediaType,
                                                     )}
-                                                    size={12}
+                                                    size={16}
                                                 />
                                             </span>
                                         {/if}
@@ -3253,11 +3513,11 @@
                                     </div>
                                     <span
                                         class="text-right font-mono text-xs text-text-muted"
-                                        >{file.size}</span
+                                        >{formatFileSize(file.sizeBytes, $locale)}</span
                                     >
                                     <StatusBadge
                                         status={file.status}
-                                        label={statusLabel(file.status)}
+                                        label={statusLabel(file)}
                                     />
                                     <button
                                         type="button"
@@ -3267,8 +3527,15 @@
                                             e.stopPropagation();
                                             removeFile(file.id);
                                         }}
-                                        title="Remove file"
-                                        aria-label="Remove {file.name}"
+                                        title={t(
+                                            "ingestionSetup.organize.removeFile",
+                                        )}
+                                        aria-label={formatTemplate(
+                                            t(
+                                                "ingestionSetup.organize.removeFileAria",
+                                            ),
+                                            { name: file.name },
+                                        )}
                                         >✕</button
                                     >
                                 </div>
@@ -3849,25 +4116,38 @@
                     <p
                         class="text-xs uppercase tracking-[0.2em] text-blue-slate"
                     >
-                        Per-Object Metadata
+                        {t("ingestionSetup.flow.perObjectMetadata")}
                     </p>
                     <p class="text-xs text-text-muted">
-                        {objectCount}
-                        {objectCount === 1 ? "object" : "objects"}
+                        {formatTemplate(
+                            formatPlural(dictionary, "ingestionSetup.organize.objectsCount", objectCount, $locale),
+                            { count: formatCount(objectCount, $locale) },
+                        )}
                     </p>
                 </div>
 
                 {#each objectGroups as group (group.id)}
                     {@const key = group.id}
                     {@const meta = objectMetadata[key] ?? {}}
-                    {@const _firstGroupFile = filesById.get(group.fileIds[0])}
-                    {@const _firstPreviewId = group.fileIds.find(
-                        (id) =>
-                            filesById.get(id)?.mediaType === "image" &&
-                            previewUrls[id],
+                    {@const _groupFiles = group.fileIds
+                        .map((id) => filesById.get(id))
+                        .filter(
+                            (f): f is LocalIngestionFile => f !== undefined,
+                        )}
+                    {@const _readyGroupFiles = _groupFiles.filter(
+                        (f) => previewUrls[f.id],
                     )}
-                    {@const hasPurgedPreview = group.fileIds.some(
-                        (id) => filesById.get(id)?.preview?.status === "purged",
+                    {@const _stackDeduped = [
+                        ..._readyGroupFiles,
+                        ..._groupFiles,
+                    ].filter(
+                        (f, index, all) =>
+                            all.findIndex((candidate) => candidate.id === f.id) ===
+                            index,
+                    )}
+                    {@const _stackFiles = _stackDeduped.slice(0, 3)}
+                    {@const hasPurgedPreview = _groupFiles.some(
+                        (f) => f.preview?.status === "purged",
                     )}
                     <div
                         class={`rounded-2xl border bg-surface-white ${isItemMetadataComplete(key) ? "border-border-soft" : "border-burnt-peach/35"}`}
@@ -3883,31 +4163,41 @@
                                     ? ""
                                     : "transform: rotate(-90deg)"}>▾</span
                             >
-                            <div
-                                class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border-soft bg-alabaster-grey/50"
+                            <span
+                                class="relative block h-20 w-20 shrink-0"
+                                aria-hidden="true"
                             >
-                                {#if _firstPreviewId && previewUrls[_firstPreviewId]}
-                                    <img
-                                        src={previewUrls[_firstPreviewId]}
-                                        alt={_firstGroupFile?.name ?? ""}
-                                        class="h-full w-full object-cover"
-                                    />
-                                {:else}
-                                    <span class="text-text-muted/60">
-                                        <Icon
-                                            name={fileKindIcon(
-                                                _firstGroupFile?.mediaType ??
-                                                    "document",
-                                            )}
-                                            size={14}
-                                        />
+                                {#each _stackFiles as stackFile, stackIndex (stackFile.id)}
+                                    <span
+                                        class="absolute flex h-16 w-16 items-center justify-center overflow-hidden rounded-lg border border-border-soft bg-alabaster-grey/50"
+                                        style={`left: ${stackIndex * 6}px; top: ${stackIndex === 0 ? 4 : 12 - stackIndex * 4}px; transform: rotate(${stackIndex === 0 ? -4 : stackIndex === 1 ? 3 : 0}deg)`}
+                                    >
+                                        {#if previewUrls[stackFile.id]}
+                                            <img
+                                                src={previewUrls[stackFile.id]}
+                                                alt=""
+                                                class="h-full w-full object-cover"
+                                            />
+                                        {:else}
+                                            <Icon
+                                                name={fileKindIcon(
+                                                    stackFile.mediaType,
+                                                )}
+                                                size={18}
+                                            />
+                                        {/if}
                                     </span>
-                                {/if}
-                            </div>
+                                {/each}
+                            </span>
                             <div class="min-w-0 flex-1">
                                 <p class="truncate text-sm font-medium text-text-ink">
                                     {group.label ||
-                                        `Object ${group.id.slice(0, 6)}`}
+                                        formatTemplate(
+                                            t(
+                                                "ingestionSetup.flow.objectFallback",
+                                            ),
+                                            { id: group.id.slice(0, 6) },
+                                        )}
                                 </p>
                                 {#if hasPurgedPreview}
                                     <p class="mt-1 text-[10px] text-text-muted">
@@ -3918,32 +4208,29 @@
                             <span
                                 class="shrink-0 rounded-full border border-border-soft px-2 py-0.5 text-[10px] text-text-muted"
                             >
-                                {group.fileIds.length}
-                                {group.fileIds.length === 1 ? "file" : "files"}
+                                {formatTemplate(
+                                    formatPlural(dictionary, "ingestionSetup.organize.filesCount", group.fileIds.length, $locale),
+                                    { count: formatCount(group.fileIds.length, $locale) },
+                                )}
                             </span>
                             {#if !isItemMetadataComplete(key)}
                                 {@const missing = getItemMissingFields(key)}
                                 <span
                                     class="shrink-0 rounded-full border border-burnt-peach/30 bg-burnt-peach/10 px-2.5 py-0.5 text-[9px] uppercase tracking-[0.15em] text-burnt-peach"
-                                    title="Missing: {missing.join(', ')}"
-                                    >needs info</span
+                                    title={formatTemplate(
+                                        t(
+                                            "ingestionSetup.organize.missingFieldsTitle",
+                                        ),
+                                        { fields: missing.join(", ") },
+                                    )}
+                                    >{t(
+                                        "ingestionSetup.organize.needsInfo",
+                                    )}</span
                                 >
                             {/if}
                         </button>
                         {#if expandedMetadataKeys.includes(key)}
-                            {@const panelFiles = group.fileIds
-                                .map((id) => filesById.get(id))
-                                .filter(
-                                    (f): f is LocalIngestionFile =>
-                                        f !== undefined,
-                                )
-                                .map((f) => ({
-                                    id: String(f.id),
-                                    name: f.name,
-                                    mediaType: f.mediaType,
-                                    size: f.size,
-                                    previewUrl: previewUrls[f.id],
-                                }))}
+                            {@const panelFiles = _groupFiles.map(toPreviewItem)}
                             <div class="border-t border-border-soft px-6 py-5">
                                 <ObjectMetadataPanel
                                     objectKey={key}
@@ -3971,6 +4258,13 @@
                                     batchDescription={batchDefaults.summaryText}
                                     onMetadataChange={(patch) =>
                                         setObjectMeta(key, patch)}
+                                    onFilePreview={(fileId) =>
+                                        openPreviewGallery(
+                                            group.fileIds,
+                                            Number(fileId),
+                                        )}
+                                    onCheckPreviewAgain={(fileId) =>
+                                        checkPreviewAgain(Number(fileId))}
                                 />
                             </div>
                         {/if}
@@ -3994,24 +4288,25 @@
                                     ? ""
                                     : "transform: rotate(-90deg)"}>▾</span
                             >
-                            <div
-                                class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border-soft bg-alabaster-grey/50"
+                            <span
+                                class="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-soft bg-alabaster-grey/50"
+                                aria-hidden="true"
                             >
-                                {#if previewUrls[file.id] && file.mediaType === "image"}
+                                {#if previewUrls[file.id]}
                                     <img
                                         src={previewUrls[file.id]}
-                                        alt={file.name}
+                                        alt=""
                                         class="h-full w-full object-cover"
                                     />
                                 {:else}
                                     <span class="text-text-muted/60">
                                         <Icon
                                             name={fileKindIcon(file.mediaType)}
-                                            size={14}
+                                            size={20}
                                         />
                                     </span>
                                 {/if}
-                            </div>
+                            </span>
                             <div class="min-w-0 flex-1">
                                 <p class="truncate text-sm font-medium text-text-ink">
                                     {file.name}
@@ -4023,27 +4318,26 @@
                                 {/if}
                             </div>
                             <span class="shrink-0 text-xs text-text-muted"
-                                >{file.size}</span
+                                >{formatFileSize(file.sizeBytes, $locale)}</span
                             >
                             {#if !isItemMetadataComplete(key)}
                                 {@const missing = getItemMissingFields(key)}
                                 <span
                                     class="shrink-0 rounded-full border border-burnt-peach/30 bg-burnt-peach/10 px-2.5 py-0.5 text-[9px] uppercase tracking-[0.15em] text-burnt-peach"
-                                    title="Missing: {missing.join(', ')}"
-                                    >needs info</span
+                                    title={formatTemplate(
+                                        t(
+                                            "ingestionSetup.organize.missingFieldsTitle",
+                                        ),
+                                        { fields: missing.join(", ") },
+                                    )}
+                                    >{t(
+                                        "ingestionSetup.organize.needsInfo",
+                                    )}</span
                                 >
                             {/if}
                         </button>
                         {#if expandedMetadataKeys.includes(key)}
-                            {@const panelFiles = [
-                                {
-                                    id: String(file.id),
-                                    name: file.name,
-                                    mediaType: file.mediaType,
-                                    size: file.size,
-                                    previewUrl: previewUrls[file.id],
-                                },
-                            ]}
+                            {@const panelFiles = [toPreviewItem(file)]}
                             <div class="border-t border-border-soft px-6 py-5">
                                 <ObjectMetadataPanel
                                     objectKey={key}
@@ -4071,6 +4365,10 @@
                                     batchDescription={batchDefaults.summaryText}
                                     onMetadataChange={(patch) =>
                                         setObjectMeta(key, patch)}
+                                    onFilePreview={() =>
+                                        openSinglePreview(file.id)}
+                                    onCheckPreviewAgain={() =>
+                                        checkPreviewAgain(file.id)}
                                 />
                             </div>
                         {/if}
@@ -4093,9 +4391,13 @@
                             {canStartIngestion
                                 ? t("ingestionSetup.readiness.ready")
                                 : itemMutationFailure
-                                  ? "Reload to reconcile saved changes"
+                                  ? t(
+                                        "ingestionSetup.mutations.reconcileHint",
+                                    )
                                   : hasPendingItemMutations
-                                    ? "Saving object changes…"
+                                    ? t(
+                                        "ingestionSetup.mutations.saving",
+                                    )
                                 : hasPendingUploads
                                   ? t("ingestionSetup.readiness.uploading")
                                   : hasUploadFailures
@@ -4158,9 +4460,15 @@
                             <div
                                 class="rounded-xl border border-burnt-peach/35 bg-pearl-beige/60 px-4 py-3 text-xs text-text-muted"
                             >
-                                This document has <strong
-                                    >{largestGroupSize}</strong
-                                > pages. Please confirm this grouping before continuing.
+                                {formatTemplate(
+                                    formatPlural(
+                                        dictionary,
+                                        "ingestionSetup.organize.oversizedGroup",
+                                        largestGroupSize,
+                                        $locale,
+                                    ),
+                                    { count: formatCount(largestGroupSize, $locale) },
+                                )}
                             </div>
                         {/if}
                         {#if batchDefaults.itemKind === "scanned_document" && standaloneFiles.length >= 3 && !groupingWarningDismissed}
@@ -4171,11 +4479,10 @@
                                     >⚠</span
                                 >
                                 <p class="flex-1">
-                                    You have <strong
-                                        >{standaloneFiles.length}</strong
-                                    > separate objects with 1 file each. If these
-                                    are pages of the same document, consider grouping
-                                    them first.
+                                    {formatTemplate(
+                                        formatPlural(dictionary, "ingestionSetup.organize.groupingWarning", standaloneFiles.length, $locale),
+                                        { count: formatCount(standaloneFiles.length, $locale) },
+                                    )}
                                 </p>
                                 <button
                                     type="button"
@@ -4183,7 +4490,7 @@
                                     onclick={() => {
                                         groupingWarningDismissed = true;
                                     }}
-                                    aria-label="Dismiss">✕</button
+                                    aria-label={t("ingestionSetup.organize.dismiss")}>✕</button
                                 >
                             </div>
                         {/if}
@@ -4235,7 +4542,7 @@
                             <span class="text-text-ink"
                                 >{t("ingestionSetup.confirmation.files")}</span
                             >
-                            · {files.length}
+                            · {formatCount(files.length, $locale)}
                         </p>
                         <p>
                             <span class="text-text-ink"
@@ -4243,7 +4550,7 @@
                                     "ingestionSetup.confirmation.objects",
                                 )}</span
                             >
-                            · {objectCount}
+                            · {formatCount(objectCount, $locale)}
                         </p>
                         <p>
                             <span class="text-text-ink"
@@ -4373,23 +4680,24 @@
                             <p
                                 class="text-xs uppercase tracking-[0.2em] text-blue-slate"
                             >
-                                Empty batch
+                                {t("ingestionSetup.abandon.title")}
                             </p>
                             <h3 class="mt-2 font-display text-xl text-text-ink">
-                                No files uploaded yet
+                                {t("ingestionSetup.abandon.subtitle")}
                             </h3>
                         </div>
                         <button
                             type="button"
                             disabled={abandonDeleting}
                             class="text-sm text-text-muted"
-                            onclick={keepDraftAndLeave}>Close</button
+                            onclick={keepDraftAndLeave}>{t(
+                                "common.close",
+                            )}</button
                         >
                     </div>
                     <div class="mt-4 text-sm text-text-muted">
                         <p>
-                            You haven't uploaded any files. Delete this batch or
-                            keep it as a draft to continue later.
+                            {t("ingestionSetup.abandon.body")}
                         </p>
                     </div>
                     {#if abandonDeleteError}
@@ -4407,7 +4715,9 @@
                             type="button"
                             disabled={abandonDeleting}
                             class="rounded-full border border-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate"
-                            onclick={keepDraftAndLeave}>Keep as draft</button
+                            onclick={keepDraftAndLeave}>{t(
+                                "ingestionSetup.abandon.keepDraft",
+                            )}</button
                         >
                         <button
                             type="button"
@@ -4415,10 +4725,10 @@
                             class="rounded-full bg-burnt-peach px-4 py-2 text-xs uppercase tracking-[0.2em] text-surface-white disabled:opacity-40"
                             onclick={deleteBatchAndLeave}
                             >{abandonDeleting
-                                ? "Deleting…"
+                                ? t("ingestionSetup.abandon.deleting")
                                 : abandonDeleteError
-                                  ? "Retry delete"
-                                  : "Delete batch"}</button
+                                  ? t("ingestionSetup.abandon.retryDelete")
+                                  : t("ingestionSetup.abandon.deleteBatch")}</button
                         >
                     </div>
                 </div>
@@ -4433,13 +4743,24 @@
                     <Icon name="warn" size={14} />
                     <div class="min-w-0 flex-1">
                         <p class="text-xs uppercase tracking-[0.16em] text-burnt-peach">
-                            {itemMutationLabels[itemMutationFailure.operation]} could not be saved
+                            {formatTemplate(
+                                t("ingestionSetup.mutations.couldNotBeSaved"),
+                                {
+                                    label: t(
+                                        itemMutationLabels[
+                                            itemMutationFailure.operation
+                                        ],
+                                    ),
+                                },
+                            )}
                         </p>
                         <p class="mt-2 text-xs text-text-muted">
                             {itemMutationFailure.message}
                         </p>
                         <p class="mt-2 text-xs text-text-muted">
-                            Reload the saved setup before making more changes.
+                            {t(
+                                "ingestionSetup.mutations.reloadHint",
+                            )}
                         </p>
                     </div>
                 </div>
@@ -4448,7 +4769,7 @@
                     onclick={reloadSavedSetup}
                     class="mt-4 w-full rounded-full bg-burnt-peach px-4 py-2 text-xs uppercase tracking-[0.16em] text-surface-white transition hover:bg-burnt-peach/85"
                 >
-                    Reload saved setup
+                    {t("ingestionSetup.mutations.reloadAction")}
                 </button>
             </div>
         {:else if hasPendingItemMutations}
@@ -4457,24 +4778,54 @@
             >
                 <Icon name="clock" size={14} />
                 <p class="text-xs text-blue-slate">
-                    Saving object changes… Continue and navigation are temporarily disabled.
+                    {t("ingestionSetup.mutations.savingBlocked")}
                 </p>
             </div>
         {/if}
     </main>
 
     <FootnoteBar>
+        {#snippet top()}
+            {#if step === "organize"}
+                <span class="text-sm text-text-muted">
+                    {formatTemplate(
+                        formatPlural(dictionary, "ingestionSetup.organize.readySummary", organizeObjectCount, $locale),
+                        { count: formatCount(organizeObjectCount, $locale) },
+                    )}
+                    {#if standaloneFiles.length > 0}
+                        · <span class="text-blue-slate/70"
+                            >{formatTemplate(
+                                t("ingestionSetup.organize.unassignedCount"),
+                                { count: formatCount(standaloneFiles.length, $locale) },
+                            )}</span
+                        >
+                    {/if}
+                </span>
+            {:else}
+                <span class="text-sm text-text-muted">
+                    {canStartIngestion
+                        ? t("ingestionSetup.readiness.ready")
+                        : itemMutationFailure
+                          ? t("ingestionSetup.mutations.reconcileHint")
+                          : hasPendingItemMutations
+                            ? t("ingestionSetup.mutations.saving")
+                        : hasPendingUploads
+                          ? t("ingestionSetup.readiness.uploading")
+                          : t("ingestionSetup.readiness.missingItemMetadata")}
+                </span>
+            {/if}
+        {/snippet}
         {#snippet left()}
             <span
                 class="whitespace-nowrap text-xs uppercase tracking-[0.2em] text-text-muted"
-                >Step 2 of 3</span
+                >{formatTemplate(t("ingestionNew.stepCounter"), { current: 2, total: 3 })}</span
             >
             <span class="hidden sm:flex">
                 <Stepper
                     steps={[
-                        { id: "configure", label: "Configure" },
-                        { id: "upload", label: "Upload" },
-                        { id: "review", label: "Review" },
+                        { id: "configure", label: t("ingestionNew.steps.configure") },
+                        { id: "upload", label: t("ingestionNew.steps.upload") },
+                        { id: "review", label: t("ingestionNew.steps.review") },
                     ]}
                     current={1}
                     onJump={(i) => {
@@ -4485,20 +4836,13 @@
         {/snippet}
         {#snippet right()}
             {#if step === "organize"}
-                <span class="text-sm text-text-muted">
-                    {organizeObjectCount}
-                    {organizeObjectCount === 1 ? "object" : "objects"} ready
-                    {#if standaloneFiles.length > 0}
-                        · <span class="text-blue-slate/70"
-                            >{standaloneFiles.length} unassigned</span
-                        >
-                    {/if}
-                </span>
                 <a
                     href={resolve("/ingestion")}
                     class="inline-flex items-center gap-2 rounded-full border border-border-soft px-5 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:bg-pale-sky/20 hover:text-text-ink transition-all"
                 >
-                    <Icon name="arrow-l" size={13} /> Back
+                    <Icon name="arrow-l" size={13} /> {t(
+                        "ingestionSetup.flow.back",
+                    )}
                 </a>
                 <button
                     disabled={hasPendingUploads || hasItemMutationBlock}
@@ -4507,37 +4851,40 @@
                     }}
                     class="inline-flex items-center gap-2 rounded-full bg-blue-slate-deep text-surface-white px-5 py-2 text-xs uppercase tracking-[0.2em] border border-blue-slate-deep hover:bg-blue-slate transition-all disabled:opacity-40 disabled:pointer-events-none"
                 >
-                    Continue <Icon name="arrow-r" size={13} />
+                    {t("ingestionSetup.flow.continue")}
+                    <Icon name="arrow-r" size={13} />
                 </button>
             {:else}
-                <span class="text-sm text-text-muted">
-                    {canStartIngestion
-                        ? t("ingestionSetup.readiness.ready")
-                        : itemMutationFailure
-                          ? "Reload to reconcile saved changes"
-                          : hasPendingItemMutations
-                            ? "Saving object changes…"
-                        : hasPendingUploads
-                          ? t("ingestionSetup.readiness.uploading")
-                          : t("ingestionSetup.readiness.missingItemMetadata")}
-                </span>
                 <button
                     onclick={() => {
                         step = "organize";
                     }}
                     class="inline-flex items-center gap-2 rounded-full border border-border-soft px-5 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:bg-pale-sky/20 hover:text-text-ink transition-all"
                 >
-                    <Icon name="arrow-l" size={13} /> Back
+                    <Icon name="arrow-l" size={13} /> {t(
+                        "ingestionSetup.flow.back",
+                    )}
                 </button>
                 <button
                     disabled={!canStartIngestion || isSubmitting}
                     onclick={startIngestion}
                     class="inline-flex items-center gap-2 rounded-full bg-blue-slate text-surface-white px-5 py-2 text-xs uppercase tracking-[0.2em] border border-blue-slate hover:bg-blue-slate-mid-dark transition-all disabled:opacity-40 disabled:pointer-events-none"
                 >
-                    {isSubmitting ? "Preparing…" : "Continue"}
+                    {isSubmitting
+                        ? t("ingestionSetup.flow.preparing")
+                        : t("ingestionSetup.flow.continue")}
                     <Icon name="arrow-r" size={13} />
                 </button>
             {/if}
         {/snippet}
     </FootnoteBar>
+
+    <IngestionPreviewOverlay
+        open={isPreviewGalleryOpen}
+        items={previewGalleryItems}
+        activeIndex={previewGalleryActiveIndex}
+        onSelect={selectPreviewGalleryAt}
+        onCheckAgain={(fileId) => checkPreviewAgain(Number(fileId))}
+        onClose={closePreviewGallery}
+    />
 </div>

@@ -1,4 +1,8 @@
 <script lang="ts">
+	import { locale } from '$lib/i18n/locale';
+	import { translations, type TranslationKey } from '$lib/i18n/translations';
+	import { formatTemplate, translate } from '$lib/i18n/translate';
+
 	let {
 		sourceLabel = 'Auto-extracted',
 		curatedLabel = 'Curated',
@@ -14,6 +18,9 @@
 		confidence?: number;
 		onCuratedChange: (text: string) => void;
 	} = $props();
+
+	const dictionary = $derived(translations[$locale]);
+	const t = (key: TranslationKey) => translate(dictionary, key);
 
 	const handleCopyFromSource = (): void => {
 		onCuratedChange(sourceText);
@@ -32,17 +39,17 @@
 				<span class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">{sourceLabel}</span>
 				{#if confidence !== undefined}
 					<span class="rounded-full bg-pale-sky/40 px-2 py-0.5 text-[9px] uppercase tracking-[0.12em] text-blue-slate">
-						{confidence}% confidence
+						{formatTemplate(t('objectEdit.editor.confidence'), { confidence })}
 					</span>
 				{/if}
 			</div>
-			<span class="text-[9px] uppercase tracking-[0.12em] text-text-muted">Read-only</span>
+			<span class="text-[9px] uppercase tracking-[0.12em] text-text-muted">{t('objectEdit.editor.readOnly')}</span>
 		</div>
 		<div class="flex-1 overflow-y-auto rounded-xl border border-blue-slate/15 bg-pale-sky/20 px-4 py-3 text-sm leading-relaxed text-blue-slate/85">
 			{#if sourceText}
 				{sourceText}
 			{:else}
-				<span class="italic text-text-muted">No source text available</span>
+				<span class="italic text-text-muted">{t('objectEdit.editor.noSourceText')}</span>
 			{/if}
 		</div>
 	</div>
@@ -57,7 +64,7 @@
 					onclick={handleCopyFromSource}
 					class="rounded-full border border-blue-slate/30 px-2.5 py-1 text-[9px] uppercase tracking-[0.12em] text-blue-slate transition hover:bg-pale-sky/30"
 				>
-					Copy from source
+					{t('objectEdit.editor.copyFromSource')}
 				</button>
 				{#if curatedText}
 					<button
@@ -65,7 +72,7 @@
 						onclick={handleReset}
 						class="text-[9px] uppercase tracking-[0.12em] text-burnt-peach/80 transition hover:text-burnt-peach"
 					>
-						Reset
+						{t('objectEdit.editor.reset')}
 					</button>
 				{/if}
 			</div>
@@ -73,7 +80,7 @@
 		<textarea
 			class="flex-1 resize-none rounded-xl border border-pearl-beige/50 bg-pearl-beige/15 px-4 py-3 text-sm leading-relaxed text-text-ink placeholder:text-text-muted/50 focus:border-pearl-beige focus:outline-none focus:ring-1 focus:ring-pearl-beige/60"
 			rows="8"
-			placeholder="Enter curated text, or copy from source and edit..."
+			placeholder={t('objectEdit.editor.curatedPlaceholder')}
 			value={curatedText}
 			oninput={(e) => onCuratedChange(e.currentTarget.value)}
 		></textarea>

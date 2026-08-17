@@ -19,6 +19,9 @@ import { z } from "zod";
 
 const availableFileIdSchema = z.uuid();
 
+type LoadError = { code: 'loadFailed'; requestId: string | null };
+type DownloadMessageCode = 'available' | 'completed' | 'queued';
+
 export const load = async ({
     params,
     locals,
@@ -46,11 +49,11 @@ export const load = async ({
         });
 
         let artifacts: ObjectArtifact[] = [];
-        let artifactsError: string | null = null;
+        let artifactsError: LoadError | null = null;
         let availableFiles: ObjectAvailableFile[] = [];
-        let availableFilesError: string | null = null;
+        let availableFilesError: LoadError | null = null;
         let pendingRequests: ArchiveRequest[] = [];
-        let pendingRequestsError: string | null = null;
+        let pendingRequestsError: LoadError | null = null;
 
         try {
             artifacts = await objectsService.listObjectArtifacts({
@@ -63,13 +66,12 @@ export const load = async ({
                 throw redirect(303, "/login");
             }
 
-            if (isApiClientError(artifactsCause)) {
-                artifactsError = artifactsCause.requestId
-                    ? `Failed to load object artifacts (request: ${artifactsCause.requestId}).`
-                    : "Failed to load object artifacts.";
-            } else {
-                artifactsError = "Failed to load object artifacts.";
-            }
+            artifactsError = {
+                code: 'loadFailed',
+                requestId: isApiClientError(artifactsCause)
+                    ? artifactsCause.requestId
+                    : null,
+            };
         }
 
         try {
@@ -83,13 +85,12 @@ export const load = async ({
                 throw redirect(303, "/login");
             }
 
-            if (isApiClientError(availableFilesCause)) {
-                availableFilesError = availableFilesCause.requestId
-                    ? `Failed to load available archive files (request: ${availableFilesCause.requestId}).`
-                    : "Failed to load available archive files.";
-            } else {
-                availableFilesError = "Failed to load available archive files.";
-            }
+            availableFilesError = {
+                code: 'loadFailed',
+                requestId: isApiClientError(availableFilesCause)
+                    ? availableFilesCause.requestId
+                    : null,
+            };
         }
 
         try {
@@ -108,13 +109,12 @@ export const load = async ({
                 throw redirect(303, "/login");
             }
 
-            if (isApiClientError(pendingRequestsCause)) {
-                pendingRequestsError = pendingRequestsCause.requestId
-                    ? `Failed to load pending requests (request: ${pendingRequestsCause.requestId}).`
-                    : "Failed to load pending requests.";
-            } else {
-                pendingRequestsError = "Failed to load pending requests.";
-            }
+            pendingRequestsError = {
+                code: 'loadFailed',
+                requestId: isApiClientError(pendingRequestsCause)
+                    ? pendingRequestsCause.requestId
+                    : null,
+            };
         }
 
         return {
@@ -161,7 +161,7 @@ export const actions: Actions = {
 
         const objectId = params.objectId;
         if (!objectId) {
-            return fail(404, { error: "Object not found." });
+            return fail(404, { errorCode: 'missingFileId' });
         }
 
         const formData = await request.formData();
@@ -169,10 +169,10 @@ export const actions: Actions = {
             formData.get("availableFileId") ?? "",
         ).trim();
         if (!availableFileId) {
-            return fail(400, { error: "Missing available file id." });
+            return fail(400, { errorCode: 'missingFileId' });
         }
         if (!availableFileIdSchema.safeParse(availableFileId).success) {
-            return fail(400, { error: "Invalid available file id." });
+            return fail(400, { errorCode: 'invalidFileId' });
         }
 
         try {
@@ -185,7 +185,7 @@ export const actions: Actions = {
             return {
                 success: true,
                 result,
-                message: downloadRequestMessage(result),
+                messageCode: downloadRequestMessageCode(result),
             };
         } catch (cause) {
             if (isUnauthorizedError(cause)) {
@@ -195,27 +195,29 @@ export const actions: Actions = {
 
             if (isApiClientError(cause)) {
                 return fail(cause.status || 502, {
-                    error: cause.requestId
-                        ? `Failed to request download (request: ${cause.requestId}).`
-                        : "Failed to request download.",
+                    errorCode: 'requestDownloadFailed',
+                    requestId: cause.requestId ?? null,
                 });
             }
 
-            return fail(502, { error: "Failed to request download." });
+            return fail(502, {
+                errorCode: 'requestDownloadFailed',
+                requestId: null,
+            });
         }
     },
 };
 
-const downloadRequestMessage = (
+const downloadRequestMessageCode = (
     result: CreateObjectDownloadRequestResult,
-): string => {
+): DownloadMessageCode => {
     if (result.status === "available") {
-        return "File is already available and ready to download.";
+        return "available";
     }
 
     if (result.request?.status === "COMPLETED") {
-        return "Download request is completed and file is ready.";
+        return "completed";
     }
 
-    return "Download request queued. The file will be available after archive sync completes.";
+    return "queued";
 };

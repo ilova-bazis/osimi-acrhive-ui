@@ -96,3 +96,43 @@
 	border-radius: 2px;
 	margin-bottom: 8px;
 }
+
+/* Authenticated shell: dynamic-viewport frame with a single route scrollport below lg.
+   At lg and above the document owns scrolling and the desktop grid applies. */
+.app-mobile-frame {
+	height: 100vh;
+	height: 100dvh;
+	overflow: hidden;
+}
+
+.app-content-column {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+}
+
+.app-route-scrollport {
+	flex: 1 1 0%;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+@media (min-width: 1024px) {
+	.app-mobile-frame {
+		height: auto;
+		min-height: 100vh;
+		overflow: visible;
+	}
+
+	.app-content-column {
+		height: auto;
+		min-height: 100vh;
+	}
+
+	.app-route-scrollport {
+		flex: none;
+		overflow-y: visible;
+	}
+}

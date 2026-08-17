@@ -5,7 +5,8 @@ import { hydrateIngestionItems, mapIngestionItemMetadata } from './setupItemHydr
 const makeItem = (overrides: Partial<IngestionDetailItem> = {}): IngestionDetailItem => ({
 	id: 'item-1',
 	itemIndex: 1,
-	status: 'DRAFT',
+	status: null,
+	statusRaw: 'DRAFT',
 	summary: {},
 	files: [],
 	...overrides

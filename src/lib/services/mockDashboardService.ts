@@ -11,10 +11,11 @@ const toActivity = (activity: {
 	objectId?: string | null;
 	actorUserId?: string | null;
 	payload?: unknown;
-}) => ({
+}): DashboardSummary['recentActivity'][number] => ({
 	id: activity.id,
-	title: activity.title,
-	description: activity.description,
+	eventCode: null,
+	typeFallback: activity.title,
+	description: { code: 'raw', text: activity.description },
 	timestamp: activity.timestamp,
 	type: activity.type ?? 'ACTIVITY_EVENT',
 	ingestionId: activity.ingestionId ?? null,
@@ -36,9 +37,7 @@ const summaries: Record<Role, DashboardSummary> = {
 			needsReview: 7,
 			pendingUploads: 12
 		},
-		primaryAction: 'Review access requests',
-		secondaryAction: 'Audit recent activity',
-		roleTagline: 'System oversight and access control.',
+		roleCopyCode: 'admin',
 		recentActivity: [
 			toActivity({
 				id: 'activity-admin-1',
@@ -66,9 +65,7 @@ const summaries: Record<Role, DashboardSummary> = {
 			needsReview: 5,
 			pendingUploads: 9
 		},
-		primaryAction: 'Start a new batch',
-		secondaryAction: 'Review flagged items',
-		roleTagline: 'Prepare and validate ingestion batches.',
+		roleCopyCode: 'archiver',
 		recentActivity: [
 			toActivity({
 				id: 'activity-archiver-1',
@@ -102,9 +99,7 @@ const summaries: Record<Role, DashboardSummary> = {
 			needsReview: 1,
 			pendingUploads: 4
 		},
-		primaryAction: 'Open latest releases',
-		secondaryAction: 'View activity summary',
-		roleTagline: 'Browse approved materials and reports.',
+		roleCopyCode: 'viewer',
 		recentActivity: [
 			toActivity({
 				id: 'activity-viewer-1',

@@ -20,7 +20,15 @@ export default defineConfig(
 		rules: {
 			// typescript-eslint strongly recommend that you do not use the no-undef lint rule on TypeScript projects.
 			// see: https://typescript-eslint.io/troubleshooting/faqs/eslint/#i-get-errors-from-the-no-undef-rule-about-global-variables-not-being-defined-even-though-there-are-no-typescript-errors
-			"no-undef": 'off'
+			"no-undef": 'off',
+			'no-restricted-imports': ['error', {
+				patterns: [
+					{ group: ['$lib/objectView', '$lib/objectView/*'], message: 'Prototype mock data is not a production dependency.' },
+					{ group: ['$lib/components/object-view', '$lib/components/object-view/*'], message: 'Use production object-detail components.' },
+					{ group: ['$lib/components/object-view-alt', '$lib/components/object-view-alt/*'], message: 'Use production object-detail components.' },
+					{ group: ['$lib/prototype', '$lib/prototype/*'], message: 'Prototype reference code cannot be imported by the application.' }
+				]
+			}]
 		}
 	},
 	{

@@ -7,7 +7,9 @@
 	import type { FileStatus } from '$lib/types';
 	import type { AccessReasonCode, ObjectRow } from '$lib/services/objects';
 	import { locale } from '$lib/i18n/locale';
-	import { translations } from '$lib/i18n/translations';
+	import { translations, type TranslationKey } from '$lib/i18n/translations';
+	import { availabilityStateKeys, knownObjectTypeKey, processingStateKeys } from '$lib/i18n/domainLabels';
+	import { formatCount, formatDateTime } from '$lib/i18n/format';
 	import { formatTemplate, translate } from '$lib/i18n/translate';
 	import { withObjectsReturnTo } from '$lib/objects/navigation';
 
@@ -35,16 +37,17 @@
 		totalCount: number;
 	}>();
 	const objectHref = (objectId: string): string =>
-		withObjectsReturnTo(resolve('/objects/[objectId]', { objectId }), returnTo);
+		withObjectsReturnTo(`/objects/${objectId}`, returnTo);
 
 	const dictionary = $derived(translations[$locale]);
-	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
+	const t = (key: TranslationKey) => translate(dictionary, key);
 
-	const formatDate = (value: string) => new Date(value).toLocaleDateString();
+	const formatDate = (value: string) =>
+		formatDateTime(value, $locale, t('values.unknown'));
 	const titleFallback = (row: ObjectRow) =>
 		formatTemplate(t('objects.table.untitled'), { suffix: row.objectId.slice(-6) });
-	const processingLabel = (state: ObjectRow['processingState']) => state.replace(/_/g, ' ');
-	const availabilityLabel = (value: ObjectRow['availabilityState']) => value.replace(/_/g, ' ');
+	const processingLabel = (state: ObjectRow['processingState']) => t(processingStateKeys[state]);
+	const availabilityLabel = (value: ObjectRow['availabilityState']) => t(availabilityStateKeys[value]);
 	const accessLevelLabel = (value: ObjectRow['accessLevel']): string =>
 		value === 'private'
 			? t('ingestionSetup.batchIntent.accessLevels.private')
@@ -53,6 +56,12 @@
 				: t('ingestionSetup.batchIntent.accessLevels.public');
 
 	const reasonLabel = (reason: AccessReasonCode): string => t(`objects.table.reasons.${reason}`);
+
+	const objectTypeLabel = (type: string): string => {
+		const key = knownObjectTypeKey(type);
+		return key ? t(key) : type;
+	};
+
 
 	const reasonActionLabel = (reason: AccessReasonCode): string | null => {
 		if (reason === 'RESTORE_REQUIRED') return t('objects.table.reasonActions.RESTORE_REQUIRED');
@@ -167,7 +176,7 @@
 							{row.title ?? titleFallback(row)}
 						</a>
 						<div class="mt-1 flex flex-wrap items-center gap-2">
-							<span class="text-xs text-text-muted">{row.type}</span>
+							<span class="text-xs text-text-muted">{objectTypeLabel(row.type)}</span>
 							<StatusBadge status={toBadgeStatus(row)} label={processingLabel(row.processingState)} />
 						</div>
 						{#if !row.canDownload}
@@ -251,7 +260,7 @@
 						</a>
 						<a href={resolve(objectHref(row.objectId) as '/objects')} class="block truncate text-xs text-text-muted hover:text-blue-slate">{row.objectId}</a>
 						<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-							<span class="text-xs text-text-muted">{row.type}</span>
+							<span class="text-xs text-text-muted">{objectTypeLabel(row.type)}</span>
 							<StatusBadge status={toBadgeStatus(row)} label={processingLabel(row.processingState)} />
 							{#if !row.canDownload}
 								<span class="text-xs text-burnt-peach">{reasonLabel(reasonCode)}</span>
@@ -365,14 +374,14 @@
 									{/if}
 								{/if}
 							</div>
-							<span class="text-xs text-text-muted">{row.type}</span>
+							<span class="text-xs text-text-muted">{objectTypeLabel(row.type)}</span>
 							<StatusBadge status={toBadgeStatus(row)} label={processingLabel(row.processingState)} />
 							<div class="flex flex-wrap items-center gap-1">
 								{#if row.indicators.accessPdf}
-									<span title="Materialized PDF derivative"><Chip class="border-blue-slate/30 bg-pale-sky/25 text-xs text-blue-slate">PDF</Chip></span>
+									<span title={t('objects.table.materializedPdf')}><Chip class="border-blue-slate/30 bg-pale-sky/25 text-xs text-blue-slate">PDF</Chip></span>
 								{/if}
 								{#if row.indicators.ocr}
-									<span title="Materialized OCR text"><Chip class="border-blue-slate/30 bg-pale-sky/25 text-xs text-blue-slate">OCR</Chip></span>
+									<span title={t('objects.table.materializedOcr')}><Chip class="border-blue-slate/30 bg-pale-sky/25 text-xs text-blue-slate">OCR</Chip></span>
 								{/if}
 								{#if !row.indicators.accessPdf && !row.indicators.ocr}
 									<span class="text-xs text-text-muted">-</span>
@@ -443,7 +452,7 @@
 
 <footer class="flex flex-wrap items-center justify-between gap-4">
 	<p class="text-xs text-text-muted">
-		{formatTemplate(t('objects.table.showing'), { rows: rows.length, filtered: filteredCount, total: totalCount })}
+		{formatTemplate(t('objects.table.showing'), { rows: formatCount(rows.length, $locale), filtered: formatCount(filteredCount, $locale), total: formatCount(totalCount, $locale) })}
 	</p>
 	<div class="flex items-center gap-2">
 		{#if showFirstPage}

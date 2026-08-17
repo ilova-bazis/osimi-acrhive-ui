@@ -1,5 +1,7 @@
 # Prototype / Deprecated Surface Analysis
 
+> Historical analysis: the routed prototype, ingestion prototype, gallery routes, mock object-view data, and prototype-only component stacks described below were removed from production source. See `docs/prototype-production-boundary.md` for current policy.
+
 Scope inspected:
 
 - `src/routes/prototype/**`

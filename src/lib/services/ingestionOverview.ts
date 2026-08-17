@@ -46,7 +46,8 @@ export type IngestionBatch = {
 	id: string;
 	name: string;
 	createdAt: string;
-	status: IngestionStatus;
+	status: IngestionStatus | null;
+	statusRaw: string;
 	progress: {
 		completed: number;
 		total: number;

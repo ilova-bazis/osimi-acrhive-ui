@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { fly } from 'svelte/transition';
+	import { locale } from '$lib/i18n/locale';
+	import { translate } from '$lib/i18n/translate';
+import { translations, type TranslationKey } from '$lib/i18n/translations';
 
 	export type SupportSheetState = 'hidden' | 'peek' | 'expanded';
 
@@ -28,6 +31,9 @@
 		children?: () => unknown;
 	}>();
 
+	const dictionary = $derived(translations[$locale]);
+	const t = (key: TranslationKey) => translate(dictionary, key);
+
 	const handleToggle = (): void => {
 		if (state === 'peek') onStateChange('expanded');
 		else if (state === 'expanded') onStateChange('peek');
@@ -44,7 +50,7 @@
 	<button
 		type="button"
 		class="fixed inset-0 z-30 bg-black/20 backdrop-blur-[2px]"
-		aria-label="Close support panel"
+		aria-label={t('objects.detail.supportSheet.close')}
 		onclick={() => onStateChange('hidden')}
 	></button>
 {/if}
@@ -59,20 +65,20 @@
 			type="button"
 			class="flex w-full flex-col items-center px-5 pb-2 pt-3"
 			onclick={handleToggle}
-			aria-label={state === 'peek' ? 'Expand support panel' : 'Collapse support panel'}
+			aria-label={state === 'peek' ? t('objects.detail.supportSheet.expand') : t('objects.detail.supportSheet.collapse')}
 		>
 			<div class={`h-1 w-9 rounded-full ${variant === 'dark' ? 'bg-white/18' : 'bg-text-muted/25'}`}></div>
 		</button>
 
 		<div class={`flex items-center justify-between gap-4 px-5 ${state === 'expanded' ? `pb-3 border-b ${variant === 'dark' ? 'border-white/8' : 'border-border-soft'}` : 'pb-3'}`}>
 			<div class="min-w-0">
-				<p class={`text-xs uppercase tracking-[0.2em] ${variant === 'dark' ? 'text-white/35' : 'text-blue-slate'}`}>Support</p>
+				<p class={`text-xs uppercase tracking-[0.2em] ${variant === 'dark' ? 'text-white/35' : 'text-blue-slate'}`}>{t('objects.detail.supportSheet.kicker')}</p>
 				<h2 class="mt-1 truncate text-sm font-medium">{title}</h2>
 			</div>
 			<button
 				type="button"
 				class={`shrink-0 rounded-full border p-1.5 transition ${variant === 'dark' ? 'border-white/10 text-white/55 hover:text-white' : 'border-border-soft text-text-muted hover:text-blue-slate'}`}
-				aria-label="Close support panel"
+				aria-label={t('objects.detail.supportSheet.close')}
 				onclick={() => onStateChange('hidden')}
 			>
 				<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" class="h-4 w-4" aria-hidden="true">

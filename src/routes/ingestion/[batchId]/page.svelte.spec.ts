@@ -23,6 +23,7 @@ const detail: IngestionDetail = {
 	id: 'batch-1',
 	batchLabel: 'Batch 1',
 	status: 'completed',
+	statusRaw: 'COMPLETED',
 	actionCapabilities: {
 		canResume: false,
 		canRetry: false,
@@ -55,7 +56,8 @@ const detail: IngestionDetail = {
 		{
 			id: 'file-1',
 			name: 'page-1.jpg',
-			status: 'UPLOADED',
+			status: 'uploaded',
+			statusRaw: 'UPLOADED',
 			contentType: 'image/jpeg',
 			sizeBytes: 100,
 			createdAt: '2026-01-01T00:00:00.000Z',

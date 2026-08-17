@@ -1,14 +1,25 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import BaseDialog from '$lib/components/BaseDialog.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import ObjectDetailInfoDrawer from '$lib/components/object-detail/ObjectDetailInfoDrawer.svelte';
 	import ObjectDetailTopBar from '$lib/components/object-detail/ObjectDetailTopBar.svelte';
 	import ObjectSupportSheet from '$lib/components/object-detail/ObjectSupportSheet.svelte';
 	import ObjectViewerCanvas from '$lib/components/object-detail/ObjectViewerCanvas.svelte';
+	import { formatCount, formatDateTime, formatFileSize } from '$lib/i18n/format';
+	import {
+		availabilityStateKeys,
+		curationStateKeys,
+		knownMediaTypeKey,
+		knownRequestActionKey,
+		mediaTypeKeys,
+		processingStateKeys,
+		requestStatusKeys
+	} from '$lib/i18n/domainLabels';
 	import { locale } from '$lib/i18n/locale';
-	import { translations } from '$lib/i18n/translations';
-	import { formatTemplate, translate } from '$lib/i18n/translate';
+	import { translations, type TranslationKey } from '$lib/i18n/translations';
+	import { formatPlural, formatTemplate, translate } from '$lib/i18n/translate';
 	import type { ArchiveRequest } from '$lib/services/archiveRequests';
 	import type {
 		ObjectArtifact,
@@ -38,11 +49,11 @@
 			backHref: string;
 			viewer: ObjectViewer | null;
 			artifacts: ObjectArtifact[];
-			artifactsError: string | null;
+			artifactsError: { code: 'loadFailed'; requestId: string | null } | null;
 			availableFiles: ObjectAvailableFile[];
-			availableFilesError: string | null;
+			availableFilesError: { code: 'loadFailed'; requestId: string | null } | null;
 			pendingRequests: ArchiveRequest[];
-			pendingRequestsError: string | null;
+			pendingRequestsError: { code: 'loadFailed'; requestId: string | null } | null;
 			session?: { role: string } | null;
 		};
 		form?: ActionData;
@@ -91,12 +102,18 @@
 	};
 
 	const dictionary = $derived(translations[$locale]);
-	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
+	const t = (key: TranslationKey) => translate(dictionary, key);
 
-	const availabilityLabel = (value: ObjectDetail['availabilityState']): string => value.replace(/_/g, ' ');
-	const processingLabel = (value: ObjectDetail['processingState']): string => value.replace(/_/g, ' ');
-	const curationLabel = (value: ObjectDetail['curationState']): string => value.replace(/_/g, ' ');
-	const formatDate = (value: string | null): string => (value ? new Date(value).toLocaleString() : '-');
+	const availabilityLabel = (value: ObjectDetail['availabilityState']): string =>
+		t(availabilityStateKeys[value]);
+	const processingLabel = (value: ObjectDetail['processingState']): string =>
+		t(processingStateKeys[value]);
+	const curationLabel = (value: ObjectDetail['curationState']): string =>
+		t(curationStateKeys[value]);
+	const reasonLabel = (value: ObjectDetail['accessReasonCode']): string =>
+		t(`objects.table.reasons.${value}`);
+	const formatDate = (value: string | null): string =>
+		formatDateTime(value, $locale, t('values.unknown'));
 
 	const accessLevelLabel = (value: ObjectDetail['accessLevel']): string =>
 		value === 'private'
@@ -104,6 +121,60 @@
 			: value === 'family'
 				? t('ingestionSetup.batchIntent.accessLevels.family')
 				: t('ingestionSetup.batchIntent.accessLevels.public');
+
+	const LOAD_ERROR_KEYS = {
+		artifacts: {
+			plain: 'objects.detail.errors.loadArtifacts',
+			request: 'objects.detail.errors.loadArtifactsRequest'
+		},
+		availableFiles: {
+			plain: 'objects.detail.errors.loadAvailableFiles',
+			request: 'objects.detail.errors.loadAvailableFilesRequest'
+		},
+		pendingRequests: {
+			plain: 'objects.detail.errors.loadPendingRequests',
+			request: 'objects.detail.errors.loadPendingRequestsRequest'
+		}
+	} as const satisfies Record<string, { plain: TranslationKey; request: TranslationKey }>;
+
+	const loadErrorLabel = (
+		errorState: { code: 'loadFailed'; requestId: string | null } | null,
+		keyBase: keyof typeof LOAD_ERROR_KEYS
+	): string | null => {
+		if (!errorState) return null;
+		return errorState.requestId
+			? formatTemplate(t(LOAD_ERROR_KEYS[keyBase].request), {
+					requestId: errorState.requestId
+				})
+			: t(LOAD_ERROR_KEYS[keyBase].plain);
+	};
+
+	const DOWNLOAD_MESSAGE_KEYS = {
+		available: 'objects.detail.downloadMessages.available',
+		completed: 'objects.detail.downloadMessages.completed',
+		queued: 'objects.detail.downloadMessages.queued'
+	} as const satisfies Record<string, TranslationKey>;
+
+	const downloadMessageLabel = (code: string | undefined): string | null => {
+		if (!code) return null;
+		const key = (DOWNLOAD_MESSAGE_KEYS as Record<string, TranslationKey>)[code];
+		return key ? t(key) : null;
+	};
+
+	const requestErrorLabel = (
+		errorCode: string | undefined,
+		requestId: string | null | undefined
+	): string | null => {
+		if (!errorCode) return null;
+		if (errorCode === 'missingFileId') return t('objects.detail.errors.missingFileId');
+		if (errorCode === 'invalidFileId') return t('objects.detail.errors.invalidFileId');
+		if (errorCode === 'requestDownloadFailed') {
+			return requestId
+				? formatTemplate(t('objects.detail.errors.requestDownloadFailedRequest'), { requestId })
+				: t('objects.detail.errors.requestDownloadFailed');
+		}
+		return null;
+	};
 
 	const toTone = (
 		status: ObjectDetail['processingState'],
@@ -128,14 +199,10 @@
 		}
 	};
 
-	const formatSize = (bytes: number): string => {
-		if (bytes < 1024) return `${bytes} B`;
-		const kb = bytes / 1024;
-		if (kb < 1024) return `${kb.toFixed(1)} KB`;
-		return `${(kb / 1024).toFixed(1)} MB`;
-	};
+	const formatSize = (bytes: number): string => formatFileSize(bytes, $locale);
 
-	const formatOptionalSize = (bytes: number | null): string => (bytes === null ? '-' : formatSize(bytes));
+	const formatOptionalSize = (bytes: number | null): string =>
+		bytes === null ? t('values.unknown') : formatSize(bytes);
 	const asRecord = (value: unknown): Record<string, unknown> | null => {
 		if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
 			return value as Record<string, unknown>;
@@ -177,13 +244,24 @@
 		detail.title ?? formatTemplate(t('objects.detail.untitled'), { suffix: detail.objectId.slice(-6) })
 	);
 	const reviewLabel = $derived.by(() => {
-		if (viewer?.primarySource.status === 'available') return 'Media available in read-only mode';
-		if (viewer?.primarySource.status === 'request_pending') return 'Primary media request in progress';
-		if (viewer?.primarySource.status === 'request_required') return 'Primary media available on request';
-		if (viewer?.primarySource.status === 'restricted') return 'Preview artifacts only';
-		return 'Read-only object inspection';
+		if (viewer?.primarySource.status === 'available') return t('objects.detail.review.available');
+		if (viewer?.primarySource.status === 'request_pending') return t('objects.detail.review.requestPending');
+		if (viewer?.primarySource.status === 'request_required') return t('objects.detail.review.requestRequired');
+		if (viewer?.primarySource.status === 'restricted') return t('objects.detail.review.restricted');
+		return t('objects.detail.review.readOnly');
 	});
-	const mediaTypeLabel = $derived(viewer?.mediaType ?? detail.type.toLowerCase());
+	const resolveMediaTypeLabel = (currentViewer: ObjectViewer | null, objectType: string): string => {
+		if (currentViewer) return t(mediaTypeKeys[currentViewer.mediaType]);
+		const key = knownMediaTypeKey(objectType);
+		return key ? t(key) : objectType;
+	};
+	const mediaTypeLabel = $derived(resolveMediaTypeLabel(viewer, detail.type));
+	const requestActionLabel = (actionType: string): string => {
+		const key = knownRequestActionKey(actionType);
+		return key ? t(key) : actionType;
+	};
+	const requestStatusLabel = (status: ArchiveRequest['status']): string =>
+		t(requestStatusKeys[status]);
 	const pageBgClass = $derived.by(() => {
 		if (viewer?.mediaType === 'document') return 'bg-[linear-gradient(180deg,#f5f2eb_0%,#edf1f2_100%)]';
 		if (viewer?.mediaType === 'audio') return 'bg-[#1f2f38]';
@@ -248,72 +326,68 @@
 />
 
 
-<main class={`min-h-screen ${pageBgClass}`}>
+<main class={`min-h-full lg:min-h-screen ${pageBgClass}`}>
 	<div class="mx-auto flex max-w-[96rem] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
 		<div class="max-w-3xl">
-			<p class={`text-xs uppercase tracking-[0.2em] ${introLabelClass}`}>{mediaTypeLabel} object</p>
-			<p class={`mt-2 text-sm leading-relaxed ${introTextClass}`}>{descriptionText ?? 'Read-only object inspection with media-first access, preview artifacts, and request-aware behavior.'}</p>
+			<p class={`text-xs uppercase tracking-[0.2em] ${introLabelClass}`}>{formatTemplate(t('objects.detail.typeObject'), { type: mediaTypeLabel })}</p>
+			<p class={`mt-2 text-sm leading-relaxed ${introTextClass}`}>{descriptionText ?? t('objects.detail.fallbackDescription')}</p>
 			<div class="mt-4 flex flex-wrap items-center gap-2">
-				<Chip class="border-border-soft bg-surface-white/80 text-xs uppercase tracking-[0.2em] text-text-muted">View mode</Chip>
+				<Chip class="border-border-soft bg-surface-white/80 text-xs uppercase tracking-[0.2em] text-text-muted">{t('objects.detail.viewMode')}</Chip>
 				{#if data.session?.role === 'archiver' || data.session?.role === 'admin'}
 					<a
 						href={resolve('/objects/[objectId]/edit', { objectId: detail.objectId })}
 						class="inline-flex items-center rounded-full border border-blue-slate/30 bg-surface-white px-3 py-1 text-xs uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20"
 					>
-						Edit
+						{t('objects.detail.edit')}
 					</a>
 				{/if}
 				{#if viewer}
-					<Chip class="border-blue-slate/20 bg-pale-sky/18 text-xs uppercase tracking-[0.2em] text-blue-slate">{viewer.mediaType}</Chip>
+					<Chip class="border-blue-slate/20 bg-pale-sky/18 text-xs uppercase tracking-[0.2em] text-blue-slate">{mediaTypeLabel}</Chip>
 				{/if}
 				{#if viewer?.primarySource.status === 'request_required'}
-					<Chip class="border-pearl-beige bg-pearl-beige/60 text-xs uppercase tracking-[0.2em] text-blue-slate">Request required</Chip>
+					<Chip class="border-pearl-beige bg-pearl-beige/60 text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.detail.chips.requestRequired')}</Chip>
 				{:else if viewer?.primarySource.status === 'request_pending'}
-					<Chip class="border-blue-slate/20 bg-alabaster-grey/80 text-xs uppercase tracking-[0.2em] text-blue-slate">Request pending</Chip>
+					<Chip class="border-blue-slate/20 bg-alabaster-grey/80 text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.detail.chips.requestPending')}</Chip>
 				{:else if viewer?.primarySource.status === 'available'}
-					<Chip class="border-blue-slate/20 bg-pale-sky/18 text-xs uppercase tracking-[0.2em] text-blue-slate">Available now</Chip>
+					<Chip class="border-blue-slate/20 bg-pale-sky/18 text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.detail.chips.availableNow')}</Chip>
 				{/if}
 			</div>
 		</div>
 
-{#if showResyncConfirm}
-	<button
-		type="button"
-		aria-label="Close"
-		class="fixed inset-0 z-40 bg-blue-slate/35"
-		onclick={() => (showResyncConfirm = false)}
-	></button>
-	<div class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border-soft bg-surface-white p-6 shadow-[0_30px_80px_rgba(31,47,56,0.35)]">
-		<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.resync.confirmTitle')}</p>
-		<p class="mt-3 text-sm text-text-muted">{t('objects.resync.confirmBody')}</p>
-		<div class="mt-5 flex justify-end gap-3">
-			<button
-				type="button"
-				onclick={() => (showResyncConfirm = false)}
-				class="rounded-full border border-border-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:border-blue-slate/35 hover:text-blue-slate"
-			>
-				{t('common.cancel')}
-			</button>
-			<button
-				type="button"
-				onclick={runResync}
-				class="rounded-full bg-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-surface-white hover:bg-blue-slate-mid-dark"
-			>
-				{t('common.confirm')}
-			</button>
-		</div>
+<BaseDialog
+	open={showResyncConfirm}
+	labelledBy="resync-dialog-title"
+	onClose={() => (showResyncConfirm = false)}
+>
+	<p id="resync-dialog-title" class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.resync.confirmTitle')}</p>
+	<p class="mt-3 text-sm text-text-muted">{t('objects.resync.confirmBody')}</p>
+	<div class="mt-5 flex justify-end gap-3">
+		<button
+			type="button"
+			onclick={() => (showResyncConfirm = false)}
+			class="rounded-full border border-border-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:border-blue-slate/35 hover:text-blue-slate"
+		>
+			{t('common.cancel')}
+		</button>
+		<button
+			type="button"
+			onclick={runResync}
+			class="rounded-full bg-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-surface-white hover:bg-blue-slate-mid-dark"
+		>
+			{t('common.confirm')}
+		</button>
 	</div>
-{/if}
+</BaseDialog>
 
 		<section class="space-y-4">
-			{#if form?.message}
+			{#if form?.messageCode}
 				<p class="rounded-xl border border-blue-slate/35 bg-pale-sky/25 px-4 py-3 text-sm text-blue-slate">
-					{form.message}
+					{downloadMessageLabel(form.messageCode)}
 				</p>
 			{/if}
-			{#if form?.error}
+			{#if requestErrorLabel(form?.errorCode, form?.requestId)}
 				<p class="rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-4 py-3 text-sm text-burnt-peach">
-					{form.error}
+					{requestErrorLabel(form?.errorCode, form?.requestId)}
 				</p>
 			{/if}
 			<form bind:this={requestForm} method="POST" action="?/requestDownload" class="hidden">
@@ -338,7 +412,7 @@
 					<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" class="h-4 w-4" aria-hidden="true">
 						<path d="M10 3v14M3 10h14" stroke-linecap="round" />
 					</svg>
-					Support
+					{t('objects.detail.support')}
 				</button>
 			</div>
 		{/if}
@@ -358,13 +432,13 @@
 					<div class="flex items-center justify-between gap-3">
 						<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.detail.artifacts.title')}</p>
 						<p class="text-xs text-text-muted">
-							{formatTemplate(t('objects.detail.artifacts.count'), { count: artifacts.length })}
+							{formatTemplate(formatPlural(dictionary, 'objects.detail.artifacts.count', artifacts.length, $locale), { count: formatCount(artifacts.length, $locale) })}
 						</p>
 					</div>
 
-					{#if artifactsError}
+					{#if loadErrorLabel(artifactsError, 'artifacts')}
 						<p class="mt-4 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach">
-							{artifactsError}
+							{loadErrorLabel(artifactsError, 'artifacts')}
 						</p>
 					{:else if artifacts.length === 0}
 						<p class="mt-4 text-sm text-text-muted">{t('objects.detail.artifacts.empty')}</p>
@@ -402,26 +476,26 @@
 							{t('objects.detail.availableFiles.title')}
 						</p>
 						<p class="text-xs text-text-muted">
-							{formatTemplate(t('objects.detail.availableFiles.count'), {
-								count: availableFiles.length
+							{formatTemplate(formatPlural(dictionary, 'objects.detail.availableFiles.count', availableFiles.length, $locale), {
+								count: formatCount(availableFiles.length, $locale)
 							})}
 						</p>
 					</div>
 
-					{#if form?.message}
+					{#if form?.messageCode}
 						<p class="mt-4 rounded-xl border border-blue-slate/35 bg-pale-sky/25 px-3 py-2 text-xs text-blue-slate">
-							{form.message}
+							{downloadMessageLabel(form.messageCode)}
 						</p>
 					{/if}
-					{#if form?.error}
+					{#if requestErrorLabel(form?.errorCode, form?.requestId)}
 						<p class="mt-4 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach">
-							{form.error}
+							{requestErrorLabel(form?.errorCode, form?.requestId)}
 						</p>
 					{/if}
 
-					{#if availableFilesError}
+					{#if loadErrorLabel(availableFilesError, 'availableFiles')}
 						<p class="mt-4 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach">
-							{availableFilesError}
+							{loadErrorLabel(availableFilesError, 'availableFiles')}
 						</p>
 					{:else if availableFiles.length === 0}
 						<p class="mt-4 text-sm text-text-muted">{t('objects.detail.availableFiles.empty')}</p>
@@ -468,7 +542,7 @@
 						</Chip>
 					{/if}
 				</div>
-				<p class="mt-3 text-sm text-text-muted">{t(`objects.table.reasons.${detail.accessReasonCode}`)}</p>
+				<p class="mt-3 text-sm text-text-muted">{reasonLabel(detail.accessReasonCode)}</p>
 				<div class="mt-4 grid gap-3 text-sm text-text-muted sm:grid-cols-2">
 					<p>{t('objects.detail.access.authorized')}: <span class="text-text-ink">{detail.isAuthorized ? t('objects.detail.common.yes') : t('objects.detail.common.no')}</span></p>
 					<p>{t('objects.detail.access.deliverable')}: <span class="text-text-ink">{detail.isDeliverable ? t('objects.detail.common.yes') : t('objects.detail.common.no')}</span></p>
@@ -493,15 +567,15 @@
 						{t('objects.detail.pendingRequests.title')}
 					</p>
 					<p class="text-xs text-text-muted">
-						{formatTemplate(t('objects.detail.pendingRequests.count'), {
-							count: pendingRequests.length
+						{formatTemplate(formatPlural(dictionary, 'objects.detail.pendingRequests.count', pendingRequests.length, $locale), {
+							count: formatCount(pendingRequests.length, $locale)
 						})}
 					</p>
 				</div>
 
-				{#if pendingRequestsError}
+				{#if loadErrorLabel(pendingRequestsError, 'pendingRequests')}
 					<p class="mt-4 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach">
-						{pendingRequestsError}
+						{loadErrorLabel(pendingRequestsError, 'pendingRequests')}
 					</p>
 				{:else if pendingRequests.length === 0}
 					<p class="mt-4 text-sm text-text-muted">{t('objects.detail.pendingRequests.empty')}</p>
@@ -518,10 +592,10 @@
 							<tbody class="divide-y divide-border-soft">
 								{#each pendingRequests as request (request.id)}
 									<tr class="text-sm text-text-ink">
-										<td class="py-3 pr-4">{request.actionType.replace(/_/g, ' ')}</td>
+										<td class="py-3 pr-4">{requestActionLabel(request.actionType)}</td>
 										<td class="py-3 pr-4">
 											<span class="rounded-full border border-border-soft px-2 py-1 text-xs text-text-muted">
-												{request.status}
+												{requestStatusLabel(request.status)}
 											</span>
 										</td>
 										<td class="py-3">{formatDate(request.createdAt)}</td>

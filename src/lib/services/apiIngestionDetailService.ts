@@ -12,7 +12,7 @@ import {
 	type IngestionItemDto,
 	type IngestionItemFileDto
 } from '$lib/api/schemas/ingestions';
-import { mapIngestionStatus } from '$lib/api/mappers/ingestionsMapper';
+import { resolveBatchStatus, resolveFileStatus, resolveItemStatus } from '$lib/i18n/statusLabels';
 import {
 	NO_INGESTION_ACTION_CAPABILITIES,
 	type IngestionActionCapabilities,
@@ -110,23 +110,27 @@ const normalizeItemKind = (
 		return 'private';
 	};
 
-const mapFile = (dto: IngestionFileDto, index: number): IngestionDetailFile => ({
-	id: dto.id ?? dto.file_id ?? `file-${index + 1}`,
-	name: dto.filename ?? dto.file_name ?? `File ${index + 1}`,
-	status: dto.status ?? 'UNKNOWN',
-	contentType: dto.content_type ?? null,
-	sizeBytes: dto.size_bytes ?? null,
-	createdAt: dto.created_at ?? null,
-	preview: dto.preview
-		? {
-				status: dto.preview.status,
-				contentType: dto.preview.content_type ?? null,
-				width: dto.preview.width ?? null,
-				height: dto.preview.height ?? null,
-				url: dto.preview.url ?? null
-			}
-		: null
-});
+const mapFile = (dto: IngestionFileDto, index: number): IngestionDetailFile => {
+	const statusResolution = resolveFileStatus(dto.status);
+	return {
+		id: dto.id ?? dto.file_id ?? `file-${index + 1}`,
+		name: dto.filename ?? dto.file_name ?? `File ${index + 1}`,
+		status: statusResolution.value,
+		statusRaw: statusResolution.raw,
+		contentType: dto.content_type ?? null,
+		sizeBytes: dto.size_bytes ?? null,
+		createdAt: dto.created_at ?? null,
+		preview: dto.preview
+			? {
+					status: dto.preview.status,
+					contentType: dto.preview.content_type ?? null,
+					width: dto.preview.width ?? null,
+					height: dto.preview.height ?? null,
+					url: dto.preview.url ?? null
+				}
+			: null
+	};
+};
 
 const mapItemFile = (dto: IngestionItemFileDto): IngestionDetailItemFile => ({
 	id: dto.id,
@@ -137,11 +141,13 @@ const mapItemFile = (dto: IngestionItemFileDto): IngestionDetailItemFile => ({
 
 const mapItem = (dto: IngestionItemDto, files: IngestionDetailItemFile[]): IngestionDetailItem => {
 	const title = typeof dto.title === 'string' && dto.title.length > 0 ? dto.title : undefined;
+	const statusResolution = resolveItemStatus(dto.status);
 	return {
 		id: dto.id,
 		itemIndex: dto.item_index,
 		...(title ? { label: title } : {}),
-		status: dto.status,
+		status: statusResolution.value,
+		statusRaw: statusResolution.raw,
 		summary: dto.summary ?? {},
 		files
 	};
@@ -170,11 +176,13 @@ const mapDetail = (
 		startedAt: ingestion.staging_purge?.started_at ?? null,
 		purgedAt: ingestion.staging_purge?.purged_at ?? null
 	};
+	const batchStatus = resolveBatchStatus(ingestion.status);
 
 	return {
 		id,
 		batchLabel: ingestion.batch_label ?? id,
-		status: mapIngestionStatus(ingestion.status),
+		status: batchStatus.value,
+		statusRaw: batchStatus.raw,
 		actionCapabilities,
 		stagingPurge,
 		classificationType: normalizeClassificationType(

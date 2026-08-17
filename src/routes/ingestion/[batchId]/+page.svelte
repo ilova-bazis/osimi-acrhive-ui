@@ -6,7 +6,10 @@
 	import { actionsFromCapabilities, type IngestionAction } from '$lib/services/ingestionOverview';
 	import type { DashboardActivity } from '$lib/services/dashboard';
 	import { locale } from '$lib/i18n/locale';
-	import { translations } from '$lib/i18n/translations';
+	import { translations, type TranslationKey } from '$lib/i18n/translations';
+	import { formatCount, formatDateTime, formatFileSize } from '$lib/i18n/format';
+	import { dashboardActivityEventKeys } from '$lib/i18n/domainLabels';
+	import { batchStatusKey, batchStatusTone, fileStatusKey, fileStatusTone } from '$lib/i18n/statusLabels';
 	import { formatTemplate, translate } from '$lib/i18n/translate';
 	import type { FileStatus } from '$lib/types';
 
@@ -16,7 +19,7 @@
 	const activity = $derived(data.activity);
 	const activityError = $derived(data.activityError);
   	const dictionary = $derived(translations[$locale]);
-	const t = (key: string) => translate(dictionary as Record<string, unknown>, key);
+	const t = (key: TranslationKey) => translate(dictionary, key);
 
 	type DetailAction = Exclude<IngestionAction, 'view'>;
 
@@ -117,30 +120,23 @@
 		return '';
 	};
 
-	const toTone = (status: IngestionDetail['status']): FileStatus => {
-		if (status === 'completed') return 'approved';
-		if (status === 'completed_with_errors') return 'needs-review';
-		if (status === 'failed') return 'failed';
-		if (status === 'ingesting') return 'processing';
-		return 'queued';
+	const toTone = (status: IngestionDetail['status']): FileStatus => batchStatusTone(status);
+	const detailStatusLabel = (): string => {
+		const key = batchStatusKey(detail.status);
+		return key ? t(key) : detail.statusRaw || t('values.unknown');
 	};
-	const detailStatusLabel = (status: IngestionDetail['status']): string =>
-		t(`ingestionOverview.statuses.${status}`);
 
-	const toFileTone = (status: string): FileStatus => {
-		const normalized = status.toLowerCase();
-		if (normalized.includes('fail') || normalized.includes('error')) return 'failed';
-		if (normalized.includes('upload') || normalized.includes('valid') || normalized.includes('done')) {
-			return 'approved';
-		}
-		if (normalized.includes('process') || normalized.includes('queue')) return 'processing';
-		return 'queued';
+	const toFileTone = (status: IngestionDetail['files'][number]['status']): FileStatus =>
+		fileStatusTone(status);
+	const fileStatusLabel = (file: IngestionDetail['files'][number]): string => {
+		const key = fileStatusKey(file.status);
+		return key ? t(key) : file.statusRaw || t('values.unknown');
 	};
 	const isPreviewPurged = (status: IngestionDetail['files'][number]['preview']): boolean =>
 		status?.status === 'purged';
 
 	const formatDate = (value: string | null): string =>
-		value ? new Date(value).toLocaleString() : t('ingestionDetail.messages.unknown');
+		value ? formatDateTime(value, $locale, t('ingestionDetail.messages.unknown')) : t('ingestionDetail.messages.unknown');
 	const stringifyPayload = (payload: unknown): string => {
 		if (payload === null || typeof payload === 'undefined') {
 			return t('values.unknown');
@@ -152,12 +148,19 @@
 			return String(payload);
 		}
 	};
-	const formatSize = (size: number | null): string => {
-		if (size === null) return '-';
-		if (size < 1024) return `${size} B`;
-		const kb = size / 1024;
-		if (kb < 1024) return `${kb.toFixed(1)} KB`;
-		return `${(kb / 1024).toFixed(1)} MB`;
+	const formatSize = (size: number | null): string =>
+		size === null ? t('values.unknown') : formatFileSize(size, $locale);
+	const activityTitle = (event: DashboardActivity): string =>
+		event.eventCode ? t(dashboardActivityEventKeys[event.eventCode]) : event.typeFallback;
+	const activityDescription = (event: DashboardActivity): string => {
+		if (event.description.code === 'raw') return event.description.text;
+		if (event.description.code === 'ingestionUpdated') {
+			return formatTemplate(t('dashboard.activity.ingestionUpdated'), { id: event.description.id });
+		}
+		if (event.description.code === 'objectUpdated') {
+			return formatTemplate(t('dashboard.activity.objectUpdated'), { id: event.description.id });
+		}
+		return t('dashboard.activity.recorded');
 	};
 </script>
 
@@ -211,7 +214,7 @@
 		<div class="rounded-2xl border border-border-soft bg-surface-white px-4 py-4">
 			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionDetail.metrics.status')}</p>
 			<div class="mt-2">
-				<StatusBadge status={toTone(detail.status)} label={detailStatusLabel(detail.status)} />
+				<StatusBadge status={toTone(detail.status)} label={detailStatusLabel()} />
 			</div>
 		</div>
 		<div class="rounded-2xl border border-border-soft bg-surface-white px-4 py-4">
@@ -224,7 +227,7 @@
 		</div>
 		<div class="rounded-2xl border border-border-soft bg-surface-white px-4 py-4">
 			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionDetail.metrics.progress')}</p>
-			<p class="mt-2 text-sm text-text-ink">{detail.processedObjects} / {detail.totalObjects}</p>
+			<p class="mt-2 text-sm text-text-ink">{formatCount(detail.processedObjects, $locale)} / {formatCount(detail.totalObjects, $locale)}</p>
 		</div>
 	</section>
 
@@ -257,7 +260,7 @@
 										<p class="mt-1 text-xs text-text-muted">{t('ingestionDetail.files.previewPurged')}</p>
 									{/if}
 								</td>
-								<td class="py-3 pr-4"><StatusBadge status={toFileTone(file.status)} label={file.status} /></td>
+								<td class="py-3 pr-4"><StatusBadge status={toFileTone(file.status)} label={fileStatusLabel(file)} /></td>
 								<td class="py-3 pr-4">{file.contentType ?? '-'}</td>
 								<td class="py-3 pr-4">{formatSize(file.sizeBytes)}</td>
 								<td class="py-3">{formatDate(file.createdAt)}</td>
@@ -286,10 +289,10 @@
 				{#each activity as event (event.id)}
 					<article class="rounded-xl border border-border-soft bg-pale-sky/12 px-4 py-3">
 						<div class="flex flex-wrap items-center justify-between gap-2">
-							<p class="text-sm font-medium text-text-ink">{event.title}</p>
+							<p class="text-sm font-medium text-text-ink">{activityTitle(event)}</p>
 							<p class="text-xs text-text-muted">{formatDate(event.timestamp)}</p>
 						</div>
-						<p class="mt-1 text-xs text-text-muted">{event.description}</p>
+						<p class="mt-1 text-xs text-text-muted">{activityDescription(event)}</p>
 						<div class="mt-2 flex flex-wrap gap-3 text-[11px] text-text-muted">
 							<p>{t('ingestionDetail.logs.eventType')}: <span class="text-text-ink">{event.type}</span></p>
 							{#if event.objectId}

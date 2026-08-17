@@ -1,5 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
+import type { LoginErrorCode } from '$lib/auth/loginErrors';
 import { loginWithBackend, setSessionCookie } from '$lib/server/auth';
 import { isApiClientError } from '$lib/server/apiClient';
 import { isTrustedOrigin } from '$lib/server/csrf';
@@ -8,7 +9,7 @@ export const actions: Actions = {
 	default: async ({ request, cookies, fetch }) => {
 		if (!isTrustedOrigin(request, new URL(request.url).origin)) {
 			return fail(403, {
-				error: 'Invalid request origin.'
+				errorCode: 'invalidOrigin' satisfies LoginErrorCode
 			});
 		}
 
@@ -19,7 +20,7 @@ export const actions: Actions = {
 
 		if (!username || !password) {
 			return fail(400, {
-				error: 'Username and password are required.',
+				errorCode: 'credentialsRequired' satisfies LoginErrorCode,
 				username
 			});
 		}
@@ -33,16 +34,15 @@ export const actions: Actions = {
 			);
 			setSessionCookie(cookies, token);
 		} catch (error) {
-			if (isApiClientError(error)) {
-				const status = error.status === 400 || error.status === 401 ? error.status : 401;
-				return fail(status, {
-					error: error.message,
+			if (isApiClientError(error) && (error.status === 400 || error.status === 401)) {
+				return fail(error.status, {
+					errorCode: 'invalidCredentials' satisfies LoginErrorCode,
 					username
 				});
 			}
 
 			return fail(401, {
-				error: error instanceof Error ? error.message : 'Login failed',
+				errorCode: 'loginFailed' satisfies LoginErrorCode,
 				username
 			});
 		}

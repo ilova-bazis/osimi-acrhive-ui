@@ -30,8 +30,8 @@ export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) =
 		throw redirect(303, `/ingestion/${params.batchId}`);
 	}
 
-	const enabledFiles = detail.files.filter((f) => f.status !== 'skipped');
-	const skippedFiles = detail.files.filter((f) => f.status === 'skipped');
+	const enabledFiles = detail.files;
+	const skippedFiles: typeof detail.files = [];
 	const totalSizeBytes = enabledFiles.reduce((sum, f) => sum + (f.sizeBytes ?? 0), 0);
 
 	return {
