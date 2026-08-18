@@ -4,6 +4,9 @@ import { dirname, join } from 'node:path';
 import net from 'node:net';
 import { chromium } from 'playwright';
 
+import { routeIdentityMismatch } from './smoke-checks.mjs';
+import { collectVisibleText } from './smoke-dom.mjs';
+
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const UI_DIR = join(SCRIPT_DIR, '..');
 
@@ -137,8 +140,15 @@ const startProcess = (command, args, env) => {
 
 let children = [];
 let browser = null;
+let shutdownStarted = false;
+let exitCodeRequested = 0;
 
 const shutdown = async (exitCode) => {
+	if (exitCode > 0) {
+		exitCodeRequested = Math.max(exitCodeRequested, exitCode);
+	}
+	if (shutdownStarted) return;
+	shutdownStarted = true;
 	if (browser) {
 		try {
 			await browser.close();
@@ -164,29 +174,13 @@ const shutdown = async (exitCode) => {
 			// already gone
 		}
 	}
-	process.exit(exitCode);
+	process.exit(exitCodeRequested);
 };
 
 process.on('SIGINT', () => shutdown(130));
 process.on('SIGTERM', () => shutdown(143));
 
-const collectText = async (page) => {
-	const data = await page.evaluate(() => {
-		const visible = [];
-		for (const node of document.querySelectorAll('body *')) {
-			if (node.tagName === 'SCRIPT' || node.tagName === 'STYLE' || node.tagName === 'NOSCRIPT') continue;
-			for (const attribute of ['aria-label', 'title', 'placeholder', 'alt']) {
-				const value = node.getAttribute(attribute);
-				if (value && value.trim()) visible.push(value);
-			}
-			if (node.children.length === 0 && node.textContent && node.textContent.trim()) {
-				visible.push(node.textContent);
-			}
-		}
-		return visible.join('\n');
-	});
-	return data;
-};
+const collectText = async (page) => page.evaluate(collectVisibleText);
 
 const findRawKeys = (text) => {
 	const matches = new Set();
@@ -198,11 +192,8 @@ const findRawKeys = (text) => {
 	return [...matches];
 };
 
-const checkRoute = async (page, { key, concretePath, locale, viewport }) => {
+const assertRouteState = async (page, { key, concretePath, locale, viewport, sentinel }) => {
 	const beforeCount = results.length;
-	visitedTuples.add(tupleId(viewport.name, locale, key));
-	const sentinel = locale === 'ru' ? RU_ROUTE_SENTINELS[key] : ROUTE_SENTINELS[key];
-	await page.goto(`${UI_ORIGIN}${concretePath}`, { waitUntil: 'networkidle' });
 
 	const failTuple = async (name, details) => {
 		record(`${viewport.name} ${locale} ${key}: ${name}`, false, details);
@@ -210,8 +201,9 @@ const checkRoute = async (page, { key, concretePath, locale, viewport }) => {
 	};
 
 	const finalUrl = page.url();
-	if (!finalUrl.startsWith(`${UI_ORIGIN}${concretePath}`)) {
-		await failTuple('stays on route', `redirected to ${finalUrl}`);
+	const identityMismatch = routeIdentityMismatch(finalUrl, concretePath);
+	if (identityMismatch) {
+		await failTuple('stays on route', `redirected: ${finalUrl} (${identityMismatch})`);
 		return;
 	}
 	record(`${viewport.name} ${locale} ${key}: stays on route`, true);
@@ -238,6 +230,7 @@ const checkRoute = async (page, { key, concretePath, locale, viewport }) => {
 	recordTuple(viewport.name, locale, key, 'no horizontal overflow', overflow);
 
 	const text = await collectText(page);
+	const bodyText = ((await page.textContent('body')) ?? '').toString();
 	const rawKeys = findRawKeys(text);
 	record(`${viewport.name} ${locale} ${key}: no raw translation keys`, rawKeys.length === 0, rawKeys.slice(0, 8).join(','));
 	recordTuple(viewport.name, locale, key, 'no raw translation keys', rawKeys.length === 0, rawKeys.slice(0, 8).join(','));
@@ -259,10 +252,36 @@ const checkRoute = async (page, { key, concretePath, locale, viewport }) => {
 	recordTuple(viewport.name, locale, key, 'no raw enum codes', enumCodes.length === 0, enumCodes.slice(0, 8).join(','));
 
 	const hasCyrillic = /[А-Яа-яЁё]/.test(text);
-	record(`${viewport.name} ${locale} ${key}: localized copy renders`, locale === 'en' ? true : hasCyrillic);
-	recordTuple(viewport.name, locale, key, 'localized copy renders', locale === 'en' ? true : hasCyrillic);
+	const localeCopyOk =
+		locale === 'ru' ? hasCyrillic : !bodyText.includes(RU_UI_SENTINELS[key]);
+	record(
+		`${viewport.name} ${locale} ${key}: localized copy renders`,
+		localeCopyOk,
+		locale === 'ru' ? 'no cyrillic in visible text' : `ru ui copy leaked into en (${RU_UI_SENTINELS[key]})`
+	);
+	recordTuple(viewport.name, locale, key, 'localized copy renders', localeCopyOk);
 
-	const sentinelPresent = ((await page.textContent('body')) ?? '').includes(sentinel);
+	const uiSentinel = locale === 'ru' ? RU_UI_SENTINELS[key] : EN_UI_SENTINELS[key];
+	const uiSentinelPresent = bodyText.includes(uiSentinel);
+	record(
+		`${viewport.name} ${locale} ${key}: route ui copy renders`,
+		uiSentinelPresent,
+		`expected "${uiSentinel}"`
+	);
+	recordTuple(viewport.name, locale, key, 'route ui copy renders', uiSentinelPresent, `expected "${uiSentinel}"`);
+
+	if (locale === 'ru') {
+		const secondarySentinel = RU_UI_SENTINELS_SECONDARY[key];
+		const secondaryPresent = bodyText.includes(secondarySentinel);
+		record(
+			`${viewport.name} ${locale} ${key}: secondary ru ui copy renders`,
+			secondaryPresent,
+			`expected "${secondarySentinel}"`
+		);
+		recordTuple(viewport.name, locale, key, 'secondary ru ui copy renders', secondaryPresent, `expected "${secondarySentinel}"`);
+	}
+
+	const sentinelPresent = bodyText.includes(sentinel);
 	record(
 		`${viewport.name} ${locale} ${key}: route-specific sentinel`,
 		sentinelPresent,
@@ -272,42 +291,25 @@ const checkRoute = async (page, { key, concretePath, locale, viewport }) => {
 
 	assertedTuples.add(tupleId(viewport.name, locale, key));
 
+	const newFailures = results.slice(beforeCount).some((entry) => entry.startsWith('FAIL'));
+	if (newFailures) {
+		await captureDiagnostics(page, { key, viewport, locale });
+	}
+};
+
+const checkRoute = async (page, { key, concretePath, locale, viewport }) => {
+	visitedTuples.add(tupleId(viewport.name, locale, key));
+	const sentinel = locale === 'ru' ? RU_UI_SENTINELS[key] : ROUTE_SENTINELS[key];
+	await page.goto(`${UI_ORIGIN}${concretePath}`, { waitUntil: 'networkidle' });
+	await assertRouteState(page, { key, concretePath, locale, viewport, sentinel });
+
 	if (key === '/objects/[objectId]') {
 		for (const variant of OBJECT_VARIANTS) {
 			const variantUrl = `/objects/${variant.id}`;
 			await page.goto(`${UI_ORIGIN}${variantUrl}`, { waitUntil: 'networkidle' });
-			const onRoute = page.url().startsWith(`${UI_ORIGIN}${variantUrl}`);
-			const noErrorPage = !(await page.locator('html').getAttribute('data-sveltekit-error'));
-			const variantText = await collectText(page);
-			const variantRawKeys = findRawKeys(variantText);
-			const variantUnresolved = findUnresolvedPlaceholders(variantText);
-			const hasSentinel = ((await page.textContent('body')) ?? '').includes(variant.sentinel);
-			record(
-				`${viewport.name} ${locale} ${key} (${variant.id}): renders without errors or raw keys`,
-				onRoute &&
-					noErrorPage &&
-					variantRawKeys.length === 0 &&
-					variantUnresolved.length === 0 &&
-					hasSentinel,
-				[
-					onRoute ? '' : 'redirected',
-					noErrorPage ? '' : 'error page',
-					variantRawKeys.length === 0 ? '' : `raw keys: ${variantRawKeys.slice(0, 5).join(',')}`,
-					variantUnresolved.length === 0
-						? ''
-						: `unresolved: ${variantUnresolved.slice(0, 5).join(',')}`,
-					hasSentinel ? '' : `missing sentinel ${variant.sentinel}`
-				]
-					.filter(Boolean)
-					.join(' | ')
-			);
+			await assertRouteState(page, { key, concretePath: variantUrl, locale, viewport, sentinel: variant.sentinel });
 		}
 		await page.goto(`${UI_ORIGIN}${concretePath}`, { waitUntil: 'networkidle' });
-	}
-
-	const newFailures = results.slice(beforeCount).some((entry) => entry.startsWith('FAIL'));
-	if (newFailures) {
-		await captureDiagnostics(page, { key, viewport, locale });
 	}
 };
 
@@ -323,8 +325,20 @@ const ROUTE_SENTINELS = {
 	'/objects/[objectId]/edit': 'Page 1'
 };
 
-const RU_ROUTE_SENTINELS = {
-	'/': 'Панель',
+const EN_UI_SENTINELS = {
+	'/': 'Welcome back',
+	'/ingestion': 'Batch Overview',
+	'/ingestion/new': 'What kind of item is it?',
+	'/ingestion/[batchId]': 'Ingestion details',
+	'/ingestion/[batchId]/setup': '1 · Organize',
+	'/ingestion/[batchId]/review': 'Step 03 — Review what will run',
+	'/objects': 'Catalog',
+	'/objects/[objectId]': 'Support',
+	'/objects/[objectId]/edit': 'Save draft'
+};
+
+const RU_UI_SENTINELS = {
+	'/': 'С возвращением',
 	'/ingestion': 'Обзор партий',
 	'/ingestion/new': 'Добавить новый материал в архив',
 	'/ingestion/[batchId]': 'Детали загрузки',
@@ -333,6 +347,18 @@ const RU_ROUTE_SENTINELS = {
 	'/objects': 'Каталог',
 	'/objects/[objectId]': 'Поддержка',
 	'/objects/[objectId]/edit': 'Сохранить черновик'
+};
+
+const RU_UI_SENTINELS_SECONDARY = {
+	'/': 'Недавняя активность',
+	'/ingestion': 'Новая загрузка',
+	'/ingestion/new': 'Какой это тип элемента?',
+	'/ingestion/[batchId]': 'Назад к загрузкам',
+	'/ingestion/[batchId]/setup': '2 · Метаданные',
+	'/ingestion/[batchId]/review': 'Назад к настройке',
+	'/objects': 'Объекты',
+	'/objects/[objectId]': 'Редактировать',
+	'/objects/[objectId]/edit': 'Машинный OCR'
 };
 
 const FORBIDDEN_ENUM_CODES = [
@@ -444,6 +470,18 @@ const runDesktopInteractions = async (page) => {
 		}
 	};
 
+	const visibleDialogWithText = async (expectedTexts) => {
+		const dialogs = page.locator('[role="dialog"]');
+		const count = await dialogs.count();
+		for (let index = 0; index < count; index += 1) {
+			const dialog = dialogs.nth(index);
+			if (!(await dialog.isVisible().catch(() => false))) continue;
+			const text = ((await dialog.textContent()) ?? '').toString();
+			if (expectedTexts.some((expected) => text.includes(expected))) return true;
+		}
+		return false;
+	};
+
 	await requireInteraction('new-ingestion tag removal', async () => {
 		await page.goto(`${UI_ORIGIN}/ingestion/new`, { waitUntil: 'networkidle' });
 		const tagInput = page.locator('#tagsInput');
@@ -452,74 +490,137 @@ const runDesktopInteractions = async (page) => {
 		}
 		await tagInput.fill('smoke-tag');
 		await page.keyboard.press('Enter');
-		await page.waitForTimeout(200);
-		await page.keyboard.press('Enter');
-		const remove = page.locator('button').filter({ hasText: 'smoke-tag' }).last();
-		if (!(await remove.isVisible().catch(() => false))) {
-			return { ok: false, detail: 'tag added, no removal control found' };
+		await page.waitForTimeout(250);
+		const addedTag = page.locator('button').filter({ hasText: 'smoke-tag' }).last();
+		if (!(await addedTag.isVisible().catch(() => false))) {
+			return { ok: false, detail: 'tag was not created after Enter' };
 		}
-		await remove.click();
+		await addedTag.click();
+		await page.waitForTimeout(250);
+		const remainingTags = await page.locator('button').filter({ hasText: 'smoke-tag' }).count();
+		if (remainingTags > 0) {
+			return { ok: false, detail: 'tag still present after removal click' };
+		}
 		await checkInteractionPlaceholders('new-ingestion tag removal', true);
-		return { ok: true, detail: 'exercised' };
+		return { ok: true, detail: 'tag created and removed' };
 	});
 
 	await requireInteraction('info drawer', async () => {
 		await page.goto(`${UI_ORIGIN}/objects/OBJ-20260814-DOC001`, { waitUntil: 'networkidle' });
-		const infoButton = page.locator('button[aria-label*="Info"], button').filter({ hasText: /Info|Инфо/i }).first();
+		const infoButton = page.locator('button').filter({ hasText: /Info|Инфо/i }).first();
 		if (!(await infoButton.isVisible().catch(() => false))) {
 			return { ok: false, detail: 'no info trigger found' };
 		}
 		await infoButton.click();
-		await page.waitForTimeout(200);
-		await checkInteractionPlaceholders('info drawer', true);
-		const closed = page.locator('button[aria-label*="Close"], button').filter({ hasText: /Close|Закрыть/i }).first();
-		if (await closed.isVisible().catch(() => false)) {
-			await closed.click();
+		await page.waitForTimeout(250);
+		const drawerOpened = await page
+			.locator('body')
+			.filter({ hasText: /Object info|Информация об объекте/ })
+			.isVisible()
+			.catch(() => false);
+		if (!drawerOpened) {
+			return { ok: false, detail: 'info drawer did not open' };
 		}
-		return { ok: true, detail: 'exercised' };
+		await checkInteractionPlaceholders('info drawer', true);
+		const closeInfo = page
+			.locator('button[aria-label*="Close info panel"], button[aria-label*="Закрыть панель информации"]')
+			.first();
+		if (!(await closeInfo.isVisible().catch(() => false))) {
+			return { ok: false, detail: 'no info drawer close control found' };
+		}
+		await closeInfo.click();
+		await page.waitForTimeout(250);
+		const drawerClosed = await page
+			.locator('body')
+			.filter({ hasText: /Object info|Информация об объекте/ })
+			.isVisible()
+			.catch(() => false);
+		if (drawerClosed) {
+			return { ok: false, detail: 'info drawer did not close' };
+		}
+		return { ok: true, detail: 'drawer opened and closed' };
 	});
 
 	await requireInteraction('support sheet', async () => {
 		await page.goto(`${UI_ORIGIN}/objects/OBJ-20260814-DOC001`, { waitUntil: 'networkidle' });
-		const supportButton = page.locator('button').filter({ hasText: /Support|Поддержка|Help|Помощь/i }).first();
+		const supportButton = page.locator('button').filter({ hasText: /Support|Поддержка/i }).first();
 		if (!(await supportButton.isVisible().catch(() => false))) {
 			return { ok: false, detail: 'no support sheet trigger found' };
 		}
 		await supportButton.click();
-		await page.waitForTimeout(200);
-		const sheetButtons = page.locator('aside button');
+		await page.waitForTimeout(250);
+		const sheet = page
+			.locator('aside')
+			.filter({ has: page.locator('button[aria-label*="Close support panel"], button[aria-label*="Закрыть панель поддержки"]') })
+			.first();
+		if (!(await sheet.isVisible().catch(() => false))) {
+			return { ok: false, detail: 'support sheet did not open' };
+		}
+		const sheetButtons = sheet.locator('button');
 		const buttonCount = await sheetButtons.count();
 		let tabClicks = 0;
 		for (let index = 0; index < buttonCount; index += 1) {
 			const button = sheetButtons.nth(index);
 			const label = ((await button.textContent()) ?? '').trim();
 			if (!label) continue;
-			await button.click().catch(() => undefined);
+			await button.click();
 			tabClicks += 1;
 			await page.waitForTimeout(80);
 		}
 		if (tabClicks === 0) {
-			return { ok: false, detail: `no sheet buttons clicked of ${buttonCount}` };
+			return { ok: false, detail: `no sheet tabs clicked of ${buttonCount} sheet buttons` };
 		}
 		await checkInteractionPlaceholders('support sheet', true);
-		return { ok: true, detail: `${tabClicks} tabs clicked of ${buttonCount} sheet buttons` };
+		const closeSheet = page
+			.locator('button[aria-label*="Close support panel"], button[aria-label*="Закрыть панель поддержки"]')
+			.first();
+		if (!(await closeSheet.isVisible().catch(() => false))) {
+			return { ok: false, detail: 'no support sheet close control found' };
+		}
+		await closeSheet.click();
+		await page.waitForTimeout(250);
+		if (await sheet.isVisible().catch(() => false)) {
+			return { ok: false, detail: 'support sheet did not close' };
+		}
+		return { ok: true, detail: `${tabClicks} tabs clicked of ${buttonCount} sheet buttons; sheet opened and closed` };
 	});
 
 	await requireInteraction('resync confirmation', async () => {
 		await page.goto(`${UI_ORIGIN}/objects/OBJ-20260814-DOC001`, { waitUntil: 'networkidle' });
-		const resyncButton = page.locator('button').filter({ hasText: /Resync|Ресинк|Sync|Синхр/i }).first();
+		const resyncButton = page.locator('button').filter({ hasText: /Resync|Синхр/i }).first();
 		if (!(await resyncButton.isVisible().catch(() => false))) {
 			return { ok: false, detail: 'no resync trigger found' };
 		}
 		await resyncButton.click();
 		await page.waitForTimeout(300);
-		const confirm = page.locator('button').filter({ hasText: /Confirm|Подтверд/i }).first();
-		if (await confirm.isVisible().catch(() => false)) {
-			await confirm.click();
-			await page.waitForTimeout(400);
+		const confirmDialogOpened = await visibleDialogWithText(['Подтвердите синхронизацию', 'Confirm resync']);
+		if (!confirmDialogOpened) {
+			return { ok: false, detail: 'resync confirmation dialog did not open' };
+		}
+		const confirm = page.locator('[role="dialog"] button').filter({ hasText: /Подтвердить|Confirm/ }).first();
+		if (!(await confirm.isVisible().catch(() => false))) {
+			return { ok: false, detail: 'no confirm control in resync dialog' };
+		}
+		const responsePromise = page.waitForResponse(
+			(response) => response.url().includes('/resync') && response.request().method() === 'POST' && response.ok(),
+			{ timeout: 8000 }
+		);
+		await confirm.click();
+		const response = await responsePromise;
+		if (!response.ok()) {
+			return { ok: false, detail: `resync request failed with status ${response.status()}` };
+		}
+		await page.waitForTimeout(400);
+		const successShown = await page
+			.locator('body')
+			.filter({ hasText: /Синхронизация запрошена|Resync requested/ })
+			.isVisible()
+			.catch(() => false);
+		if (!successShown) {
+			return { ok: false, detail: 'resync success message not shown after confirmation' };
 		}
 		await checkInteractionPlaceholders('resync confirmation', true);
-		return { ok: true, detail: 'exercised' };
+		return { ok: true, detail: 'confirmation dialog opened, submitted, and succeeded' };
 	});
 
 	await requireInteraction('publish dialog', async () => {
@@ -530,12 +631,28 @@ const runDesktopInteractions = async (page) => {
 		}
 		await publishButton.click();
 		await page.waitForTimeout(300);
-		await checkInteractionPlaceholders('publish dialog', true);
-		const cancel = page.locator('button').filter({ hasText: /Cancel|Отмен/i }).first();
-		if (await cancel.isVisible().catch(() => false)) {
-			await cancel.click();
+		const publishDialogOpened = await visibleDialogWithText([
+			'Опубликовать курированный OCR?',
+			'Publish curated OCR?'
+		]);
+		if (!publishDialogOpened) {
+			return { ok: false, detail: 'publish dialog did not open' };
 		}
-		return { ok: true, detail: 'exercised' };
+		await checkInteractionPlaceholders('publish dialog', true);
+		const cancel = page.locator('[role="dialog"] button').filter({ hasText: /Отмен|Cancel/ }).first();
+		if (!(await cancel.isVisible().catch(() => false))) {
+			return { ok: false, detail: 'no cancel control in publish dialog' };
+		}
+		await cancel.click();
+		await page.waitForTimeout(300);
+		const dialogClosed = !(await visibleDialogWithText([
+			'Опубликовать курированный OCR?',
+			'Publish curated OCR?'
+		]));
+		if (!dialogClosed) {
+			return { ok: false, detail: 'publish dialog did not close after cancel' };
+		}
+		return { ok: true, detail: 'dialog opened and closed via cancel' };
 	});
 
 	console.log('[smoke] desktop interactions:\n  ' + observations.join('\n  '));
@@ -642,6 +759,10 @@ const main = async () => {
 			const persistedLang = await page.evaluate(() => document.documentElement.lang);
 			record(`${viewport.name}: reload preserves locale`, persistedLang === 'ru');
 
+			if (viewport.name === 'desktop') {
+				await runDesktopInteractions(page);
+			}
+
 			record(
 				`${viewport.name}: no page errors or failed requests`,
 				errorEvents.length === 0 && requestFailures.length === 0,
@@ -653,10 +774,6 @@ const main = async () => {
 				consoleErrors.length === 0,
 				consoleErrors.slice(0, 6).join(' | ')
 			);
-
-			if (viewport.name === 'desktop') {
-				await runDesktopInteractions(page);
-			}
 
 			await context.close();
 		}
@@ -676,6 +793,10 @@ const main = async () => {
 		const unasserted = expectedTuples.filter((id) => !asserted.includes(id));
 		record('manifest: every route/viewport/locale visited', missing.length === 0, `missing=[${missing.join(',')}] unexpected=[${unexpected.join(',')}]`);
 		record('manifest: every route/viewport/locale asserted', unasserted.length === 0, `unasserted=[${unasserted.join(',')}]`);
+
+		if (process.env.SMOKE_SABOTAGE) {
+			record(`sabotage ${process.env.SMOKE_SABOTAGE}: forced failure`, false, 'deliberate negative test');
+		}
 
 		console.log('[smoke] manifest coverage:');
 		for (const entry of MANIFEST) {
