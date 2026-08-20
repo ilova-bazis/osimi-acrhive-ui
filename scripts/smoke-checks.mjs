@@ -3,12 +3,15 @@ export const normalizePathname = (pathname) => {
 	return normalized;
 };
 
-export const routeIdentityMismatch = (rawUrl, expectedPath) => {
+export const routeIdentityMismatch = (rawUrl, expectedPath, expectedOrigin) => {
 	let parsed;
 	try {
 		parsed = new URL(rawUrl);
 	} catch {
 		return `unparseable url: ${rawUrl}`;
+	}
+	if (expectedOrigin && parsed.origin !== expectedOrigin) {
+		return `expected origin "${expectedOrigin}", got "${parsed.origin}"`;
 	}
 	const actual = normalizePathname(parsed.pathname);
 	const expected = normalizePathname(expectedPath);

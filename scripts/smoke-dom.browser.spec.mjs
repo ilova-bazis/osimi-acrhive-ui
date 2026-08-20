@@ -48,4 +48,26 @@ describe('collectVisibleText', () => {
 		expect(text).toContain('Close drawer');
 		expect(text).not.toContain('Nope');
 	});
+
+	it('excludes inert and transparent ancestors', () => {
+		render(
+			'<div inert><span>route.hidden</span></div>' +
+				'<div style="opacity:0"><span>Скрытый текст</span></div>' +
+				'<div>Visible route copy</div>'
+		);
+		const text = collectVisibleText();
+		expect(text).toContain('Visible route copy');
+		expect(text).not.toContain('route.hidden');
+		expect(text).not.toContain('Скрытый текст');
+	});
+
+	it('excludes visibility collapse and keeps visible aria-hidden text', () => {
+		render(
+			'<div style="visibility:collapse">Collapsed route copy</div>' +
+				'<div aria-hidden="true">Visible untranslated copy</div>'
+		);
+		const text = collectVisibleText();
+		expect(text).not.toContain('Collapsed route copy');
+		expect(text).toContain('Visible untranslated copy');
+	});
 });

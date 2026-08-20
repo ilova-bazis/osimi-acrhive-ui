@@ -20,6 +20,12 @@ const USERNAME = 'smoke-archiver';
 const PASSWORD = 'um98-smoke-password';
 
 const ARTIFACT_DIR = process.env.SMOKE_ARTIFACT_DIR ?? join('/tmp', 'osimi-archive-ui-smoke-auth');
+const SMOKE_FAULTS = new Set(
+	(process.env.SMOKE_FAULTS ?? '')
+		.split(',')
+		.map((fault) => fault.trim())
+		.filter(Boolean)
+);
 
 const VIEWPORTS = [
 	{ name: 'mobile', width: 375, height: 667 },
@@ -57,6 +63,7 @@ const tupleResults = new Map();
 let failed = false;
 let visitedTuples = new Set();
 let assertedTuples = new Set();
+const runtimeErrorsByPage = new WeakMap();
 
 const tupleId = (viewportName, locale, key) => `${viewportName}|${locale}|${key}`;
 
@@ -182,6 +189,21 @@ process.on('SIGTERM', () => shutdown(143));
 
 const collectText = async (page) => page.evaluate(collectVisibleText);
 
+const settleRuntimeErrors = async (page, context) => {
+	await page.waitForTimeout(150);
+	const tracker = runtimeErrorsByPage.get(page);
+	if (!tracker) return;
+	const errors = [
+		...tracker.errorEvents.slice(tracker.errorCursor),
+		...tracker.requestFailures.slice(tracker.requestCursor),
+		...tracker.consoleErrors.slice(tracker.consoleCursor)
+	];
+	tracker.errorCursor = tracker.errorEvents.length;
+	tracker.requestCursor = tracker.requestFailures.length;
+	tracker.consoleCursor = tracker.consoleErrors.length;
+	record(`${context}: no newly settled browser errors`, errors.length === 0, errors.slice(0, 6).join(' | '));
+};
+
 const findRawKeys = (text) => {
 	const matches = new Set();
 	for (const match of text.matchAll(RAW_KEY_PATTERN)) {
@@ -200,8 +222,10 @@ const assertRouteState = async (page, { key, concretePath, locale, viewport, sen
 		await captureDiagnostics(page, { key, viewport, locale });
 	};
 
-	const finalUrl = page.url();
-	const identityMismatch = routeIdentityMismatch(finalUrl, concretePath);
+	const injectOriginFault =
+		SMOKE_FAULTS.has('route-origin') && viewport.name === 'mobile' && locale === 'en' && key === '/objects';
+	const finalUrl = injectOriginFault ? `https://smoke-origin.invalid${concretePath}` : page.url();
+	const identityMismatch = routeIdentityMismatch(finalUrl, concretePath, UI_ORIGIN);
 	if (identityMismatch) {
 		await failTuple('stays on route', `redirected: ${finalUrl} (${identityMismatch})`);
 		return;
@@ -230,7 +254,6 @@ const assertRouteState = async (page, { key, concretePath, locale, viewport, sen
 	recordTuple(viewport.name, locale, key, 'no horizontal overflow', overflow);
 
 	const text = await collectText(page);
-	const bodyText = ((await page.textContent('body')) ?? '').toString();
 	const rawKeys = findRawKeys(text);
 	record(`${viewport.name} ${locale} ${key}: no raw translation keys`, rawKeys.length === 0, rawKeys.slice(0, 8).join(','));
 	recordTuple(viewport.name, locale, key, 'no raw translation keys', rawKeys.length === 0, rawKeys.slice(0, 8).join(','));
@@ -253,7 +276,7 @@ const assertRouteState = async (page, { key, concretePath, locale, viewport, sen
 
 	const hasCyrillic = /[А-Яа-яЁё]/.test(text);
 	const localeCopyOk =
-		locale === 'ru' ? hasCyrillic : !bodyText.includes(RU_UI_SENTINELS[key]);
+		locale === 'ru' ? hasCyrillic : !text.includes(RU_UI_SENTINELS[key]);
 	record(
 		`${viewport.name} ${locale} ${key}: localized copy renders`,
 		localeCopyOk,
@@ -262,7 +285,7 @@ const assertRouteState = async (page, { key, concretePath, locale, viewport, sen
 	recordTuple(viewport.name, locale, key, 'localized copy renders', localeCopyOk);
 
 	const uiSentinel = locale === 'ru' ? RU_UI_SENTINELS[key] : EN_UI_SENTINELS[key];
-	const uiSentinelPresent = bodyText.includes(uiSentinel);
+	const uiSentinelPresent = text.includes(uiSentinel);
 	record(
 		`${viewport.name} ${locale} ${key}: route ui copy renders`,
 		uiSentinelPresent,
@@ -272,7 +295,7 @@ const assertRouteState = async (page, { key, concretePath, locale, viewport, sen
 
 	if (locale === 'ru') {
 		const secondarySentinel = RU_UI_SENTINELS_SECONDARY[key];
-		const secondaryPresent = bodyText.includes(secondarySentinel);
+		const secondaryPresent = text.includes(secondarySentinel);
 		record(
 			`${viewport.name} ${locale} ${key}: secondary ru ui copy renders`,
 			secondaryPresent,
@@ -281,7 +304,7 @@ const assertRouteState = async (page, { key, concretePath, locale, viewport, sen
 		recordTuple(viewport.name, locale, key, 'secondary ru ui copy renders', secondaryPresent, `expected "${secondarySentinel}"`);
 	}
 
-	const sentinelPresent = bodyText.includes(sentinel);
+	const sentinelPresent = text.includes(sentinel);
 	record(
 		`${viewport.name} ${locale} ${key}: route-specific sentinel`,
 		sentinelPresent,
@@ -301,13 +324,28 @@ const checkRoute = async (page, { key, concretePath, locale, viewport }) => {
 	visitedTuples.add(tupleId(viewport.name, locale, key));
 	const sentinel = locale === 'ru' ? RU_UI_SENTINELS[key] : ROUTE_SENTINELS[key];
 	await page.goto(`${UI_ORIGIN}${concretePath}`, { waitUntil: 'networkidle' });
+	if (
+		SMOKE_FAULTS.has('visible-localization') &&
+		viewport.name === 'mobile' &&
+		locale === 'en' &&
+		key === '/'
+	) {
+		await page.evaluate((copy) => {
+			const fault = document.createElement('div');
+			fault.dataset.smokeFault = 'visible-localization';
+			fault.textContent = copy;
+			document.body.append(fault);
+		}, RU_UI_SENTINELS[key]);
+	}
 	await assertRouteState(page, { key, concretePath, locale, viewport, sentinel });
+	await settleRuntimeErrors(page, `${viewport.name} ${locale} ${key} route settle`);
 
 	if (key === '/objects/[objectId]') {
 		for (const variant of OBJECT_VARIANTS) {
 			const variantUrl = `/objects/${variant.id}`;
 			await page.goto(`${UI_ORIGIN}${variantUrl}`, { waitUntil: 'networkidle' });
 			await assertRouteState(page, { key, concretePath: variantUrl, locale, viewport, sentinel: variant.sentinel });
+			await settleRuntimeErrors(page, `${viewport.name} ${locale} ${key} ${variant.id} route settle`);
 		}
 		await page.goto(`${UI_ORIGIN}${concretePath}`, { waitUntil: 'networkidle' });
 	}
@@ -320,7 +358,7 @@ const ROUTE_SENTINELS = {
 	'/ingestion/[batchId]': 'report-1945.pdf',
 	'/ingestion/[batchId]/setup': 'photo-1945.jpg',
 	'/ingestion/[batchId]/review': 'notes.txt',
-	'/objects': 'OBJ-20260814-DOC001',
+	'/objects': 'War-time newspaper issue',
 	'/objects/[objectId]': 'War-time newspaper issue',
 	'/objects/[objectId]/edit': 'Page 1'
 };
@@ -468,6 +506,31 @@ const runDesktopInteractions = async (page) => {
 			record(`desktop interaction ${name}: exercised`, false, error.message);
 			pushObservation(name, `FAILED: ${error.message}`);
 		}
+		if (name === 'new-ingestion tag removal') {
+			if (SMOKE_FAULTS.has('request-abort')) {
+				await page.route('**/smoke-fault-request-abort', (route) => route.abort('failed'));
+			}
+			if (SMOKE_FAULTS.has('http-error')) {
+				await page.route('**/smoke-fault-http-error', (route) =>
+					route.fulfill({ status: 503, body: 'SMOKE_FAULT http-error' })
+				);
+			}
+			await page.evaluate((faults) => {
+				if (faults.includes('console-error')) console.error('SMOKE_FAULT console-error');
+				if (faults.includes('page-error')) {
+					setTimeout(() => {
+						throw new Error('SMOKE_FAULT page-error');
+					}, 0);
+				}
+				if (faults.includes('request-abort')) {
+					void fetch('/smoke-fault-request-abort').catch(() => {});
+				}
+				if (faults.includes('http-error')) {
+					void fetch('/smoke-fault-http-error').catch(() => {});
+				}
+			}, [...SMOKE_FAULTS]);
+		}
+		await settleRuntimeErrors(page, `desktop interaction ${name} settle`);
 	};
 
 	const visibleDialogWithText = async (expectedTexts) => {
@@ -495,6 +558,11 @@ const runDesktopInteractions = async (page) => {
 		if (!(await addedTag.isVisible().catch(() => false))) {
 			return { ok: false, detail: 'tag was not created after Enter' };
 		}
+		if (SMOKE_FAULTS.has('tag-removal-stuck')) {
+			await addedTag.evaluate((element) => {
+				element.addEventListener('click', (event) => event.stopImmediatePropagation(), true);
+			});
+		}
 		await addedTag.click();
 		await page.waitForTimeout(250);
 		const remainingTags = await page.locator('button').filter({ hasText: 'smoke-tag' }).count();
@@ -511,11 +579,18 @@ const runDesktopInteractions = async (page) => {
 		if (!(await infoButton.isVisible().catch(() => false))) {
 			return { ok: false, detail: 'no info trigger found' };
 		}
+		if (SMOKE_FAULTS.has('info-drawer-absent')) {
+			await infoButton.evaluate((element) => {
+				element.addEventListener('click', (event) => event.stopImmediatePropagation(), true);
+			});
+		}
 		await infoButton.click();
 		await page.waitForTimeout(250);
-		const drawerOpened = await page
-			.locator('body')
+		const drawer = page
+			.locator('aside')
 			.filter({ hasText: /Object info|Информация об объекте/ })
+			.first();
+		const drawerOpened = await drawer
 			.isVisible()
 			.catch(() => false);
 		if (!drawerOpened) {
@@ -528,14 +603,17 @@ const runDesktopInteractions = async (page) => {
 		if (!(await closeInfo.isVisible().catch(() => false))) {
 			return { ok: false, detail: 'no info drawer close control found' };
 		}
+		if (SMOKE_FAULTS.has('info-drawer-close-stuck')) {
+			await closeInfo.evaluate((element) => {
+				element.addEventListener('click', (event) => event.stopImmediatePropagation(), true);
+			});
+		}
 		await closeInfo.click();
-		await page.waitForTimeout(250);
-		const drawerClosed = await page
-			.locator('body')
-			.filter({ hasText: /Object info|Информация об объекте/ })
-			.isVisible()
+		const drawerClosed = await drawer
+			.waitFor({ state: 'hidden', timeout: 2000 })
+			.then(() => true)
 			.catch(() => false);
-		if (drawerClosed) {
+		if (!drawerClosed) {
 			return { ok: false, detail: 'info drawer did not close' };
 		}
 		return { ok: true, detail: 'drawer opened and closed' };
@@ -556,19 +634,38 @@ const runDesktopInteractions = async (page) => {
 		if (!(await sheet.isVisible().catch(() => false))) {
 			return { ok: false, detail: 'support sheet did not open' };
 		}
-		const sheetButtons = sheet.locator('button');
-		const buttonCount = await sheetButtons.count();
+		if (SMOKE_FAULTS.has('support-sheet-stale')) {
+			await sheet.evaluate((element) => {
+				element.addEventListener(
+					'click',
+					(event) => {
+						if (event.target instanceof Element && event.target.closest('button')?.textContent?.trim()) {
+							event.stopImmediatePropagation();
+							event.preventDefault();
+						}
+					},
+					true
+				);
+			});
+		}
+		const panels = [
+			{ tab: /^(Files|Файлы)$/, outcome: /^(Artifacts|Артефакты)$/ },
+			{ tab: /^(Access|Доступ)$/, outcome: /^(Access and deliverability|Доступ и доставляемость)$/ },
+			{ tab: /^(Requests|Запросы)$/, outcome: /^(Archive requests|Архивные запросы)$/ },
+			{ tab: /^(Raw ingest|Исходные данные)$/, outcome: /^(Ingest manifest|Манифест загрузки)$/ }
+		];
 		let tabClicks = 0;
-		for (let index = 0; index < buttonCount; index += 1) {
-			const button = sheetButtons.nth(index);
-			const label = ((await button.textContent()) ?? '').trim();
-			if (!label) continue;
+		for (const panel of panels) {
+			const button = sheet.getByRole('button', { name: panel.tab }).first();
+			if (!(await button.isVisible().catch(() => false))) {
+				return { ok: false, detail: `support tab ${panel.tab} is not visible` };
+			}
 			await button.click();
 			tabClicks += 1;
-			await page.waitForTimeout(80);
-		}
-		if (tabClicks === 0) {
-			return { ok: false, detail: `no sheet tabs clicked of ${buttonCount} sheet buttons` };
+			const outcome = sheet.getByText(panel.outcome, { exact: true }).first();
+			if (!(await outcome.isVisible().catch(() => false))) {
+				return { ok: false, detail: `support tab ${panel.tab} did not render ${panel.outcome}` };
+			}
 		}
 		await checkInteractionPlaceholders('support sheet', true);
 		const closeSheet = page
@@ -578,11 +675,14 @@ const runDesktopInteractions = async (page) => {
 			return { ok: false, detail: 'no support sheet close control found' };
 		}
 		await closeSheet.click();
-		await page.waitForTimeout(250);
-		if (await sheet.isVisible().catch(() => false)) {
+		const sheetClosed = await sheet
+			.waitFor({ state: 'hidden', timeout: 2000 })
+			.then(() => true)
+			.catch(() => false);
+		if (!sheetClosed) {
 			return { ok: false, detail: 'support sheet did not close' };
 		}
-		return { ok: true, detail: `${tabClicks} tabs clicked of ${buttonCount} sheet buttons; sheet opened and closed` };
+		return { ok: true, detail: `${tabClicks} tabs selected with matching panel content; sheet opened and closed` };
 	});
 
 	await requireInteraction('resync confirmation', async () => {
@@ -602,9 +702,12 @@ const runDesktopInteractions = async (page) => {
 			return { ok: false, detail: 'no confirm control in resync dialog' };
 		}
 		const responsePromise = page.waitForResponse(
-			(response) => response.url().includes('/resync') && response.request().method() === 'POST' && response.ok(),
+			(response) => response.url().includes('/resync') && response.request().method() === 'POST',
 			{ timeout: 8000 }
 		);
+		if (SMOKE_FAULTS.has('resync-http')) {
+			await page.route('**/resync', (route) => route.fulfill({ status: 503, body: 'SMOKE_FAULT resync-http' }));
+		}
 		await confirm.click();
 		const response = await responsePromise;
 		if (!response.ok()) {
@@ -642,6 +745,11 @@ const runDesktopInteractions = async (page) => {
 		const cancel = page.locator('[role="dialog"] button').filter({ hasText: /Отмен|Cancel/ }).first();
 		if (!(await cancel.isVisible().catch(() => false))) {
 			return { ok: false, detail: 'no cancel control in publish dialog' };
+		}
+		if (SMOKE_FAULTS.has('publish-close-stuck')) {
+			await cancel.evaluate((element) => {
+				element.addEventListener('click', (event) => event.stopImmediatePropagation(), true);
+			});
 		}
 		await cancel.click();
 		await page.waitForTimeout(300);
@@ -703,6 +811,14 @@ const main = async () => {
 			const requestFailures = [];
 			const errorEvents = [];
 			const consoleErrors = [];
+			runtimeErrorsByPage.set(page, {
+				requestFailures,
+				errorEvents,
+				consoleErrors,
+				requestCursor: 0,
+				errorCursor: 0,
+				consoleCursor: 0
+			});
 			page.on('requestfailed', (request) => {
 				if (!request.url().includes('favicon')) requestFailures.push(request.url());
 			});
@@ -719,8 +835,9 @@ const main = async () => {
 			});
 
 			await page.goto(`${UI_ORIGIN}/`, { waitUntil: 'networkidle' });
-			if (!page.url().startsWith(`${UI_ORIGIN}/login`)) {
-				record(`${viewport.name}: unauthenticated redirect to /login`, false, page.url());
+			const loginMismatch = routeIdentityMismatch(page.url(), '/login', UI_ORIGIN);
+			if (loginMismatch) {
+				record(`${viewport.name}: unauthenticated redirect to /login`, false, loginMismatch);
 			} else {
 				record(`${viewport.name}: unauthenticated redirect to /login`, true);
 			}
@@ -763,6 +880,8 @@ const main = async () => {
 				await runDesktopInteractions(page);
 			}
 
+			await settleRuntimeErrors(page, `${viewport.name} shutdown settle`);
+
 			record(
 				`${viewport.name}: no page errors or failed requests`,
 				errorEvents.length === 0 && requestFailures.length === 0,
@@ -794,10 +913,6 @@ const main = async () => {
 		record('manifest: every route/viewport/locale visited', missing.length === 0, `missing=[${missing.join(',')}] unexpected=[${unexpected.join(',')}]`);
 		record('manifest: every route/viewport/locale asserted', unasserted.length === 0, `unasserted=[${unasserted.join(',')}]`);
 
-		if (process.env.SMOKE_SABOTAGE) {
-			record(`sabotage ${process.env.SMOKE_SABOTAGE}: forced failure`, false, 'deliberate negative test');
-		}
-
 		console.log('[smoke] manifest coverage:');
 		for (const entry of MANIFEST) {
 			for (const locale of ['en', 'ru']) {
@@ -809,6 +924,17 @@ const main = async () => {
 				}
 				console.log(`  ${locale} ${entry.key} -> ${row.join(' ')}`);
 			}
+		}
+
+		if (SMOKE_FAULTS.has('child-exit')) {
+			console.error('[smoke fault] child-exit: terminating fixture unexpectedly');
+			process.kill(fixture.pid, 'SIGTERM');
+			await new Promise((resolve) => setTimeout(resolve, 5000));
+		}
+		if (SMOKE_FAULTS.has('shutdown-race')) {
+			console.error('[smoke fault] shutdown-race: requesting exit codes 1 then 7');
+			void shutdown(1);
+			await shutdown(7);
 		}
 	} catch (error) {
 		record('smoke completed without crash', false, error.message);

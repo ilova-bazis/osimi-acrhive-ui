@@ -74,12 +74,67 @@ describe.skipIf(SKIP)('smoke negative gating', () => {
 	});
 
 	it(
-		'exits nonzero when a deliberate failure is injected',
+		'exits nonzero for scoped interaction and settled browser faults',
 		async () => {
-			const { code, output } = await runSmoke({ SMOKE_SABOTAGE: 'negative-test' });
-			expect(output).toContain('sabotage negative-test: forced failure');
+			const { code, output } = await runSmoke({
+				SMOKE_FAULTS: [
+					'route-origin',
+					'visible-localization',
+					'tag-removal-stuck',
+					'info-drawer-absent',
+					'support-sheet-stale',
+					'resync-http',
+					'publish-close-stuck',
+					'console-error',
+					'page-error',
+					'request-abort',
+					'http-error'
+				].join(',')
+			});
+			expect(output).toMatch(/FAIL mobile en \/objects: stays on route.*expected origin/);
+			expect(output).toContain('FAIL mobile en /: localized copy renders');
+			expect(output).toMatch(/FAIL desktop interaction new-ingestion tag removal: exercised.*tag still present/);
+			expect(output).toMatch(/FAIL desktop interaction info drawer: exercised.*did not open/);
+			expect(output).toMatch(/FAIL desktop interaction support sheet: exercised.*did not render/);
+			expect(output).toMatch(/FAIL desktop interaction resync confirmation: exercised.*status 503/);
+			expect(output).toMatch(/FAIL desktop interaction publish dialog: exercised.*did not close/);
+			expect(output).toContain('SMOKE_FAULT console-error');
+			expect(output).toContain('SMOKE_FAULT page-error');
+			expect(output).toContain('/smoke-fault-request-abort');
+			expect(output).toContain('503 http://127.0.0.1:4600/smoke-fault-http-error');
 			expect(output).toContain('manifest: every route/viewport/locale visited');
 			expect(code).not.toBe(0);
+		},
+		900_000
+	);
+
+	it(
+		'rejects a stuck drawer close outcome',
+		async () => {
+			const { code, output } = await runSmoke({ SMOKE_FAULTS: 'info-drawer-close-stuck' });
+			expect(output).toMatch(/FAIL desktop interaction info drawer: exercised.*did not close/);
+			expect(code).not.toBe(0);
+		},
+		900_000
+	);
+
+	it(
+		'propagates an unexpected child exit and releases ports',
+		async () => {
+			const { code, output } = await runSmoke({ SMOKE_FAULTS: 'child-exit' });
+			expect(output).toContain('[smoke fault] child-exit: terminating fixture unexpectedly');
+			expect(output).toContain('child process exited unexpectedly');
+			expect(code).not.toBe(0);
+		},
+		900_000
+	);
+
+	it(
+		'keeps the highest exit code across repeated shutdown requests',
+		async () => {
+			const { code, output } = await runSmoke({ SMOKE_FAULTS: 'shutdown-race' });
+			expect(output).toContain('[smoke fault] shutdown-race: requesting exit codes 1 then 7');
+			expect(code).toBe(7);
 		},
 		900_000
 	);

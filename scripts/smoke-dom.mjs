@@ -1,16 +1,24 @@
 export const collectVisibleText = () => {
 	const hidden = (element) => {
+		if (element.closest('[hidden], [inert]')) return true;
 		if (typeof element.checkVisibility === 'function') {
-			return !element.checkVisibility({ checkVisibilityCSS: true });
+			return !element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
 		}
 		if (!(element instanceof HTMLElement)) {
 			return true;
 		}
-		const style = window.getComputedStyle(element);
-		if (style.display === 'none' || style.visibility === 'hidden') {
-			return true;
+		for (let current = element; current; current = current.parentElement) {
+			const style = window.getComputedStyle(current);
+			if (
+				style.display === 'none' ||
+				style.visibility === 'hidden' ||
+				style.visibility === 'collapse' ||
+				Number(style.opacity) === 0
+			) {
+				return true;
+			}
 		}
-		return element.closest('[hidden]') !== null;
+		return false;
 	};
 
 	const parts = [];

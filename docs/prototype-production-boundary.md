@@ -47,7 +47,11 @@ The component-gallery routes are prototype presentation surfaces. Their demonstr
 ## Enforcement
 
 - Production source must not contain `/prototype` or `/ingestion-proto` navigation targets.
-- Production source must not import mock object-view data or prototype component namespaces.
-- A clean production route manifest must not contain prototype, ingestion-prototype, or component-gallery routes.
-- Generated production output must not contain `Prototype object not found.` or `mockObjectViews`.
+- Production source must not import mock object-view data, prototype component namespaces, or any exact removed file in the centralized policy.
+- A clean production route manifest must contain a nonempty route inventory and must not contain the exact `prototype`, `ingestion-proto`, or `components` path segments.
+- Generated deployed and intermediate output must not contain removed source/module traces, `Prototype object not found.`, or `mockObjectViews`.
 - Prototype reference files, when retained, live outside `src` and are not compiled or resolved by `$lib` aliases.
+
+`scripts/route-boundary-policy.mjs` is the authoritative route/source/file inventory. `scripts/verify-route-boundary.mjs` consumes it for source and generated-artifact checks, while `eslint.config.js` consumes its import patterns. The import restrictions deliberately preserve the production-owned `src/lib/components/object-edit/SourceTextDiff.svelte` and `src/lib/components/object-detail/MediaRequestBanner.svelte`.
+
+`npm run build` runs verification automatically. `npm run verify:route-boundary` can rerun it against an existing build; see `deployment-route-integrity.md` for its fail-closed artifact and manifest checks.

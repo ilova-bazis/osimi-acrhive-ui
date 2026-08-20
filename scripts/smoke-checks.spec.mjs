@@ -19,7 +19,22 @@ describe('normalizePathname', () => {
 
 describe('routeIdentityMismatch', () => {
 	it('accepts an exact pathname match', () => {
-		expect(routeIdentityMismatch('http://127.0.0.1:4600/objects', '/objects')).toBeNull();
+		expect(routeIdentityMismatch('http://127.0.0.1:4600/objects', '/objects', 'http://127.0.0.1:4600')).toBeNull();
+	});
+
+	it('rejects a matching path on another origin', () => {
+		expect(routeIdentityMismatch('https://example.test/objects', '/objects', 'http://127.0.0.1:4600')).toContain(
+			'expected origin'
+		);
+	});
+
+	it('rejects login prefix siblings', () => {
+		expect(routeIdentityMismatch('http://127.0.0.1:4600/login-other', '/login', 'http://127.0.0.1:4600')).toContain(
+			'expected pathname'
+		);
+		expect(routeIdentityMismatch('http://127.0.0.1:4600/login/attacker', '/login', 'http://127.0.0.1:4600')).toContain(
+			'expected pathname'
+		);
 	});
 
 	it('rejects a root redirect to another same-origin route', () => {
