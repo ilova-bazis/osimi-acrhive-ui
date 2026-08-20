@@ -103,3 +103,15 @@ Page errors, failed requests, HTTP >=400 responses, and browser `console.error` 
 - This record supersedes UM-107 for **authenticated production-smoke authority** only. UM-107's historical command results are retained as such.
 - UM-95 and UM-86 retain their historical focused-test records; their prior supersession wording is superseded by this record.
 - This gate does not claim release authority beyond what is mechanically asserted above.
+
+## Follow-Up Review Erratum (2026-08-18)
+
+A follow-up review found that this record only partially satisfied the negative-evidence acceptance inherited from UM-113. The 785/785 positive run and command results remain valid historical evidence, but the following authority claims are suspended:
+
+- `scripts/smoke-negative.spec.mjs` proved that one unconditional forced failure exits nonzero; it did not inject and prove each interaction, post-interaction error, localization, and route-identity false-pass path.
+- The info-drawer check did not use the drawer container, and support-sheet clicks did not prove selected state or resulting panel content.
+- Route-copy sentinels were evaluated against unfiltered body text, so hidden or inert translations could satisfy them despite the visible-text collector.
+- Exact route identity was not applied to the unauthenticated login redirect and did not verify origin.
+- Route-boundary and fixture-contract enforcement remained partial as documented by the UM-124 recovery review.
+
+The statements that all former false-pass paths were negatively proven, that acceptance was fully met, and that this record supplied authoritative authenticated production-smoke evidence are therefore suspended pending UM-124 and its replacement gate. No predecessor regains authority. UM-123 remains independent and non-blocking; package-lock reconciliation and clean-install reproducibility remain outside this record's authority.
