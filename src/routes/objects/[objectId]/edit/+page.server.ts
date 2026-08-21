@@ -187,6 +187,23 @@ const isProjectionUnavailableError = (cause: unknown): cause is ApiClientError =
 	return 'code' in cause.details && cause.details.code === 'PROJECTION_UNAVAILABLE';
 };
 
+const activePublicationFromError = (
+	cause: unknown,
+): { requestId: string; requestStatus: 'PENDING' | 'PROCESSING' } | null => {
+	if (!isApiClientError(cause) || cause.status !== 409) return null;
+	const details = cause.details;
+	if (!details || typeof details !== 'object' || Array.isArray(details)) return null;
+	const record = details as Record<string, unknown>;
+	const requestId = record.existing_request_id;
+	const requestStatus = record.existing_request_status;
+	if (
+		cause.code !== 'PUBLICATION_ALREADY_ACTIVE' ||
+		typeof requestId !== 'string' ||
+		(requestStatus !== 'PENDING' && requestStatus !== 'PROCESSING')
+	) return null;
+	return { requestId, requestStatus };
+};
+
 export const load = async ({ params, locals, cookies, fetch }: RequestEvent) => {
 	const token = cookies.get(AUTH_COOKIE_NAME);
 	if (!locals.session || !token) {
@@ -355,7 +372,7 @@ export const actions: Actions = {
 	submitCuration: async ({ params, locals, cookies, fetch, request }) => {
 		const token = cookies.get(AUTH_COOKIE_NAME);
 		if (!locals.session || !token) {
-			throw redirect(303, '/login');
+			return fail(401, { sessionRequired: true });
 		}
 
 		const objectId = params.objectId;
@@ -382,13 +399,6 @@ export const actions: Actions = {
 			if (!editPayload.capabilities.canSubmitReview) {
 				return fail(403, { errorCode: 'publishForbidden' satisfies ObjectEditErrorCode });
 			}
-			if (revision.data !== editPayload.revision) {
-				return fail(409, {
-					errorCode: 'changedBeforePublish' satisfies ObjectEditErrorCode,
-					recovery: toRecovery('conflict', editPayload),
-				});
-			}
-
 			const result = await objectEditService.submitObjectCuration({
 				context,
 				objectId,
@@ -398,6 +408,7 @@ export const actions: Actions = {
 
 			return {
 				success: true,
+				revision: result.revision,
 				curationState: result.curationState,
 				requestId: result.requestId,
 				requestStatus: result.requestStatus,
@@ -405,7 +416,15 @@ export const actions: Actions = {
 		} catch (cause) {
 			if (isUnauthorizedError(cause)) {
 				clearSessionCookie(cookies);
-				throw redirect(303, '/login');
+				return fail(401, { sessionRequired: true });
+			}
+
+			const activePublication = activePublicationFromError(cause);
+			if (activePublication) {
+				return fail(409, {
+					publicationAlreadyActive: true,
+					...activePublication,
+				});
 			}
 
 			if (cause instanceof ObjectEditLockedError) {

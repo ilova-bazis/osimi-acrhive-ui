@@ -8,7 +8,8 @@ export type ArchiveRequest = {
 	actionType: string;
 	requestedBy: string;
 	dedupeKey: string | null;
-	status: ArchiveRequestStatus;
+	status: ArchiveRequestStatus | null;
+	statusRaw: string;
 	failureReason: string | null;
 	createdAt: string;
 	updatedAt: string;

@@ -95,9 +95,11 @@ POST /api/objects/:object_id/curation/submit
 
 The UI labels this action **Publish curated OCR**. The legacy endpoint and `review_note` field names remain unchanged for transport compatibility. There is no human reviewer queue: the optional publication note is audit context stored in edit history.
 
-Publication is available only for document objects with a non-empty OCR page projection. Documents without projected pages may still save metadata, but the editor displays an OCR-unavailable explanation and disables publication. The action is revision-guarded, creates or returns an asynchronous `curation_apply` request, and returns the resulting revision.
+Publication is available only for document objects with a non-empty OCR page projection. Documents without projected pages may still save metadata, but the editor displays an OCR-unavailable explanation and disables publication. The action is revision-guarded and creates an asynchronous `curation_apply` request. An exact revision-qualified retry returns the existing request; a different submission while one is active returns `409 PUBLICATION_ALREADY_ACTIVE` with that request's ID and status.
 
-The editor queries the latest object-scoped `curation_apply` request to display `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`, or `CANCELED`. It polls through the same-origin publication-status gateway instead of invalidating the editor load, because reloading `GET /edit` would renew the edit lock.
+The editor queries the latest object-scoped `curation_apply` request to display `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`, or `CANCELED`. It polls active requests every 12 seconds through the same-origin publication-status gateway instead of invalidating the editor load, because reloading `GET /edit` would renew the edit lock. A failed check retains a visibly last-known request and retries five times after 2, 4, 8, 16, and 30 seconds; exhausted checks offer a manual retry. Only a fresh or recovered active status disables publication. An unknown or stale status does not, while an expired session does and offers sign-in without automatically navigating away from unsaved edits.
+
+The backend invariant remains authoritative: at most one `PENDING` or `PROCESSING` `curation_apply` request may exist for a tenant and object. A concurrent submit returns `409 PUBLICATION_ALREADY_ACTIVE` with the existing request id and status; the UI adopts that request and resumes normal polling rather than treating the conflict as a generic publication failure.
 
 ### Close editor
 

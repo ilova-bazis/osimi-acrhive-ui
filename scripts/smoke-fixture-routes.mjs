@@ -31,6 +31,8 @@ const ART_AUD_THUMB = '50000000-0000-4000-8000-000000000006';
 const ART_POSTER = '50000000-0000-4000-8000-000000000007';
 const ART_VID_THUMB = '50000000-0000-4000-8000-000000000008';
 const ART_TRANSCRIPT = '50000000-0000-4000-8000-000000000009';
+export const ART_PAGE_1_OCR = '50000000-0000-4000-8000-000000000010';
+export const ART_PAGE_2_OCR = '50000000-0000-4000-8000-000000000011';
 
 const UI_ORIGIN = process.env.SMOKE_UI_ORIGIN ?? 'http://127.0.0.1:4600';
 const LAST_MODIFIED = 'Thu, 13 Aug 2026 12:00:00 GMT';
@@ -49,6 +51,9 @@ const PNG_BYTES = Buffer.from(
 );
 
 const TEXT_BYTES = Buffer.from('Smoke fixture OCR text for page one.\nSecond line of text.', 'utf8');
+
+const PAGE_ONE_OCR_BYTES = Buffer.from('Smoke fixture page one OCR text.', 'utf8');
+const PAGE_TWO_OCR_BYTES = Buffer.from('Smoke fixture page two OCR text.', 'utf8');
 
 const PDF_BYTES = Buffer.from(
 	'%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF',
@@ -350,7 +355,7 @@ const docViewer = () => ({
 	preview_artifacts: {
 		thumbnail: artifactRef(ART_DOC_THUMB, 'image/png', 'thumbnail.png'),
 		poster: null,
-		ocr_text: artifactRef(ART_OCR, 'text/plain', 'ocr-page-1.txt'),
+		ocr_text: artifactRef(ART_OCR, 'text/plain', 'ocr-combined.txt'),
 		transcript: null,
 		captions: null
 	},
@@ -361,8 +366,8 @@ const docViewer = () => ({
 		ocr_text_artifact_id: ART_OCR,
 		page_count: 2,
 		pages: [
-			{ page_number: 1, label: 'Page 1', image_artifact_id: ART_PAGE_1, ocr_text_artifact_id: ART_OCR },
-			{ page_number: 2, label: 'Page 2', image_artifact_id: ART_PAGE_1, ocr_text_artifact_id: ART_OCR }
+			{ page_number: 1, label: 'Page 1', image_artifact_id: ART_PAGE_1, ocr_text_artifact_id: ART_PAGE_1_OCR },
+			{ page_number: 2, label: 'Page 2', image_artifact_id: ART_PAGE_1, ocr_text_artifact_id: ART_PAGE_2_OCR }
 		]
 	}
 });
@@ -497,9 +502,27 @@ const artifactsByObject = {
 			id: ART_OCR,
 			kind: 'ocr_text',
 			variant: null,
-			storage_key: 'smoke/doc/page1.txt',
+			storage_key: 'smoke/doc/ocr-combined.txt',
 			content_type: 'text/plain',
 			size_bytes: TEXT_BYTES.length,
+			created_at: FIXED_TIME
+		},
+		{
+			id: ART_PAGE_1_OCR,
+			kind: 'ocr_text',
+			variant: null,
+			storage_key: 'smoke/doc/ocr-page-1.txt',
+			content_type: 'text/plain',
+			size_bytes: PAGE_ONE_OCR_BYTES.length,
+			created_at: FIXED_TIME
+		},
+		{
+			id: ART_PAGE_2_OCR,
+			kind: 'ocr_text',
+			variant: null,
+			storage_key: 'smoke/doc/ocr-page-2.txt',
+			content_type: 'text/plain',
+			size_bytes: PAGE_TWO_OCR_BYTES.length,
 			created_at: FIXED_TIME
 		},
 		{
@@ -575,6 +598,8 @@ const artifactsByObject = {
 };
 
 const artifactBytes = (artifactId) => {
+	if (artifactId === ART_PAGE_1_OCR) return PAGE_ONE_OCR_BYTES;
+	if (artifactId === ART_PAGE_2_OCR) return PAGE_TWO_OCR_BYTES;
 	if (artifactId === ART_OCR || artifactId === ART_TRANSCRIPT) return TEXT_BYTES;
 	if (artifactId === ART_PAGE_1) return PDF_BYTES;
 	if (artifactId === ART_AUDIO) return WAV_BYTES;
@@ -582,7 +607,14 @@ const artifactBytes = (artifactId) => {
 };
 
 const artifactContentType = (artifactId) => {
-	if (artifactId === ART_OCR || artifactId === ART_TRANSCRIPT) return 'text/plain';
+	if (
+		artifactId === ART_OCR ||
+		artifactId === ART_TRANSCRIPT ||
+		artifactId === ART_PAGE_1_OCR ||
+		artifactId === ART_PAGE_2_OCR
+	) {
+		return 'text/plain';
+	}
 	if (artifactId === ART_PAGE_1) return 'application/pdf';
 	if (artifactId === ART_AUDIO) return 'audio/wav';
 	return 'image/png';
@@ -1130,6 +1162,29 @@ export const buildRoutes = (
 				...filesPayload(),
 				...objectGroupsPayload()
 			})
+	},
+	{
+		method: 'GET',
+		pattern: /^\/api\/objects\/[^/]+\/curation-publication$/,
+		auth: true,
+		handler: async (request, response) => {
+			const objectId = request.url.split('/')[3];
+			json(response, 200, {
+				object_id: objectId,
+				request: objectId === DOC_OBJECT_ID
+					? {
+						id: PUBLICATION_REQUEST_ID,
+						status: 'COMPLETED',
+						failure_reason: null,
+						publication_revision: 5,
+						target_version: '20260814',
+						created_at: FIXED_TIME,
+						updated_at: FIXED_TIME,
+						completed_at: FIXED_TIME
+					}
+					: null
+			});
+		}
 	},
 	{
 		method: 'GET',

@@ -124,10 +124,24 @@ export const submitCurationResultSchema = z.object({
 	request: z.object({
 		id: z.string(),
 		action_type: z.string(),
-		status: z.enum(['PENDING', 'PROCESSING']),
+		status: z.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELED']),
 	}),
 	submitted_at: z.string(),
 	submitted_by: z.string(),
+}).strict();
+
+export const objectCurationPublicationSchema = z.object({
+	object_id: z.string().min(1),
+	request: z.object({
+		id: z.string().min(1),
+		status: z.string().min(1),
+		failure_reason: z.string().nullable(),
+		publication_revision: z.number().int().positive().nullable(),
+		target_version: z.string().nullable(),
+		created_at: z.string(),
+		updated_at: z.string(),
+		completed_at: z.string().nullable(),
+	}).nullable(),
 }).strict();
 
 export const submitCurationRequestSchema = z
@@ -147,4 +161,5 @@ export type ObjectEditPayloadDto = z.infer<typeof objectEditPayloadSchema>;
 export type SaveMetadataResultDto = z.infer<typeof saveMetadataResultSchema>;
 export type SaveDocumentCurationResultDto = z.infer<typeof saveDocumentCurationResultSchema>;
 export type SubmitCurationResultDto = z.infer<typeof submitCurationResultSchema>;
+export type ObjectCurationPublicationDto = z.infer<typeof objectCurationPublicationSchema>;
 export type ReleaseLockResultDto = z.infer<typeof releaseLockResultSchema>;

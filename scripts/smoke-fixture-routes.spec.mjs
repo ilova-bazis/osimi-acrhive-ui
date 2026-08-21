@@ -4,6 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
 	ART_OCR,
+	ART_PAGE_1_OCR,
+	ART_PAGE_2_OCR,
 	AUD_OBJECT_ID,
 	DOC_OBJECT_ID,
 	FILE_UPLOAD,
@@ -229,12 +231,49 @@ describe('fixture artifact association', () => {
 		);
 		expect(response.statusCode).toBe(404);
 	});
+
+	it('serves distinct per-page OCR artifacts only for their document', async () => {
+		for (const artifactId of [ART_PAGE_1_OCR, ART_PAGE_2_OCR]) {
+			const owned = fakeResponse();
+			await findRoute(routes, 'GET', '/api/objects/O/artifacts/A/view').handler(
+				fakeRequest({ url: `/api/objects/${DOC_OBJECT_ID}/artifacts/${artifactId}/view` }),
+				owned
+			);
+			expect(owned.statusCode, artifactId).toBe(200);
+			expect(owned.headers['content-type'], artifactId).toBe('text/plain');
+
+			const crossObject = fakeResponse();
+			await findRoute(routes, 'GET', '/api/objects/O/artifacts/A/view').handler(
+				fakeRequest({ url: `/api/objects/${AUD_OBJECT_ID}/artifacts/${artifactId}/view` }),
+				crossObject
+			);
+			expect(crossObject.statusCode, artifactId).toBe(404);
+		}
+	});
 });
 
 describe('fixture publication-status filtering', () => {
 	const context = createContext();
 	const routes = buildRoutes(context);
 	const route = findRoute(routes, 'GET', '/api/archive-requests');
+	const objectRoute = findRoute(routes, 'GET', `/api/objects/${DOC_OBJECT_ID}/curation-publication`);
+
+	it('returns the active-first object publication contract', async () => {
+		const response = fakeResponse();
+		await objectRoute.handler(
+			fakeRequest({ url: `/api/objects/${DOC_OBJECT_ID}/curation-publication` }),
+			response
+		);
+		expect(response.statusCode).toBe(200);
+		expect(parseBody(response)).toMatchObject({
+			object_id: DOC_OBJECT_ID,
+			request: {
+				status: 'COMPLETED',
+				publication_revision: 5,
+				target_version: '20260814'
+			}
+		});
+	});
 
 	it('returns the completed request for the document target', async () => {
 		const response = fakeResponse();

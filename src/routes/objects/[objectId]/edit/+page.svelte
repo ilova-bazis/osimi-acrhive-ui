@@ -7,7 +7,7 @@
 	import SourceTextDiff from '$lib/components/object-edit/SourceTextDiff.svelte';
 	import { locale } from '$lib/i18n/locale';
 	import { translations, type TranslationKey } from '$lib/i18n/translations';
-	import { formatCount } from '$lib/i18n/format';
+	import { formatCount, formatDateTime } from '$lib/i18n/format';
 	import { objectEditMediaTypeKeys } from '$lib/i18n/domainLabels';
 	import { objectEditErrorKeys, objectEditFieldErrorKeys } from '$lib/i18n/objectEditErrors';
 	import { formatPlural, formatTemplate, translate } from '$lib/i18n/translate';
@@ -25,7 +25,10 @@
 			curationState?: string;
 			projectionUnavailable?: boolean;
 			requestId?: string;
-			requestStatus?: 'PENDING' | 'PROCESSING';
+			requestStatus?: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
+			revision?: number;
+			publicationAlreadyActive?: boolean;
+			sessionRequired?: boolean;
 			recovery?: {
 				id: string;
 				kind: 'conflict' | 'partial';
@@ -51,14 +54,17 @@
 		);
 	const accessLevelLabel = (level: ObjectEditPayload['rights']['accessLevel']): string =>
 		t(`ingestionSetup.batchIntent.accessLevels.${level}`);
-	type PublicationStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
+	type PublicationPollingState = 'idle' | 'fresh' | 'stale-retrying' | 'unavailable' | 'recovered';
+	type PublicationUnavailableReason = 'retry-exhausted' | 'session-required';
 	type PublicationRequest = {
 		id: string;
-		status: PublicationStatus;
+		status: string;
 		failureReason: string | null;
 		createdAt: string;
 		updatedAt: string;
 		completedAt: string | null;
+		publicationRevision?: number | null;
+		targetVersion?: string | null;
 	};
 	const fieldErrors = $derived(form?.fieldErrors ?? {});
 	const localizedFieldError = (code: ObjectEditFieldErrorCode): string =>
@@ -218,49 +224,182 @@
 	let reviewNote = $state('');
 	let publishDialogOpen = $state(false);
 	let publicationRequest = $state<PublicationRequest | null>(null);
-	let publicationStatusUnavailable = $state(false);
+	let publicationPollingState = $state<PublicationPollingState>('idle');
+	let publicationUnavailableReason = $state<PublicationUnavailableReason | null>(null);
+	let publicationLastSuccessfulAt = $state<string | null>(null);
 	let publicationPollTimer: ReturnType<typeof setTimeout> | undefined;
+	let publicationPollController: AbortController | undefined;
 	let publicationPollGeneration = 0;
+	let publicationActionController: AbortController | undefined;
+	let publicationActionGeneration = 0;
+	let ambiguousPublicationRevision = $state<number | null>(null);
+	const publicationRetryDelays = [2_000, 4_000, 8_000, 16_000, 30_000] as const;
 	const hasDocumentPageProjection = $derived(
 		payload.curation.kind === 'document' && payload.curation.pages.length > 0
 	);
+	const publicationStatusAuthoritative = $derived(
+		publicationPollingState === 'fresh' || publicationPollingState === 'recovered'
+	);
 	const publicationActive = $derived(
-		publicationRequest?.status === 'PENDING' || publicationRequest?.status === 'PROCESSING'
+		publicationStatusAuthoritative &&
+		(publicationRequest?.status === 'PENDING' || publicationRequest?.status === 'PROCESSING')
+	);
+	const publicationSessionRequired = $derived(
+		publicationUnavailableReason === 'session-required'
 	);
 	const publicationStatusUrl = $derived(`/objects/${encodeURIComponent(payload.objectId)}/publication-status`);
 
-	const refreshPublicationStatus = async (url = publicationStatusUrl): Promise<void> => {
+	const stopPublicationStatusWork = (): number => {
+		const generation = ++publicationPollGeneration;
+		if (publicationPollTimer) clearTimeout(publicationPollTimer);
+		publicationPollTimer = undefined;
+		publicationPollController?.abort();
+		publicationPollController = undefined;
+		return generation;
+	};
+	const schedulePublicationFetch = (
+		url: string,
+		generation: number,
+		delay: number,
+		retryAttempt: number,
+	): void => {
+		if (generation !== publicationPollGeneration) return;
+		if (publicationPollTimer) clearTimeout(publicationPollTimer);
+		publicationPollTimer = setTimeout(() => {
+			if (generation !== publicationPollGeneration) return;
+			void refreshPublicationStatus(url, generation, retryAttempt);
+		}, delay);
+	};
+	const handlePublicationFailure = (
+		url: string,
+		generation: number,
+		retryAttempt: number,
+	): void => {
+		if (generation !== publicationPollGeneration) return;
+		if (retryAttempt >= publicationRetryDelays.length) {
+			publicationPollingState = 'unavailable';
+			publicationUnavailableReason = 'retry-exhausted';
+			return;
+		}
+		publicationPollingState = 'stale-retrying';
+		publicationUnavailableReason = null;
+		schedulePublicationFetch(
+			url,
+			generation,
+			publicationRetryDelays[retryAttempt],
+			retryAttempt + 1,
+		);
+	};
+	const refreshPublicationStatus = async (
+		url: string,
+		generation: number,
+		retryAttempt: number,
+	): Promise<void> => {
+		if (generation !== publicationPollGeneration) return;
+		const controller = new AbortController();
+		publicationPollController?.abort();
+		publicationPollController = controller;
 		try {
-			const response = await fetch(url);
-			if (!response.ok) throw new Error(t('objectEdit.publication.statusUnavailable'));
+			const response = await fetch(url, {
+				cache: 'no-store',
+				redirect: 'manual',
+				signal: controller.signal,
+			});
+			if (generation !== publicationPollGeneration) return;
+			if (
+				response.status === 401 ||
+				response.type === 'opaqueredirect' ||
+				(response.status >= 300 && response.status < 400) ||
+				response.redirected
+			) {
+				publicationPollingState = 'unavailable';
+				publicationUnavailableReason = 'session-required';
+				return;
+			}
+			if (!response.ok) throw new Error('Publication status unavailable');
 			const body = await response.json() as { request?: PublicationRequest | null };
+			if (generation !== publicationPollGeneration) return;
 			publicationRequest = body.request ?? null;
-			publicationStatusUnavailable = false;
+			if (
+				ambiguousPublicationRevision !== null &&
+				publicationRequest?.publicationRevision === ambiguousPublicationRevision + 1
+			) {
+				ambiguousPublicationRevision = null;
+			}
+			publicationLastSuccessfulAt = new Date().toISOString();
+			publicationPollingState = retryAttempt > 0 || publicationPollingState === 'stale-retrying' || publicationPollingState === 'unavailable'
+				? 'recovered'
+				: 'fresh';
+			publicationUnavailableReason = null;
+			if (publicationRequest?.status === 'PENDING' || publicationRequest?.status === 'PROCESSING') {
+				schedulePublicationFetch(url, generation, 12_000, 0);
+			}
 		} catch {
-			publicationStatusUnavailable = true;
+			if (generation !== publicationPollGeneration || controller.signal.aborted) return;
+			handlePublicationFailure(url, generation, retryAttempt);
 		}
 	};
-	const schedulePublicationPoll = (generation = publicationPollGeneration): void => {
-		if (publicationPollTimer) clearTimeout(publicationPollTimer);
-		if (generation !== publicationPollGeneration) return;
-		if (publicationRequest?.status !== 'PENDING' && publicationRequest?.status !== 'PROCESSING') return;
-		publicationPollTimer = setTimeout(async () => {
-			await refreshPublicationStatus();
-			schedulePublicationPoll(generation);
-		}, 12_000);
+	const startPublicationStatusWork = (url = publicationStatusUrl, clearCachedRequest = false): void => {
+		// The route effect clears the cache and must only depend on the object URL.
+		const recovering = !clearCachedRequest &&
+			(publicationPollingState === 'stale-retrying' || publicationPollingState === 'unavailable');
+		const generation = stopPublicationStatusWork();
+		if (clearCachedRequest) {
+			publicationRequest = null;
+			publicationLastSuccessfulAt = null;
+		}
+		publicationPollingState = recovering && !clearCachedRequest ? 'unavailable' : 'idle';
+		publicationUnavailableReason = null;
+		void refreshPublicationStatus(url, generation, 0);
 	};
+	const seedPublication = (
+		requestId: string,
+		requestStatus: string,
+		statusUrl: string,
+		publicationRevision: number | null,
+	): void => {
+		const generation = stopPublicationStatusWork();
+		const now = new Date().toISOString();
+		publicationRequest = {
+			id: requestId,
+			status: requestStatus,
+			failureReason: null,
+			createdAt: now,
+			updatedAt: now,
+			completedAt: null,
+			publicationRevision,
+			targetVersion: null,
+		};
+		publicationLastSuccessfulAt = now;
+		publicationPollingState = 'fresh';
+		publicationUnavailableReason = null;
+		if (requestStatus === 'PENDING' || requestStatus === 'PROCESSING') {
+			schedulePublicationFetch(statusUrl, generation, 12_000, 0);
+		}
+	};
+	const stopPublicationActionWork = (clearAmbiguous = false): void => {
+		publicationActionGeneration += 1;
+		publicationActionController?.abort();
+		publicationActionController = undefined;
+		submitting = false;
+		if (clearAmbiguous) ambiguousPublicationRevision = null;
+	};
+	const publicationActionIsCurrent = (generation: number, objectId: string): boolean =>
+		generation === publicationActionGeneration && payload.objectId === objectId;
 
 	$effect(() => {
 		const url = publicationStatusUrl;
-		const generation = ++publicationPollGeneration;
-		const load = async (): Promise<void> => {
-			await refreshPublicationStatus(url);
-			schedulePublicationPoll(generation);
-		};
-		void load();
+		startPublicationStatusWork(url, true);
 		return () => {
-			if (publicationPollGeneration === generation) publicationPollGeneration += 1;
-			if (publicationPollTimer) clearTimeout(publicationPollTimer);
+			stopPublicationStatusWork();
+		};
+	});
+
+	$effect(() => {
+		const objectId = payload.objectId;
+		stopPublicationActionWork(true);
+		return () => {
+			if (payload.objectId === objectId) stopPublicationActionWork(true);
 		};
 	});
 
@@ -448,7 +587,7 @@
 				{#if payload.curation.kind === 'document'}
 					<button
 						type="button"
-						disabled={!hasDocumentPageProjection || !payload.capabilities.canSubmitReview || isDirty || publicationActive}
+						disabled={!hasDocumentPageProjection || !payload.capabilities.canSubmitReview || isDirty || publicationActive || publicationSessionRequired}
 						onclick={() => (publishDialogOpen = true)}
 						class="rounded-full bg-blue-slate px-3.5 py-1.5 text-[10px] uppercase tracking-[0.2em] text-surface-white transition hover:bg-blue-slate-mid-dark disabled:pointer-events-none disabled:opacity-40"
 						title={!hasDocumentPageProjection
@@ -457,11 +596,13 @@
 								? t('objectEdit.publish.disabledDirty')
 								: publicationActive
 									? t('objectEdit.publish.disabledActive')
+									: publicationSessionRequired
+										? t('objectEdit.publish.disabledSession')
 									: undefined}
 					>
-						{publicationRequest?.status === 'PROCESSING'
+						{publicationStatusAuthoritative && publicationRequest?.status === 'PROCESSING'
 							? t('objectEdit.publish.processing')
-							: publicationRequest?.status === 'PENDING'
+							: publicationStatusAuthoritative && publicationRequest?.status === 'PENDING'
 								? t('objectEdit.publish.queued')
 								: hasDocumentPageProjection
 									? t('objectEdit.publish.submit')
@@ -494,6 +635,9 @@
 	{#if publicationRequest}
 		<div class="shrink-0 border-b border-blue-slate/10 bg-pale-sky/15 px-4 py-2.5 sm:px-6">
 			<p class="text-[10px] text-blue-slate">
+				{#if !publicationStatusAuthoritative}
+					<span class="mr-2 font-medium uppercase tracking-[0.12em] text-text-muted">{t('objectEdit.publication.lastKnown')}</span>
+				{/if}
 				{#if publicationRequest.status === 'PENDING'}
 					{t('objectEdit.publication.statusPENDING')}
 				{:else if publicationRequest.status === 'PROCESSING'}
@@ -504,15 +648,37 @@
 					{formatTemplate(t('objectEdit.publication.statusFAILED'), {
 						suffix: publicationRequest.failureReason ? `: ${publicationRequest.failureReason}` : '.'
 					})}
-				{:else}
+				{:else if publicationRequest.status === 'CANCELED'}
 					{t('objectEdit.publication.statusCANCELED')}
+				{:else}
+					{formatTemplate(t('objectEdit.publication.statusUNKNOWN'), { status: publicationRequest.status })}
 				{/if}
 				<span class="ml-2 text-text-muted">{formatTemplate(t('objectEdit.publication.requestId'), { id: publicationRequest.id })}</span>
 			</p>
 		</div>
-	{:else if publicationStatusUnavailable}
-		<div class="shrink-0 border-b border-border-soft px-4 py-2 sm:px-6">
-			<p class="text-[10px] text-text-muted">{t('objectEdit.publication.statusUnavailable')}</p>
+	{/if}
+	{#if publicationPollingState === 'stale-retrying' || publicationPollingState === 'unavailable' || publicationPollingState === 'recovered'}
+		<div class="shrink-0 border-b border-border-soft px-4 py-2 sm:px-6" role="status">
+			<p class="text-[10px] text-text-muted">
+				{publicationPollingState === 'stale-retrying'
+					? t('objectEdit.publication.retrying')
+					: publicationPollingState === 'recovered'
+						? t('objectEdit.publication.recovered')
+						: publicationSessionRequired
+							? t('objectEdit.publication.sessionRequired')
+							: t('objectEdit.publication.statusUnavailable')}
+				{#if publicationLastSuccessfulAt}
+					<span class="ml-1">{formatTemplate(t('objectEdit.publication.lastSuccessful'), { time: formatDateTime(publicationLastSuccessfulAt, $locale) })}</span>
+				{/if}
+				{#if publicationPollingState === 'unavailable'}
+					{#if publicationSessionRequired}
+						<a href={resolve('/login')} target="_blank" rel="noopener" class="ml-2 font-medium text-blue-slate underline underline-offset-2">{t('objectEdit.publication.loginAction')}</a>
+						<button type="button" onclick={() => startPublicationStatusWork()} class="ml-2 font-medium text-blue-slate underline underline-offset-2">{t('objectEdit.publication.retryAction')}</button>
+					{:else}
+						<button type="button" onclick={() => startPublicationStatusWork()} class="ml-2 font-medium text-blue-slate underline underline-offset-2">{t('objectEdit.publication.retryAction')}</button>
+					{/if}
+				{/if}
+			</p>
 		</div>
 	{/if}
 
@@ -716,17 +882,79 @@
 		method="POST"
 		action="?/submitCuration"
 		class="mt-5"
-		use:enhance={() => {
+		use:enhance={({ controller, formData }) => {
+			publicationActionController?.abort();
+			publicationActionController = controller;
+			const actionGeneration = ++publicationActionGeneration;
+			const actionObjectId = payload.objectId;
+			const actionStatusUrl = publicationStatusUrl;
+			const submittedRevision = ambiguousPublicationRevision ?? Number(formData.get('revision'));
+			formData.set('revision', String(submittedRevision));
+			stopPublicationStatusWork();
+			publicationPollingState = 'idle';
+			publicationUnavailableReason = null;
 			submitting = true;
 			return async ({ update, result }) => {
-				await update({ reset: false, invalidateAll: result.type === 'success' });
-				submitting = false;
-				if (result.type === 'success') {
+				const actionData = result.type === 'success' || result.type === 'failure'
+					? result.data as {
+						requestId?: string;
+						requestStatus?: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
+						revision?: number;
+						publicationAlreadyActive?: boolean;
+						sessionRequired?: boolean;
+					}
+					: null;
+				if (!publicationActionIsCurrent(actionGeneration, actionObjectId)) return;
+				publicationActionController = undefined;
+				if (result.type === 'error') {
+					submitting = false;
+					ambiguousPublicationRevision = submittedRevision;
+					startPublicationStatusWork(actionStatusUrl);
+					return;
+				}
+				if (
+					actionData?.publicationAlreadyActive &&
+					actionData.requestId &&
+					actionData.requestStatus
+				) {
+					submitting = false;
 					publishDialogOpen = false;
 					reviewNote = '';
-					await refreshPublicationStatus();
-					schedulePublicationPoll();
+					ambiguousPublicationRevision = null;
+					seedPublication(
+						actionData.requestId,
+						actionData.requestStatus,
+						actionStatusUrl,
+						actionData.revision ?? submittedRevision + 1,
+					);
+					return;
 				}
+				if (result.type === 'redirect' || actionData?.sessionRequired) {
+					submitting = false;
+					publicationPollingState = 'unavailable';
+					publicationUnavailableReason = 'session-required';
+					return;
+				}
+				await update({ reset: false, invalidateAll: result.type === 'success' });
+				if (!publicationActionIsCurrent(actionGeneration, actionObjectId)) return;
+				submitting = false;
+				if (
+					actionData?.requestId &&
+					actionData.requestStatus &&
+					result.type === 'success'
+				) {
+					publishDialogOpen = false;
+					reviewNote = '';
+					ambiguousPublicationRevision = null;
+					seedPublication(
+						actionData.requestId,
+						actionData.requestStatus,
+						actionStatusUrl,
+						actionData.revision ?? submittedRevision + 1,
+					);
+					return;
+				}
+				startPublicationStatusWork();
 			};
 		}}
 	>
@@ -746,7 +974,7 @@
 		<input type="hidden" name="revision" value={payload.revision} />
 		<div class="mt-5 flex flex-wrap justify-end gap-2">
 			<button type="button" disabled={submitting} onclick={() => (publishDialogOpen = false)} class="rounded-full border border-border-soft px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20 disabled:opacity-40">{t('common.cancel')}</button>
-			<button type="submit" disabled={submitting} class="rounded-full bg-blue-slate px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-surface-white transition hover:bg-blue-slate-mid-dark disabled:opacity-40">
+			<button type="submit" disabled={submitting || publicationSessionRequired} class="rounded-full bg-blue-slate px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-surface-white transition hover:bg-blue-slate-mid-dark disabled:opacity-40">
 				{submitting ? t('objectEdit.publishDialog.queueing') : t('objectEdit.publishDialog.queue')}
 			</button>
 		</div>

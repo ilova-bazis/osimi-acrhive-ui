@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	createObjectResyncResponseSchema,
+	objectDetailResponseSchema,
 	objectsListResponseSchema,
 	type ObjectsListResponseDto
 } from '$lib/api/schemas/objects';
@@ -395,5 +396,98 @@ describe('mapObjectsList', () => {
 		expect(mapped.status).toBe('queued');
 		expect(mapped.objectId).toBe('OBJ-9');
 		expect(mapped.request.dedupeKey).toBeNull();
+	});
+});
+
+describe('mapObjectDetail viewer mapping', () => {
+	it('preserves distinct aggregate and per-page OCR artifacts without conflation', () => {
+		const parsed = objectDetailResponseSchema.parse({
+			object: {
+				id: 'OBJ-20260101-VIEWER',
+				object_id: 'OBJ-20260101-VIEWER',
+				thumbnail_artifact_id: null,
+				title: 'Viewer object',
+				processing_state: 'index_done',
+				curation_state: 'reviewed',
+				availability_state: 'AVAILABLE',
+				access_level: 'private',
+				type: 'DOCUMENT',
+				tenant_id: 'tenant-1',
+				source_ingestion_id: null,
+				source_batch_label: null,
+				metadata: {},
+				created_at: '2026-01-01T00:00:00.000Z',
+				updated_at: '2026-01-01T00:00:00.000Z',
+				embargo_until: null,
+				embargo_kind: 'none',
+				embargo_curation_state: null,
+				rights_note: null,
+				sensitivity_note: null,
+				can_download: true,
+				access_reason_code: 'OK'
+			},
+			viewer: {
+				media_type: 'document',
+				primary_source: {
+					source_type: 'access_copy',
+					artifact_kind: 'pdf',
+					variant: null,
+					status: 'available',
+					available_file_id: null,
+					artifact_id: null,
+					display_name: null,
+					content_type: null,
+					size_bytes: null,
+					access_reason_code: 'OK'
+				},
+				active_request: null,
+				preview_artifacts: {
+					thumbnail: null,
+					poster: null,
+					ocr_text: null,
+					transcript: null,
+					captions: null
+				},
+				viewer_payload: {
+					kind: 'document',
+					artifact_id: null,
+					content_type: 'application/pdf',
+					ocr_text_artifact_id: 'ocr-agg',
+					page_count: 2,
+					pages: [
+						{
+							page_number: 1,
+							label: 'Page 1',
+							image_artifact_id: null,
+							ocr_text_artifact_id: 'ocr-1'
+						},
+						{
+							page_number: 2,
+							label: 'Page 2',
+							image_artifact_id: 'img-2',
+							ocr_text_artifact_id: 'ocr-2'
+						}
+					]
+				}
+			}
+		});
+
+		const mapped = mapObjectDetail(parsed);
+
+		expect(mapped.viewer).not.toBeNull();
+		const viewer = mapped.viewer!;
+		expect(viewer.mediaType).toBe('document');
+		expect(viewer.viewerPayload.kind).toBe('document');
+
+		const payload = viewer.viewerPayload as Extract<
+			typeof viewer.viewerPayload,
+			{ kind: 'document' }
+		>;
+		expect(payload.ocrTextArtifactId).toBe('ocr-agg');
+		expect(payload.pages?.map((page) => page.pageNumber)).toEqual([1, 2]);
+		expect(payload.pages?.[0]?.imageArtifactId).toBeNull();
+		expect(payload.pages?.[0]?.ocrTextArtifactId).toBe('ocr-1');
+		expect(payload.pages?.[1]?.imageArtifactId).toBe('img-2');
+		expect(payload.pages?.[1]?.ocrTextArtifactId).toBe('ocr-2');
 	});
 });

@@ -287,6 +287,33 @@ describe('/objects/[objectId] +page.server', () => {
 		expect(createObjectDownloadRequestMock).not.toHaveBeenCalled();
 	});
 
+	it('rejects omitted, empty, and blank available file ids before requesting download', async () => {
+		const cases: (string | null)[] = [null, '', '   '];
+
+		for (const value of cases) {
+			const form = new FormData();
+			if (value !== null) form.set('availableFileId', value);
+
+			const result = await actions.requestDownload({
+				request: new Request('https://example.test/objects/OBJ-1', {
+					method: 'POST',
+					body: form
+				}),
+				params: { objectId: 'OBJ-1' },
+				locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'viewer' } },
+				cookies: { get: () => 'token-1', delete: vi.fn() },
+				fetch: vi.fn()
+			} as never);
+
+			expect(result, JSON.stringify(value)).toMatchObject({
+				status: 400,
+				data: { errorCode: 'missingFileId' }
+			});
+		}
+
+		expect(createObjectDownloadRequestMock).not.toHaveBeenCalled();
+	});
+
 	it('returns detail with non-blocking available files error', async () => {
 		const detail = makeDetail();
 		getObjectDetailMock.mockResolvedValue({ detail, viewer: null });

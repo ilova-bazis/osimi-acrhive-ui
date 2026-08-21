@@ -14,7 +14,7 @@
 		availability: Availability;
 		mediaLabel: string;
 		variant?: 'light' | 'dark';
-		onRequest: () => void;
+		onRequest?: () => void;
 	}>();
 
 	const dictionary = $derived(translations[$locale]);
@@ -69,17 +69,21 @@
 		{:else}
 			<div>
 				<p class="text-sm font-medium {isDark ? 'text-pale-sky/80' : 'text-text-ink'}">{t('objects.detail.mediaRequest.archived')}</p>
-				<p class="mt-1 text-xs {isDark ? 'text-pale-sky/40' : 'text-text-muted'}">{formatTemplate(t('objects.detail.mediaRequest.archivedBody'), { media })}</p>
+				<p class="mt-1 text-xs {isDark ? 'text-pale-sky/40' : 'text-text-muted'}">{onRequest
+					? formatTemplate(t('objects.detail.mediaRequest.archivedBody'), { media })
+					: formatTemplate(t('objects.detail.mediaRequest.unavailableBody'), { media })}</p>
 			</div>
-			<button
-				type="button"
-				class="rounded-full px-5 py-2 text-[10px] uppercase tracking-[0.2em] transition {isDark
-					? 'bg-pearl-beige text-blue-slate-deep hover:bg-[#f1e6c8]'
-					: 'bg-blue-slate text-surface-white hover:bg-blue-slate-mid-dark'}"
-				onclick={onRequest}
-			>
-				{t('objects.detail.mediaRequest.requestAccess')}
-			</button>
+			{#if onRequest}
+				<button
+					type="button"
+					class="rounded-full px-5 py-2 text-[10px] uppercase tracking-[0.2em] transition {isDark
+						? 'bg-pearl-beige text-blue-slate-deep hover:bg-[#f1e6c8]'
+						: 'bg-blue-slate text-surface-white hover:bg-blue-slate-mid-dark'}"
+					onclick={onRequest}
+				>
+					{t('objects.detail.mediaRequest.requestAccess')}
+				</button>
+			{/if}
 		{/if}
 	</div>
 {/if}

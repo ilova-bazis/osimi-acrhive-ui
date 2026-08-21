@@ -118,6 +118,28 @@ describe('backendRequest', () => {
 		});
 	});
 
+	it('preserves the active-publication error code and details', async () => {
+		const fetchFn = vi.fn().mockResolvedValue(
+			jsonResponse({
+				error: {
+					code: 'PUBLICATION_ALREADY_ACTIVE',
+					message: 'Publication already active',
+					details: { request_id: 'req-existing', request_status: 'PENDING' },
+				},
+			}, 409),
+		);
+
+		await expect(backendRequest({
+			fetchFn,
+			path: '/api/test',
+			context: 'test.publication-conflict',
+			responseSchema: z.object({ ok: z.boolean() }),
+		})).rejects.toMatchObject({
+			code: 'PUBLICATION_ALREADY_ACTIVE',
+			details: { request_id: 'req-existing', request_status: 'PENDING' },
+		});
+	});
+
 	it('preserves validation failures and field details', async () => {
 		const fetchFn = vi.fn().mockResolvedValue(
 			jsonResponse(

@@ -367,12 +367,41 @@ describe('/objects/[objectId]/edit +page.server', () => {
 
 		expect(result).toEqual({
 			success: true,
+			revision: 5,
 			curationState: 'under_review',
 			requestId: 'req-1',
 			requestStatus: 'PENDING',
 		});
 		expect(submitObjectCurationMock).toHaveBeenCalledWith(
 			expect.objectContaining({ objectId: 'OBJ-1', revision: 4, reviewNote: 'Looks ready' }),
+		);
+	});
+
+	it('lets the backend resolve an exact retry after the visible revision advances', async () => {
+		getObjectEditPayloadMock.mockResolvedValue({ ...baseEditPayload, revision: 5 });
+		submitObjectCurationMock.mockResolvedValue({
+			objectId: 'OBJ-1',
+			revision: 5,
+			curationState: 'under_review',
+			submittedAt: '2026-05-23T18:00:00.000Z',
+			submittedBy: 'u1',
+			requestId: 'req-existing',
+			requestStatus: 'PROCESSING',
+		});
+		const form = new FormData();
+		form.set('revision', '4');
+
+		const result = await actions.submitCuration(makeEvent(form));
+
+		expect(result).toEqual({
+			success: true,
+			revision: 5,
+			curationState: 'under_review',
+			requestId: 'req-existing',
+			requestStatus: 'PROCESSING',
+		});
+		expect(submitObjectCurationMock).toHaveBeenCalledWith(
+			expect.objectContaining({ objectId: 'OBJ-1', revision: 4 }),
 		);
 	});
 
@@ -421,6 +450,44 @@ describe('/objects/[objectId]/edit +page.server', () => {
 		await actions.submitCuration(makeEvent(form));
 
 		expect(submitObjectCurationMock).toHaveBeenCalledWith(expect.objectContaining({ reviewNote: null }));
+	});
+
+	it('maps an existing active publication conflict for the UI to adopt', async () => {
+		submitObjectCurationMock.mockRejectedValue(new ApiClientError({
+			status: 409,
+			code: 'PUBLICATION_ALREADY_ACTIVE',
+			message: 'Publication already active',
+			details: { existing_request_id: 'req-existing', existing_request_status: 'PROCESSING' },
+		}));
+		const form = new FormData();
+		form.set('revision', '4');
+
+		const result = await actions.submitCuration(makeEvent(form));
+
+		expect(result).toMatchObject({
+			status: 409,
+			data: {
+				publicationAlreadyActive: true,
+				requestId: 'req-existing',
+				requestStatus: 'PROCESSING',
+			},
+		});
+	});
+
+	it('returns session-required action state instead of redirecting an expired submission', async () => {
+		const form = new FormData();
+		form.set('revision', '4');
+		const event = makeEvent(form) as unknown as {
+			locals: { session: null };
+			cookies: { get: () => undefined };
+		};
+		event.locals.session = null;
+		event.cookies.get = () => undefined;
+
+		const result = await actions.submitCuration(event as never);
+
+		expect(result).toMatchObject({ status: 401, data: { sessionRequired: true } });
+		expect(submitObjectCurationMock).not.toHaveBeenCalled();
 	});
 
 	it('rejects submitCuration when submit capability is missing', async () => {

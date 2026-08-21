@@ -20,6 +20,7 @@ vi.mock('$app/paths', () => ({
 }));
 
 import SetupPage from './+page.svelte';
+import '../../../layout.css';
 
 const itemSummary = {
 	classification: { tags: ['archive'], summary: 'Item summary' },
@@ -164,6 +165,7 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 	});
 
 	it('localizes the setup stepper position in Russian', async () => {
+		await page.viewport(1280, 720);
 		locale.setLocale('ru');
 		render(SetupPage, { data: pageData() });
 
@@ -653,6 +655,71 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 			.not.toBeInTheDocument();
 	});
 
+	it('keeps ungrouped filenames clear of thumbnails and fits mobile rows', async () => {
+		await page.viewport(1280, 720);
+		vi.stubGlobal('fetch', vi.fn());
+
+		const longName = 'a-very-long-scanned-document-page-name-0001.jpg';
+		const standaloneData = pageData();
+		standaloneData.items = [];
+		standaloneData.existingFiles = [
+			{
+				id: 'file-1',
+				name: longName,
+				status: 'uploaded',
+				statusRaw: 'uploaded',
+				contentType: 'image/jpeg',
+				sizeBytes: 1024 * 1024,
+				createdAt: null,
+				preview: { status: 'ready', contentType: 'image/jpeg', width: 10, height: 10, url: null }
+			}
+		];
+		render(SetupPage, { data: standaloneData });
+
+		const thumbnail = page.getByRole('img', { name: longName });
+		await expect.element(thumbnail).toBeInTheDocument();
+		const filename = page.getByText(longName).element();
+		const row = filename.closest('[draggable="true"]') as HTMLElement | null;
+		expect(row).not.toBeNull();
+		const rowElement = row!;
+
+		const desktopThumbnailRect = thumbnail.element().getBoundingClientRect();
+		const desktopFilenameRect = filename.getBoundingClientRect();
+		expect(desktopThumbnailRect.width).toBeGreaterThanOrEqual(60);
+		expect(desktopThumbnailRect.width).toBeLessThanOrEqual(65);
+		expect(desktopFilenameRect.left).toBeGreaterThanOrEqual(desktopThumbnailRect.right - 1);
+
+		const desktopFilenameStyle = getComputedStyle(filename);
+		expect(desktopFilenameStyle.overflow).toBe('hidden');
+		expect(desktopFilenameStyle.whiteSpace).toBe('nowrap');
+		expect(desktopFilenameStyle.textOverflow).toBe('ellipsis');
+
+		const desktopOnlySize = rowElement.querySelector(
+			'span.hidden.sm\\:block'
+		) as HTMLElement | null;
+		expect(desktopOnlySize).not.toBeNull();
+		expect(getComputedStyle(desktopOnlySize!).display).not.toBe('none');
+
+		try {
+			await page.viewport(375, 667);
+
+			const mobileThumbnailRect = thumbnail.element().getBoundingClientRect();
+			const mobileFilenameRect = filename.getBoundingClientRect();
+			expect(mobileThumbnailRect.width).toBeGreaterThanOrEqual(60);
+			expect(mobileThumbnailRect.width).toBeLessThanOrEqual(65);
+			expect(mobileFilenameRect.left).toBeGreaterThanOrEqual(mobileThumbnailRect.right - 1);
+			expect(rowElement.scrollWidth).toBeLessThanOrEqual(rowElement.clientWidth);
+			expect(filename.scrollWidth).toBeGreaterThan(filename.clientWidth);
+
+			const mobileMeta = rowElement.querySelector('.sm\\:hidden') as HTMLElement | null;
+			expect(mobileMeta).not.toBeNull();
+			expect(getComputedStyle(mobileMeta!).display).not.toBe('none');
+			expect(getComputedStyle(desktopOnlySize!).display).toBe('none');
+		} finally {
+			await page.viewport(1280, 720);
+		}
+	});
+
 	it('shows backend preview failures without a Check again action', async () => {
 		vi.stubGlobal('fetch', vi.fn());
 		const failedData = pageData();
@@ -754,7 +821,7 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 		render(SetupPage, { data: unknownData });
 
 		await expect
-			.element(page.getByText('Future_File_State', { exact: true }))
+			.element(page.getByText('Future_File_State', { exact: true }).first())
 			.toBeInTheDocument();
 	});
 

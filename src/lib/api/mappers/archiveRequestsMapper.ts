@@ -1,6 +1,8 @@
 import type { ArchiveRequestDto, ArchiveRequestsListResponseDto } from '$lib/api/schemas/archiveRequests';
 import type { ArchiveRequest, ArchiveRequestsListResponse } from '$lib/services/archiveRequests';
 
+const knownStatuses = new Set(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELED']);
+
 const toArchiveRequest = (item: ArchiveRequestDto): ArchiveRequest => ({
 	id: item.id,
 	tenantId: item.tenant_id,
@@ -9,7 +11,8 @@ const toArchiveRequest = (item: ArchiveRequestDto): ArchiveRequest => ({
 	actionType: item.action_type,
 	requestedBy: item.requested_by,
 	dedupeKey: item.dedupe_key,
-	status: item.status,
+	status: knownStatuses.has(item.status) ? item.status as ArchiveRequest['status'] : null,
+	statusRaw: item.status,
 	failureReason: item.failure_reason,
 	createdAt: item.created_at,
 	updatedAt: item.updated_at,

@@ -70,6 +70,7 @@ describe('deriveObjectDetailAccessSummary', () => {
 			requestedBy: 'user-1',
 			dedupeKey: 'dedupe',
 			status: 'PROCESSING',
+			statusRaw: 'PROCESSING',
 			failureReason: null,
 			createdAt: '2026-04-02T10:00:00.000Z',
 			updatedAt: '2026-04-02T10:00:00.000Z',

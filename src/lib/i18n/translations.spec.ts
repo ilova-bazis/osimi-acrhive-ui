@@ -16,6 +16,6 @@ describe('production translation dictionaries', () => {
 
 	it('keeps a snapshot of the current English leaf count as a growth alarm', () => {
 		const english = collectTranslationLeaves(translations.en as never);
-		expect(english.length).toBe(1125);
+		expect(english.length).toBe(1137);
 	});
 });

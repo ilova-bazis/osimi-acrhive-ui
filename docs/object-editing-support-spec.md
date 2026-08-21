@@ -157,18 +157,20 @@ Behavior:
 
 - valid for the currently supported curation media types only
 - assembles the current curated OCR state into an archive-apply payload
-- creates a `curation_apply` archive request
-- increments revision
-- emits immutable `CURATION_SUBMITTED` history event
+- creates a `curation_apply` archive request for a new submission
+- returns the existing request for an exact revision-qualified retry, including a retry after the original response was lost
+- increments revision for a new submission only
+- emits an immutable `CURATION_SUBMITTED` history event for a new submission only
 
 ## Revision and Conflict Semantics
 
 1. All object editing write endpoints MUST require `revision`.
-2. Any stale revision MUST return deterministic `409` conflict.
+2. A stale revision that is not an exact retry MUST return deterministic `409` conflict. The backend, not the UI preflight, decides whether a submit is an exact deduplicated retry.
 3. Revision increments by 1 for each successful edit write.
 4. Archive-side apply completion/failure MUST NOT silently mutate user draft revision.
 5. OCR page curation writes update only the submitted page set and MUST NOT overwrite unrelated curated pages.
-6. Submit-for-review is revision-guarded and MUST create at most one active `curation_apply` request per object+target version.
+6. Submit-for-review is revision-guarded and MUST create at most one active `PENDING` or `PROCESSING` `curation_apply` request per tenant and object, regardless of target version.
+7. A different submission while one is active MUST return `409 PUBLICATION_ALREADY_ACTIVE` with the existing request ID and status; the UI adopts that request and resumes polling.
 
 ## Async `curation_apply` Contract
 
@@ -191,7 +193,18 @@ Worker result MUST include at least:
 Apply semantics:
 
 - full-file replacement
-- idempotent by `(object_id, curated_kind, target_version)`
+- exact retries are idempotent by the revision-qualified `idempotency_key`
+- the separate per-tenant/object active-publication invariant rejects a different submission while an earlier request is active
+
+### Publication status UI
+
+- The initial status request is followed by five retries after failures, at 2, 4, 8, 16, and 30 seconds. This is six requests when every attempt fails, not five total requests.
+- Active requests are normally polled every 12 seconds.
+- A cached active request is authoritative for disabling Publish only while polling health is `fresh` or `recovered`.
+- During `stale-retrying` or retry-exhausted `unavailable`, the request remains visible as last-known state but does not disable Publish; a manual Retry resets the sequence.
+- A generic unknown request status remains visible and does not disable Publish or continue active polling. The backend submission guard remains authoritative.
+- A successful request after stale retries or manual recovery enters `recovered`, restores active-status authority, and resumes normal polling when active.
+- A direct `401` or manual/opaque login redirect enters session-required `unavailable`, disables both the page Publish trigger and an already-open dialog submit button, preserves unsaved edits, and offers localized sign-in and Retry actions.
 
 ## Reprocessing and Stale Semantics
 

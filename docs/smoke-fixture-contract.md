@@ -31,6 +31,8 @@ Artifact IDs are UUID-shaped and unique across fixture objects. Artifact metadat
 
 Ranges are intentionally not applied to artifact downloads or ingestion previews. Downloads are full `200` attachment responses; previews are full `200` responses.
 
+The document viewer fixture deliberately distinguishes combined OCR from page OCR: `viewer_payload.ocr_text_artifact_id` references the combined artifact while each page references its own page OCR artifact with distinct IDs and bodies. Aggregate OCR is never page-scoped, and smoke coverage relies on these distinct IDs to detect aggregate/page conflation.
+
 ## Validated Values
 
 Ingestion capabilities use the backend media-kind enum: `image`, `audio`, `video`, and `document`. Resync responses use archive action type `object_resync`.

@@ -260,8 +260,8 @@
 		const key = knownRequestActionKey(actionType);
 		return key ? t(key) : actionType;
 	};
-	const requestStatusLabel = (status: ArchiveRequest['status']): string =>
-		t(requestStatusKeys[status]);
+	const requestStatusLabel = (request: ArchiveRequest): string =>
+		request.status ? t(requestStatusKeys[request.status]) : request.statusRaw;
 	const pageBgClass = $derived.by(() => {
 		if (viewer?.mediaType === 'document') return 'bg-[linear-gradient(180deg,#f5f2eb_0%,#edf1f2_100%)]';
 		if (viewer?.mediaType === 'audio') return 'bg-[#1f2f38]';
@@ -273,9 +273,19 @@
 	const introLabelClass = $derived.by(() =>
 		viewer?.mediaType === 'document' ? 'text-blue-slate' : 'text-white/45'
 	);
-	const requestableAvailableFileId = $derived(viewer?.primarySource.availableFileId ?? '');
+	const nonEmptyOrNull = (value: string | null | undefined): string | null => {
+		const trimmed = (value ?? '').trim();
+		return trimmed.length > 0 ? trimmed : null;
+	};
+	const requestableAvailableFileId = $derived(
+		nonEmptyOrNull(viewer?.primarySource.availableFileId)
+	);
+	const canRequestAccess = $derived(
+		viewer?.primarySource.status === 'request_required' && Boolean(requestableAvailableFileId)
+	);
 	const canRequestResync = $derived(data.session?.role === 'archiver' || data.session?.role === 'admin');
 	const requestPrimaryMedia = (): void => {
+		if (!requestableAvailableFileId) return;
 		(requestForm as HTMLFormElement | null)?.requestSubmit();
 	};
 
@@ -390,14 +400,16 @@
 					{requestErrorLabel(form?.errorCode, form?.requestId)}
 				</p>
 			{/if}
-			<form bind:this={requestForm} method="POST" action="?/requestDownload" class="hidden">
-				<input type="hidden" name="availableFileId" value={requestableAvailableFileId} />
-			</form>
+			{#if requestableAvailableFileId}
+				<form bind:this={requestForm} method="POST" action="?/requestDownload" class="hidden">
+					<input type="hidden" name="availableFileId" value={requestableAvailableFileId} />
+				</form>
+			{/if}
 			<ObjectViewerCanvas
 				objectId={detail.objectId}
 				title={displayTitle}
 				{viewer}
-				onRequest={requestPrimaryMedia}
+				onRequest={canRequestAccess ? requestPrimaryMedia : undefined}
 			/>
 		</section>
 
@@ -595,7 +607,7 @@
 										<td class="py-3 pr-4">{requestActionLabel(request.actionType)}</td>
 										<td class="py-3 pr-4">
 											<span class="rounded-full border border-border-soft px-2 py-1 text-xs text-text-muted">
-												{requestStatusLabel(request.status)}
+												{requestStatusLabel(request)}
 											</span>
 										</td>
 										<td class="py-3">{formatDate(request.createdAt)}</td>

@@ -7,6 +7,7 @@ import {
 } from '$lib/api/mappers/objectEditMapper';
 import {
 	objectEditPayloadSchema,
+	objectCurationPublicationSchema,
 	releaseLockResultSchema,
 	saveDocumentCurationRequestSchema,
 	saveDocumentCurationResultSchema,
@@ -36,6 +37,9 @@ const toDocumentCurationPath = (objectId: string) =>
 
 const toCurationSubmitPath = (objectId: string) =>
 	`/api/objects/${encodeURIComponent(objectId)}/curation/submit`;
+
+const toCurationPublicationPath = (objectId: string) =>
+	`/api/objects/${encodeURIComponent(objectId)}/curation-publication`;
 
 const toEditLockPath = (objectId: string) =>
 	`/api/objects/${encodeURIComponent(objectId)}/edit-lock`;
@@ -74,6 +78,32 @@ export const apiObjectEditService: ObjectEditService = {
 		});
 
 		return mapObjectEditPayload(response);
+	},
+
+	getCurationPublication: async ({ context, objectId }) => {
+		const response = await backendRequest({
+			fetchFn: context.fetchFn,
+			path: toCurationPublicationPath(objectId),
+			context: 'objectEdit.publication',
+			method: 'GET',
+			token: context.token,
+			responseSchema: objectCurationPublicationSchema,
+		});
+		return {
+			objectId: response.object_id,
+			request: response.request
+				? {
+					id: response.request.id,
+					status: response.request.status,
+					failureReason: response.request.failure_reason,
+					publicationRevision: response.request.publication_revision,
+					targetVersion: response.request.target_version,
+					createdAt: response.request.created_at,
+					updatedAt: response.request.updated_at,
+					completedAt: response.request.completed_at,
+				}
+				: null,
+		};
 	},
 
 	saveObjectMetadata: async ({ context, objectId, revision, metadata, rights }: SaveMetadataRequest) => {

@@ -93,6 +93,7 @@ const pageData = () => ({
 describe('/objects/[objectId] +page.svelte localization', () => {
 	afterEach(() => {
 		locale.setLocale('en');
+		vi.unstubAllGlobals();
 	});
 
 	it('resolves object detail keys instead of rendering raw key paths', async () => {
@@ -122,7 +123,7 @@ describe('/objects/[objectId] +page.svelte localization', () => {
 			.element(page.getByText('Медиа доступно в режиме чтения'))
 			.toBeInTheDocument();
 		await expect.element(page.getByText('Индекс готов')).toBeInTheDocument();
-		await expect.element(page.getByText('Доступен')).toBeInTheDocument();
+		await expect.element(page.getByText('Доступен', { exact: true })).toBeInTheDocument();
 		await expect.element(page.getByText('index_done')).not.toBeInTheDocument();
 
 		await page.getByRole('button', { name: 'Поддержка' }).click();
@@ -284,7 +285,11 @@ describe('/objects/[objectId] +page.svelte localization', () => {
 		const data = pageData();
 		data.viewer = {
 			...data.viewer,
-			primarySource: { ...data.viewer.primarySource, status: 'request_required' as const }
+			primarySource: {
+				...data.viewer.primarySource,
+				status: 'request_required' as const,
+				availableFileId: '11111111-1111-4111-8111-111111111111'
+			}
 		} as unknown as typeof data.viewer;
 		render(ObjectDetailPage, { data });
 
@@ -292,6 +297,64 @@ describe('/objects/[objectId] +page.svelte localization', () => {
 		await expect
 			.element(page.getByRole('button', { name: 'Запросить доступ' }))
 			.toBeInTheDocument();
+	});
+
+	it('keeps the hidden request form when request_required has a target', async () => {
+		const data = pageData();
+		data.viewer = {
+			...data.viewer,
+			primarySource: {
+				...data.viewer.primarySource,
+				status: 'request_required' as const,
+				availableFileId: '11111111-1111-4111-8111-111111111111'
+			}
+		} as unknown as typeof data.viewer;
+		render(ObjectDetailPage, { data });
+
+		const form = document.querySelector(
+			'form.hidden[action="?/requestDownload"]'
+		) as HTMLFormElement | null;
+		expect(form).not.toBeNull();
+		expect(
+			(form?.querySelector('input[name="availableFileId"]') as HTMLInputElement | null)?.value
+		).toBe('11111111-1111-4111-8111-111111111111');
+	});
+
+	it('hides the request action and form when request_required lacks a target', async () => {
+		const data = pageData();
+		data.viewer = {
+			...data.viewer,
+			primarySource: {
+				...data.viewer.primarySource,
+				status: 'request_required' as const,
+				availableFileId: null
+			}
+		} as unknown as typeof data.viewer;
+		render(ObjectDetailPage, { data });
+
+		await expect.element(page.getByText('Stored in archive')).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Request access' }))
+			.not.toBeInTheDocument();
+		expect(document.querySelector('form.hidden[action="?/requestDownload"]')).toBeNull();
+	});
+
+	it('treats blank request targets as missing', async () => {
+		const data = pageData();
+		data.viewer = {
+			...data.viewer,
+			primarySource: {
+				...data.viewer.primarySource,
+				status: 'request_required' as const,
+				availableFileId: '   '
+			}
+		} as unknown as typeof data.viewer;
+		render(ObjectDetailPage, { data });
+
+		await expect
+			.element(page.getByRole('button', { name: 'Request access' }))
+			.not.toBeInTheDocument();
+		expect(document.querySelector('form.hidden[action="?/requestDownload"]')).toBeNull();
 	});
 
 	it('localizes the unavailable viewer state in Russian', async () => {
@@ -400,6 +463,100 @@ describe('/objects/[objectId] +page.svelte localization', () => {
 		await expect
 			.element(page.getByRole('button', { name: 'Приблизить' }))
 			.toBeInTheDocument();
+	});
+
+	it('routes distinct per-page OCR artifacts through the document viewer', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValue(
+				new Response('ocr body', { status: 200, headers: { 'content-type': 'text/plain' } })
+			);
+		vi.stubGlobal('fetch', fetchMock);
+
+		const data = pageData();
+		data.viewer = {
+			...data.viewer,
+			mediaType: 'document' as const,
+			primarySource: { ...data.viewer.primarySource, status: 'available' as const },
+			previewArtifacts: {
+				thumbnail: null,
+				poster: null,
+				ocrText: null,
+				transcript: null,
+				captions: null
+			},
+			viewerPayload: {
+				kind: 'document' as const,
+				artifactId: null,
+				contentType: 'application/pdf',
+				ocrTextArtifactId: null,
+				pageCount: 2,
+				pages: [
+					{
+						pageNumber: 1,
+						label: 'Page 1',
+						imageArtifactId: 'img-1',
+						ocrTextArtifactId: 'ocr-1'
+					},
+					{
+						pageNumber: 2,
+						label: 'Page 2',
+						imageArtifactId: 'img-2',
+						ocrTextArtifactId: 'ocr-2'
+					}
+				]
+			}
+		} as unknown as typeof data.viewer;
+		render(ObjectDetailPage, { data });
+
+		await page.getByRole('button', { name: 'OCR' }).click();
+
+		await vi.waitFor(() => {
+			expect(fetchMock.mock.calls.length).toBe(2);
+		});
+		const urls = fetchMock.mock.calls.map(([url]) => String(url));
+		expect(urls.filter((url) => url.endsWith('/artifacts/ocr-1/view')).length).toBe(1);
+		expect(urls.filter((url) => url.endsWith('/artifacts/ocr-2/view')).length).toBe(1);
+	});
+
+	it('routes aggregate-only document OCR through a single document-level preview', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValue(
+				new Response('ocr body', { status: 200, headers: { 'content-type': 'text/plain' } })
+			);
+		vi.stubGlobal('fetch', fetchMock);
+
+		const data = pageData();
+		data.viewer = {
+			...data.viewer,
+			mediaType: 'document' as const,
+			primarySource: { ...data.viewer.primarySource, status: 'available' as const },
+			previewArtifacts: {
+				thumbnail: null,
+				poster: null,
+				ocrText: null,
+				transcript: null,
+				captions: null
+			},
+			viewerPayload: {
+				kind: 'document' as const,
+				artifactId: null,
+				contentType: 'application/pdf',
+				ocrTextArtifactId: 'ocr-agg',
+				pageCount: 1,
+				pages: []
+			}
+		} as unknown as typeof data.viewer;
+		render(ObjectDetailPage, { data });
+
+		await page.getByRole('button', { name: 'OCR' }).click();
+
+		await expect.element(page.getByText('Document OCR')).toBeInTheDocument();
+		await vi.waitFor(() => {
+			expect(fetchMock.mock.calls.length).toBe(1);
+		});
+		expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/artifacts/ocr-agg/view');
 	});
 
 	it('opens a semantic resync confirmation dialog', async () => {

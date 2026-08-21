@@ -1,27 +1,26 @@
 import { json } from '@sveltejs/kit';
 
-import { archiveRequestsService } from '$lib/services';
+import { objectEditService } from '$lib/services';
 import { AUTH_COOKIE_NAME, clearSessionCookie } from '$lib/server/auth';
 import { isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
 import type { RequestHandler } from './$types';
 
+const responseHeaders = { 'cache-control': 'private, no-store' };
+const statusJson = (body: unknown, status = 200): Response =>
+	json(body, { status, headers: responseHeaders });
+
 export const GET: RequestHandler = async ({ params, locals, cookies, fetch }) => {
 	const token = cookies.get(AUTH_COOKIE_NAME);
-	if (!locals.session || !token) return json({ error: 'Unauthorized' }, { status: 401 });
-	if (!params.objectId) return json({ error: 'Object not found.' }, { status: 404 });
+	if (!locals.session || !token) return statusJson({ error: 'Unauthorized' }, 401);
+	if (!params.objectId) return statusJson({ error: 'Object not found.' }, 404);
 
 	try {
-		const result = await archiveRequestsService.listArchiveRequests({
+		const result = await objectEditService.getCurationPublication({
 			context: { fetchFn: fetch, token },
-			filters: {
-				targetType: 'object',
-				targetId: params.objectId,
-				actionType: 'curation_apply',
-				limit: 1,
-			},
+			objectId: params.objectId,
 		});
-		const request = result.requests[0] ?? null;
-		return json({
+		const request = result.request;
+		return statusJson({
 			request: request
 				? {
 						id: request.id,
@@ -30,20 +29,22 @@ export const GET: RequestHandler = async ({ params, locals, cookies, fetch }) =>
 						createdAt: request.createdAt,
 						updatedAt: request.updatedAt,
 						completedAt: request.completedAt,
+						publicationRevision: request.publicationRevision,
+						targetVersion: request.targetVersion,
 					}
 				: null,
 		});
 	} catch (cause) {
 		if (isUnauthorizedError(cause)) {
 			clearSessionCookie(cookies);
-			return json({ error: 'Unauthorized' }, { status: 401 });
+			return statusJson({ error: 'Unauthorized' }, 401);
 		}
 		if (isApiClientError(cause)) {
-			return json(
+			return statusJson(
 				{ error: 'Failed to load publication status.', requestId: cause.requestId },
-				{ status: cause.status >= 400 && cause.status < 500 ? cause.status : 502 },
+				cause.status >= 400 && cause.status < 500 ? cause.status : 502,
 			);
 		}
-		return json({ error: 'Failed to load publication status.' }, { status: 502 });
+		return statusJson({ error: 'Failed to load publication status.' }, 502);
 	}
 };

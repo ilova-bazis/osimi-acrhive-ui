@@ -3407,6 +3407,7 @@
                                 <div
                                     class={[
                                         "grid cursor-grab items-center gap-x-3 px-5 py-2.5 transition hover:bg-pale-sky/15",
+                                        "grid-cols-[16px_16px_64px_minmax(0,1fr)_24px] sm:grid-cols-[16px_16px_64px_minmax(0,1fr)_64px_auto_24px]",
                                         step1DragSourceId === file.id
                                             ? "opacity-40"
                                             : "",
@@ -3417,7 +3418,6 @@
                                             ? "bg-pale-sky/10"
                                             : "",
                                     ].join(" ")}
-                                    style="grid-template-columns: 16px 16px 24px 1fr 64px auto 24px"
                                     draggable="true"
                                     ondragstart={(e) =>
                                         onStep1FileDragStart(e, file.id)}
@@ -3505,6 +3505,15 @@
                                         <p class="truncate text-sm text-text-ink">
                                             {file.name}
                                         </p>
+                                        <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 sm:hidden">
+                                            <span class="font-mono text-xs text-text-muted"
+                                                >{formatFileSize(file.sizeBytes, $locale)}</span
+                                            >
+                                            <StatusBadge
+                                                status={file.status}
+                                                label={statusLabel(file)}
+                                            />
+                                        </div>
                                         {#if file.preview?.status === "purged"}
                                             <p class="mt-1 text-[10px] text-text-muted">
                                                 {t("ingestionSetup.files.previewPurged")}
@@ -3512,13 +3521,15 @@
                                         {/if}
                                     </div>
                                     <span
-                                        class="text-right font-mono text-xs text-text-muted"
+                                        class="hidden text-right font-mono text-xs text-text-muted sm:block"
                                         >{formatFileSize(file.sizeBytes, $locale)}</span
                                     >
-                                    <StatusBadge
-                                        status={file.status}
-                                        label={statusLabel(file)}
-                                    />
+                                    <div class="hidden sm:block">
+                                        <StatusBadge
+                                            status={file.status}
+                                            label={statusLabel(file)}
+                                        />
+                                    </div>
                                     <button
                                         type="button"
                                         class="shrink-0 rounded-full p-1 text-text-muted/50 transition hover:text-burnt-peach disabled:opacity-30"

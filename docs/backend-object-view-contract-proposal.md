@@ -635,6 +635,20 @@ If an artifact exists but is not suitable for direct browser consumption, it mus
 - each `viewer.preview_artifacts.*` field is `null` when that artifact is absent
 - `viewer.viewer_payload` must still be present even when the primary source is not yet available; in that case it should carry nullable references
 
+## OCR and Caption Rules
+
+- Page OCR comes exclusively from `viewer_payload.pages[].ocr_text_artifact_id`.
+- Aggregate OCR is document-scoped via `viewer_payload.ocr_text_artifact_id` (with `preview_artifacts.ocr_text` as the document-level compatibility reference).
+- Aggregate OCR is never a page fallback; a page without its own `ocr_text_artifact_id` has no page OCR.
+- A page with a usable image artifact or page OCR remains renderable; pages with neither are omitted by the viewer.
+- Caption artifacts remain independent text previews.
+- Playback caption wiring stays out of scope until the backend defines caption language and synchronization semantics.
+
+## Request Target Rules
+
+- `status = request_required` must carry a non-empty `available_file_id`.
+- A missing or blank `available_file_id` on `request_required` is contract corruption; the UI handles it defensively by hiding the request action and never submitting an empty value.
+
 ## Non-Goals For This Contract Revision
 
 - exposing direct signed URLs in object detail

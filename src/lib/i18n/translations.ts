@@ -537,6 +537,7 @@ export const translations = {
 				disabledNoPages: 'OCR pages are unavailable',
 				disabledDirty: 'Save changes before publishing',
 				disabledActive: 'A publication is already in progress',
+				disabledSession: 'Sign in again to publish',
 				processing: 'Publishing…',
 				queued: 'Publication queued',
 				submit: 'Publish curated OCR',
@@ -555,8 +556,16 @@ export const translations = {
 				statusCOMPLETED: 'Curated OCR was published successfully.',
 				statusFAILED: 'Curated OCR publication failed{suffix}',
 				statusCANCELED: 'Curated OCR publication was canceled.',
+				statusUNKNOWN: 'Publication has an unknown status: {status}.',
 				requestId: 'Request {id}',
-				statusUnavailable: 'Publication status is temporarily unavailable.'
+				lastKnown: 'Last known',
+				statusUnavailable: 'Publication status is temporarily unavailable.',
+				retrying: 'Publication status is stale. Retrying automatically.',
+				recovered: 'Publication status connection recovered.',
+				sessionRequired: 'Your session expired. Sign in again to check or publish.',
+				lastSuccessful: 'Last successful check: {time}.',
+				retryAction: 'Retry',
+				loginAction: 'Sign in'
 			},
 			pages: {
 				countOne: '{count} page',
@@ -894,7 +903,10 @@ export const translations = {
 					dragToPan: 'Drag to pan',
 					zoomToInspect: 'Zoom to inspect',
 					loading: 'Loading',
-					loadFailed: 'Unable to load preview.'
+					loadFailed: 'Unable to load preview.',
+					mediaUnavailable: 'Media preview unavailable',
+					mediaUnavailableBody: 'This {media} has no usable preview yet.',
+					aggregateOcr: 'Document OCR'
 				},
 				values: {
 					processing: {
@@ -2019,6 +2031,7 @@ export const translations = {
 				disabledNoPages: 'Страницы OCR недоступны',
 				disabledDirty: 'Сохраните изменения перед публикацией',
 				disabledActive: 'Публикация уже выполняется',
+				disabledSession: 'Войдите снова, чтобы опубликовать',
 				processing: 'Публикация…',
 				queued: 'Публикация в очереди',
 				submit: 'Опубликовать курированный OCR',
@@ -2037,8 +2050,16 @@ export const translations = {
 				statusCOMPLETED: 'Курированный OCR успешно опубликован.',
 				statusFAILED: 'Публикация курированного OCR не удалась{suffix}',
 				statusCANCELED: 'Публикация курированного OCR отменена.',
+				statusUNKNOWN: 'Неизвестный статус публикации: {status}.',
 				requestId: 'Запрос {id}',
-				statusUnavailable: 'Статус публикации временно недоступен.'
+				lastKnown: 'Последние известные данные',
+				statusUnavailable: 'Статус публикации временно недоступен.',
+				retrying: 'Статус публикации устарел. Выполняется повторная попытка.',
+				recovered: 'Соединение для проверки статуса публикации восстановлено.',
+				sessionRequired: 'Сеанс истёк. Войдите снова, чтобы проверить статус или опубликовать.',
+				lastSuccessful: 'Последняя успешная проверка: {time}.',
+				retryAction: 'Повторить',
+				loginAction: 'Войти'
 			},
 			pages: {
 				countOne: 'Страница: {count}',
@@ -2378,7 +2399,10 @@ export const translations = {
 					dragToPan: 'Перетащите для панорамы',
 					zoomToInspect: 'Приблизить для осмотра',
 					loading: 'Загрузка',
-					loadFailed: 'Не удалось загрузить предпросмотр.'
+					loadFailed: 'Не удалось загрузить предпросмотр.',
+					mediaUnavailable: 'Предпросмотр медиа недоступен',
+					mediaUnavailableBody: 'Предпросмотр {media} пока недоступен.',
+					aggregateOcr: 'OCR документа'
 				},
 				values: {
 					processing: {

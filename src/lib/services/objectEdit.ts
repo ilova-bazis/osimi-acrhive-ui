@@ -95,7 +95,21 @@ export type SubmitCurationResult = {
 	submittedAt: string;
 	submittedBy: string;
 	requestId: string;
-	requestStatus: 'PENDING' | 'PROCESSING';
+	requestStatus: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
+};
+
+export type ObjectCurationPublication = {
+	objectId: string;
+	request: {
+		id: string;
+		status: string;
+		failureReason: string | null;
+		publicationRevision: number | null;
+		targetVersion: string | null;
+		createdAt: string;
+		updatedAt: string;
+		completedAt: string | null;
+	} | null;
 };
 
 export type ReleaseLockResult = {
@@ -140,6 +154,7 @@ export type ObjectEditService = {
 	saveObjectMetadata: (req: SaveMetadataRequest) => Promise<SaveMetadataResult>;
 	saveDocumentCuration: (req: SaveDocumentCurationRequest) => Promise<SaveDocumentCurationResult>;
 	submitObjectCuration: (req: SubmitCurationRequest) => Promise<SubmitCurationResult>;
+	getCurationPublication: (req: ObjectEditRequest) => Promise<ObjectCurationPublication>;
 	releaseEditLock: (req: ReleaseLockRequest) => Promise<ReleaseLockResult>;
 };
 
