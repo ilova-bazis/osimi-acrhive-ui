@@ -139,7 +139,7 @@ describe('/objects/[objectId] +page.svelte localization', () => {
 
 		for (const label of ['Files', 'Access', 'Requests', 'Raw ingest']) {
 			await expect
-				.element(page.getByRole('button', { name: label, exact: true }))
+				.element(page.getByRole('tab', { name: label }))
 				.toBeInTheDocument();
 		}
 		await expect.element(page.getByText(/detail\.tabs/)).not.toBeInTheDocument();
@@ -153,7 +153,7 @@ describe('/objects/[objectId] +page.svelte localization', () => {
 
 		for (const label of ['Файлы', 'Доступ', 'Запросы', 'Исходные данные']) {
 			await expect
-				.element(page.getByRole('button', { name: label, exact: true }))
+				.element(page.getByRole('tab', { name: label }))
 				.toBeInTheDocument();
 		}
 		await expect.element(page.getByText(/detail\.tabs/)).not.toBeInTheDocument();
@@ -164,13 +164,13 @@ describe('/objects/[objectId] +page.svelte localization', () => {
 
 		await page.getByRole('button', { name: 'Support' }).click();
 		await expect
-			.element(page.getByRole('button', { name: 'Files', exact: true }))
+			.element(page.getByRole('tab', { name: 'Files' }))
 			.toBeInTheDocument();
 
 		locale.setLocale('ru');
 
 		await expect
-			.element(page.getByRole('button', { name: 'Файлы', exact: true }))
+			.element(page.getByRole('tab', { name: 'Файлы' }))
 			.toBeInTheDocument();
 	});
 
@@ -186,7 +186,7 @@ describe('/objects/[objectId] +page.svelte localization', () => {
 		render(ObjectDetailPage, { data });
 
 		await page.getByRole('button', { name: 'Поддержка' }).click();
-		await page.getByRole('button', { name: 'Запросы', exact: true }).click();
+		await page.getByRole('tab', { name: 'Запросы' }).click();
 		await expect.element(page.getByText('Синхронизация объекта')).toBeInTheDocument();
 		await expect.element(page.getByText('Выполняется')).toBeInTheDocument();
 		await expect.element(page.getByText('object_resync')).not.toBeInTheDocument();
@@ -197,7 +197,7 @@ describe('/objects/[objectId] +page.svelte localization', () => {
 		render(ObjectDetailPage, { data: pageData() });
 
 		await page.getByRole('button', { name: 'Поддержка' }).click();
-		await page.getByRole('button', { name: 'Доступ', exact: true }).click();
+		await page.getByRole('tab', { name: 'Доступ' }).click();
 
 		await expect
 			.element(page.getByText('Доступно для скачивания', { exact: true }))
@@ -209,7 +209,7 @@ describe('/objects/[objectId] +page.svelte localization', () => {
 		render(ObjectDetailPage, { data: pageData() });
 
 		await page.getByRole('button', { name: 'Support' }).click();
-		await page.getByRole('button', { name: 'Access', exact: true }).click();
+		await page.getByRole('tab', { name: 'Access' }).click();
 
 		await expect
 			.element(page.getByText('Available to download', { exact: true }))

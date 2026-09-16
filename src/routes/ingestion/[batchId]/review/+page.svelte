@@ -12,6 +12,12 @@
 	import { knownReviewLanguageKey, knownReviewPipelinePresetKey } from '$lib/i18n/domainLabels';
 	import { knownFileStatusKey } from '$lib/i18n/statusLabels';
 	import { formatPlural, formatTemplate, translate } from '$lib/i18n/translate';
+	import {
+		getPipelinePresentation,
+		validatePipelinePresetCompatibility,
+		isPipelinePreset,
+		isItemKind
+	} from '$lib/ingestion/pipelineCapabilities';
 	import type { IngestionDetail, IngestionDetailFile } from '$lib/services/ingestionDetail';
 	import type { ItemKind } from '$lib/ingestion/kindMappings';
 	import type { PageData } from './$types';
@@ -38,21 +44,31 @@
 		return data.batchLabel || batchId;
 	});
 
-	type PipelineCapability = 'ocr' | 'index' | 'transcribe';
+	const pipelinePresentation = $derived(getPipelinePresentation(data.pipelinePreset));
+	const isAutoPreset = $derived(pipelinePresentation.mode === 'detection');
+	const pipelineCapabilities = $derived(pipelinePresentation.stages);
 
-	const PIPELINE_CAPABILITIES: Readonly<Record<string, readonly PipelineCapability[]>> = {
-		none: [],
-		ocr_text: ['ocr', 'index'],
-		audio_transcript: ['transcribe'],
-		video_transcript: ['transcribe'],
-		ocr_and_audio_transcript: ['ocr', 'index', 'transcribe'],
-		ocr_and_video_transcript: ['ocr', 'index', 'transcribe']
-	};
+	const capabilityValidation = $derived(
+		validatePipelinePresetCompatibility({
+			preset: data.pipelinePreset,
+			batchItemKind: data.itemKind,
+			classificationType: data.classificationType,
+			itemOverrides: (data.items ?? []).map(
+				(i: NonNullable<PageData['items']>[number]) => i.itemKind ?? null
+			)
+		})
+	);
 
-	const isAutoPreset = $derived(data.pipelinePreset === 'auto');
+	let submitCapabilityConflict = $state(false);
+	const isReviewValid = $derived(capabilityValidation.valid && !submitCapabilityConflict);
 
-	const pipelineCapabilities = $derived(
-		PIPELINE_CAPABILITIES[data.pipelinePreset] ?? []
+	const hasUnknownItemOverrides = $derived(
+		(data.items ?? []).some(
+			(item: NonNullable<PageData['items']>[number]) =>
+				item.itemKind !== null &&
+				item.itemKind !== undefined &&
+				!isItemKind(item.itemKind)
+		)
 	);
 
 	let confirmed = $state(false);
@@ -113,7 +129,7 @@
 	);
 
 	const beginProcessing = async () => {
-		if (!confirmed || submitting) return;
+		if (!confirmed || !isReviewValid || submitting) return;
 		submitting = true;
 		submitError = '';
 		try {
@@ -127,9 +143,16 @@
 				return;
 			}
 			if (!res.ok) {
-				const body = await res.json().catch(() => ({}));
+				const body = await res.json().catch(() => ({})) as {
+					code?: string;
+					error?: string;
+				};
+				if (res.status === 409 && body.code === 'INVALID_PIPELINE_CAPABILITY') {
+					submitCapabilityConflict = true;
+					return;
+				}
 				throw new Error(
-					(body as { error?: string }).error ?? t('ingestionReview.errors.submitFailed')
+					body.error ?? t('ingestionReview.errors.submitFailed')
 				);
 			}
 			await goto(resolve('/ingestion'));
@@ -142,7 +165,7 @@
 	};
 </script>
 
-<div class="flex flex-col min-h-full lg:min-h-screen">
+<div class="app-route-desktop-min-h flex flex-col min-h-full">
 
 <!-- Sticky top-bar -->
 <header class="sticky top-0 z-20 border-b border-border-soft bg-alabaster-grey px-4 sm:px-6 py-4">
@@ -178,6 +201,29 @@
 	<div
 		class="flex flex-col gap-6 border-b border-border-soft px-6 py-8 lg:overflow-y-auto lg:border-b-0 lg:border-r"
 	>
+		{#if !isReviewValid}
+			<div
+				class="rounded-2xl border border-burnt-peach/45 bg-pearl-beige/70 p-4 text-sm text-burnt-peach flex items-center justify-between gap-4"
+			>
+				<div>
+					<p class="font-medium">
+						{#if !isPipelinePreset(data.pipelinePreset)}
+							{t('ingestionReview.errors.unknownPreset')}
+						{:else if hasUnknownItemOverrides}
+							{t('ingestionReview.errors.unknownItemKind')}
+						{:else}
+							{t('ingestionReview.errors.incompatiblePreset')}
+						{/if}
+					</p>
+				</div>
+				<a
+					href={resolve('/ingestion/[batchId]/setup', { batchId })}
+					class="shrink-0 inline-flex items-center gap-1 underline font-medium hover:text-burnt-peach-dark"
+				>
+					{t('ingestionReview.errors.fixInSetup')}
+				</a>
+			</div>
+		{/if}
 
 		<div class="flex flex-col gap-1">
 			<span class="text-xs uppercase tracking-[0.2em] text-blue-slate font-medium">{t('ingestionReview.kicker')}</span>
@@ -432,7 +478,7 @@
 			<Icon name="arrow-l" size={13} /> {t('ingestionReview.backToSetup')}
 		</a>
 		<button
-			disabled={!confirmed || submitting}
+			disabled={!confirmed || !isReviewValid || submitting}
 			onclick={beginProcessing}
 			class="inline-flex items-center gap-2 rounded-full bg-burnt-peach text-surface-white px-5 py-2 text-xs uppercase tracking-[0.2em] border border-burnt-peach transition-all disabled:opacity-40 disabled:pointer-events-none"
 		>

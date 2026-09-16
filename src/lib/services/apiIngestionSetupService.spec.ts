@@ -53,7 +53,7 @@ describe('apiIngestionSetupService', () => {
 			batchId: 'batch-1',
 			itemId: 'item-1',
 			metadata: {
-				title: 'Object title',
+				title: '  Object title  ',
 				tags: ['archive'],
 				people: ['Ada Lovelace']
 			},

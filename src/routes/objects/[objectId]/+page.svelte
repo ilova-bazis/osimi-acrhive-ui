@@ -76,6 +76,7 @@
 	let resyncRunning = $state(false);
 	let resyncMessage = $state<{ type: 'success' | 'error'; text: string } | null>(null);
 	let requestForm = $state<HTMLFormElement | null>(null);
+	let supportLauncherEl = $state<HTMLButtonElement | null>(null);
 
 	const runResync = async () => {
 		showResyncConfirm = false;
@@ -308,14 +309,7 @@
 	const handleTabSelect = (tab: TabId): void => {
 		if (activeTab !== tab) {
 			activeTab = tab;
-			if (supportSheetState === 'hidden') {
-				supportSheetState = 'expanded';
-			}
-			return;
 		}
-
-		if (supportSheetState === 'hidden') supportSheetState = 'expanded';
-		else if (supportSheetState === 'peek' || supportSheetState === 'expanded') supportSheetState = 'hidden';
 	};
 </script>
 
@@ -336,7 +330,7 @@
 />
 
 
-<main class={`min-h-full lg:min-h-screen ${pageBgClass}`}>
+<main class={`app-route-desktop-min-h min-h-full ${pageBgClass}`}>
 	<div class="mx-auto flex max-w-[96rem] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
 		<div class="max-w-3xl">
 			<p class={`text-xs uppercase tracking-[0.2em] ${introLabelClass}`}>{formatTemplate(t('objects.detail.typeObject'), { type: mediaTypeLabel })}</p>
@@ -418,6 +412,7 @@
 			<div class="fixed inset-x-0 bottom-0 z-10 flex justify-center px-4 pb-4">
 				<button
 					type="button"
+					bind:this={supportLauncherEl}
 					onclick={() => (supportSheetState = 'expanded')}
 					class={`pointer-events-auto inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs uppercase tracking-[0.2em] transition ${supportVariant === 'dark' ? 'border-white/10 bg-black/30 text-white/70 hover:bg-white/10 hover:text-white' : 'border-border-soft bg-surface-white/80 text-text-muted hover:border-blue-slate/35 hover:text-blue-slate'}`}
 				>
@@ -435,6 +430,8 @@
 			variant={supportVariant}
 			activeTab={activeTab}
 			tabs={tabIds.map((id) => ({ id, label: t(`objects.detail.tabs.${id}`) }))}
+			idPrefix="object-support-sheet"
+			launcherFocus={() => supportLauncherEl}
 			onStateChange={(state) => (supportSheetState = state)}
 			onTabChange={(tabId) => handleTabSelect(tabId as TabId)}
 		>

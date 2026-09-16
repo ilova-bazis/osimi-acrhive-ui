@@ -1,4 +1,5 @@
 import { ingestionSetupService, ingestionDetailService } from '$lib/services';
+import { validatePipelinePresetCompatibility } from '$lib/ingestion/pipelineCapabilities';
 import { clearSessionCookie } from '$lib/server/auth';
 import { isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
 import { isAuthFailureResponse, mapApiErrorStatus, requireMutationAuth } from '$lib/server/routeGuards';
@@ -189,6 +190,30 @@ export const POST: RequestHandler = async ({ request, params, cookies, locals, f
 		}
 
 		// submit
+		const capabilityContext = await ingestionDetailService.getPipelineCapabilityContext({
+			fetchFn: fetch,
+			token,
+			batchId: params.batchId
+		});
+
+		const validation = validatePipelinePresetCompatibility({
+			preset: capabilityContext.pipelinePreset,
+			batchItemKind: capabilityContext.itemKind,
+			classificationType: capabilityContext.classificationType,
+			itemOverrides: capabilityContext.itemOverrides
+		});
+
+		if (!validation.valid) {
+			return json(
+				{
+					error: 'Incompatible pipeline preset for batch item kinds.',
+					code: 'INVALID_PIPELINE_CAPABILITY',
+					details: validation
+				},
+				{ status: 409 }
+			);
+		}
+
 		await ingestionSetupService.submit({
 			batchId: params.batchId,
 			context

@@ -489,7 +489,11 @@ export const translations = {
 				public: 'Public'
 			},
 			errors: {
-				submitFailed: 'Failed to submit ingestion.'
+				submitFailed: 'Failed to submit ingestion.',
+				incompatiblePreset: 'Pipeline preset is not compatible with one or more items in this batch.',
+				unknownPreset: 'Pipeline preset is unrecognized.',
+				unknownItemKind: 'Batch contains unrecognized item kinds.',
+				fixInSetup: 'Change configuration in Setup'
 			}
 		},
 		objectEdit: {
@@ -585,7 +589,6 @@ export const translations = {
 				inProgress: 'Curation in progress — compare source and refine below',
 				empty: 'No curated text yet — copy from source or write from scratch',
 				details: 'Details',
-				confidence: '{confidence}% confidence',
 				readOnly: 'Read-only',
 				noSourceText: 'No source text available',
 				copyFromSource: 'Copy from source',
@@ -604,6 +607,7 @@ export const translations = {
 			metadata: {
 				readOnly: 'Metadata is read-only for your role.',
 				title: 'Title',
+				publicationDate: 'Publication date',
 				datePrecision: 'Date precision',
 				precisionNone: 'No date',
 				precisionYear: 'Year',
@@ -1123,6 +1127,9 @@ export const translations = {
 				ready: 'Ready',
 				pending: 'Preparing',
 				pendingNote: 'Preview renders in the background — usually under a minute.',
+				deferred: 'Video preview unavailable',
+				deferredNote:
+					'Video thumbnail generation is not currently available. The uploaded video is unaffected.',
 				checkTimedOut: 'Preview not ready',
 				checkTimedOutNote: 'The preview is still being prepared, or its readiness could not be confirmed.',
 				checkAgain: 'Check again',
@@ -1144,11 +1151,12 @@ export const translations = {
 				document: 'Document'
 			},
 			batchIntent: {
-				title: 'Batch intent',
-				description: 'Set batch defaults that apply to all files unless overridden.',
+				title: 'Item metadata defaults',
+				description:
+					'Language applies as a batch default. Title, tags, description, and publication date prefill empty object metadata.',
 				sections: {
-					coreMetadata: 'Core metadata',
-					summaryContext: 'Summary context',
+					coreMetadata: 'Identification',
+					summaryContext: 'Description and tags',
 					dates: 'Dates',
 					accessPolicy: 'Access and policy'
 				},
@@ -1199,6 +1207,28 @@ export const translations = {
 				selectType: 'Select type',
 				tagsPlaceholder: 'People, places, themes'
 			},
+			policies: {
+				title: 'Processing and access policies',
+				description:
+					'These settings apply to the whole ingestion and are not per-object metadata.',
+				processing: 'Processing settings',
+				access: 'Access policy'
+			},
+			batchRecordContext: {
+				title: 'Batch record context',
+				description:
+					'Creation date describes the batch record and is not copied to object metadata.'
+			},
+			defaultsBadges: {
+				matches: 'Matches defaults',
+				mixed: 'Some customized',
+				customized: 'Customized'
+			},
+			singleObject: {
+				hint: 'One object in this batch. Edit its metadata below, or expand these defaults if needed.',
+				expandDefaults: 'Edit defaults',
+				collapseDefaults: 'Hide defaults'
+			},
 			languages: {
 				en: 'English',
 				ru: 'Russian',
@@ -1233,15 +1263,12 @@ export const translations = {
 			},
 			pipelinePresets: {
 				auto: 'Auto',
-				none: 'None',
-				ocr_text: 'OCR text',
-				audio_transcript: 'Audio transcript',
-				video_transcript: 'Video transcript',
-				ocr_and_audio_transcript: 'OCR + audio transcript',
-				ocr_and_video_transcript: 'OCR + video transcript',
-				photos: 'Photos only (no OCR)',
-				newspapers: 'Newspapers (layout OCR + review)',
-				audioVideo: 'Audio/Video (speech-to-text)'
+				none: 'Store only',
+				ocr_text: 'OCR + Index',
+				audio_transcript: 'Transcribe Audio',
+				video_transcript: 'Transcribe Video',
+				ocr_and_audio_transcript: 'OCR + Audio',
+				ocr_and_video_transcript: 'OCR + Video'
 			},
 			overrides: {
 				title: 'Per-file overrides',
@@ -1284,6 +1311,11 @@ export const translations = {
 				rejected: '{count} file(s) were rejected: {sample}.',
 				keep: 'Keep current kind',
 				switchAndContinue: 'Switch kind and continue'
+			},
+			errors: {
+				incompatiblePreset: 'Selected pipeline preset is not compatible with all items in this batch.',
+				unknownPreset: 'Unrecognized pipeline preset.',
+				unknownItemKind: 'Batch contains items with unrecognized item kind overrides.'
 			},
 			organize: {
 				objectsCountOne: '{count} object',
@@ -1352,7 +1384,7 @@ export const translations = {
 				empty: 'Select a file or group on the left to add its metadata.',
 				fields: {
 					title: 'Title',
-					titlePlaceholder: 'Title (inherits batch title)',
+					titlePlaceholder: 'Use the item title default',
 					date: 'Date',
 					precisionNone: 'No date',
 					precisionYear: 'Year',
@@ -1362,9 +1394,9 @@ export const translations = {
 					tags: 'Tags',
 					tagsPlaceholder: 'Add tag…',
 					addTag: 'Add',
-					batchTagHint: 'Batch tag (inherited)',
+					batchTagHint: 'Batch metadata default',
 					description: 'Description',
-					descriptionPlaceholder: 'Description (inherits batch summary)',
+					descriptionPlaceholder: 'Use the default description',
 					people: 'People Mentioned',
 					peoplePlaceholder: 'Add person…',
 					addPerson: 'Add',
@@ -1396,7 +1428,7 @@ export const translations = {
 				stepOrganize: '1 · Organize',
 				stepMetadata: '2 · Metadata',
 				autoGroupByFilename: 'Auto-group by filename',
-				perObjectMetadata: 'Per-Object Metadata',
+				perObjectMetadata: 'Object metadata',
 				back: 'Back',
 				continue: 'Continue',
 				preparing: 'Preparing…',
@@ -1982,7 +2014,11 @@ export const translations = {
 				public: 'Публичный'
 			},
 			errors: {
-				submitFailed: 'Не удалось отправить загрузку.'
+				submitFailed: 'Не удалось отправить загрузку.',
+				incompatiblePreset: 'Конвейер обработки несовместим с одним или несколькими элементами в этой партии.',
+				unknownPreset: 'Нераспознанный конвейер обработки.',
+				unknownItemKind: 'Партия содержит нераспознанные типы элементов.',
+				fixInSetup: 'Изменить конфигурацию в настройке'
 			}
 		},
 		objectEdit: {
@@ -2079,7 +2115,6 @@ export const translations = {
 				inProgress: 'Курирование выполняется — сравните источник и уточните ниже',
 				empty: 'Курированного текста пока нет — скопируйте из источника или напишите с нуля',
 				details: 'Детали',
-				confidence: '{confidence}% уверенности',
 				readOnly: 'Только чтение',
 				noSourceText: 'Исходный текст недоступен',
 				copyFromSource: 'Скопировать из источника',
@@ -2099,6 +2134,7 @@ export const translations = {
 			metadata: {
 				readOnly: 'Метаданные доступны только для чтения для вашей роли.',
 				title: 'Название',
+				publicationDate: 'Дата публикации',
 				datePrecision: 'Точность даты',
 				precisionNone: 'Без даты',
 				precisionYear: 'Год',
@@ -2619,6 +2655,9 @@ export const translations = {
 				ready: 'Готов',
 				pending: 'Подготовка',
 				pendingNote: 'Предпросмотр создается в фоне — обычно в течение минуты.',
+				deferred: 'Предпросмотр видео недоступен',
+				deferredNote:
+					'Создание миниатюры для видео сейчас недоступно. Загруженное видео не затронуто.',
 				checkTimedOut: 'Предпросмотр не готов',
 				checkTimedOutNote: 'Предпросмотр все еще готовится, либо его готовность не удалось подтвердить.',
 				checkAgain: 'Проверить снова',
@@ -2640,11 +2679,12 @@ export const translations = {
 				document: 'Документ'
 			},
 			batchIntent: {
-				title: 'Замысел партии',
-				description: 'Параметры партии применяются ко всем файлам, если нет переопределений.',
+				title: 'Метаданные объектов по умолчанию',
+				description:
+					'Язык применяется по умолчанию ко всей партии. Название, теги, описание и дата публикации заполняют пустые метаданные объектов.',
 				sections: {
-					coreMetadata: 'Основные метаданные',
-					summaryContext: 'Контекст сводки',
+					coreMetadata: 'Идентификация',
+					summaryContext: 'Описание и теги',
 					dates: 'Даты',
 					accessPolicy: 'Доступ и политика'
 				},
@@ -2695,6 +2735,28 @@ export const translations = {
 				selectType: 'Выберите тип',
 				tagsPlaceholder: 'Люди, места, темы'
 			},
+			policies: {
+				title: 'Обработка и правила доступа',
+				description:
+					'Эти настройки применяются ко всей загрузке и не являются метаданными отдельных объектов.',
+				processing: 'Настройки обработки',
+				access: 'Правила доступа'
+			},
+			batchRecordContext: {
+				title: 'Контекст записи партии',
+				description:
+					'Дата создания описывает запись партии и не копируется в метаданные объектов.'
+			},
+			defaultsBadges: {
+				matches: 'Совпадает с настройками по умолчанию',
+				mixed: 'Частично изменено',
+				customized: 'Изменено'
+			},
+			singleObject: {
+				hint: 'В этой партии один объект. Измените его метаданные ниже или при необходимости разверните настройки по умолчанию.',
+				expandDefaults: 'Изменить значения по умолчанию',
+				collapseDefaults: 'Скрыть значения по умолчанию'
+			},
 			languages: {
 				en: 'Английский',
 				ru: 'Русский',
@@ -2734,10 +2796,7 @@ export const translations = {
 				audio_transcript: 'Аудио транскрипт',
 				video_transcript: 'Видео транскрипт',
 				ocr_and_audio_transcript: 'OCR + аудио транскрипт',
-				ocr_and_video_transcript: 'OCR + видео транскрипт',
-				photos: 'Только фото (без OCR)',
-				newspapers: 'Газеты (макетный OCR + проверка)',
-				audioVideo: 'Аудио/видео (распознавание речи)'
+				ocr_and_video_transcript: 'OCR + видео транскрипт'
 			},
 			overrides: {
 				title: 'Переопределения файла',
@@ -2780,6 +2839,11 @@ export const translations = {
 				rejected: 'Отклонено файлов: {count}. Пример: {sample}.',
 				keep: 'Оставить текущий вид',
 				switchAndContinue: 'Сменить вид и продолжить'
+			},
+			errors: {
+				incompatiblePreset: 'Выбранный конвейер обработки несовместим с одним или несколькими элементами в этой партии.',
+				unknownPreset: 'Нераспознанный конвейер обработки.',
+				unknownItemKind: 'Партия содержит элементы с нераспознанными переопределениями типа элемента.'
 			},
 			organize: {
 				objectsCountOne: '{count} объект',
@@ -2848,7 +2912,7 @@ export const translations = {
 				empty: 'Выберите файл или группу слева, чтобы добавить метаданные.',
 				fields: {
 					title: 'Название',
-					titlePlaceholder: 'Название (наследуется от партии)',
+					titlePlaceholder: 'Использовать название по умолчанию',
 					date: 'Дата',
 					precisionNone: 'Без даты',
 					precisionYear: 'Год',
@@ -2858,9 +2922,9 @@ export const translations = {
 					tags: 'Теги',
 					tagsPlaceholder: 'Добавить тег…',
 					addTag: 'Добавить',
-					batchTagHint: 'Тег партии (наследуется)',
+					batchTagHint: 'Значение метаданных партии по умолчанию',
 					description: 'Описание',
-					descriptionPlaceholder: 'Описание (наследуется от партии)',
+					descriptionPlaceholder: 'Использовать описание по умолчанию',
 					people: 'Упомянутые люди',
 					peoplePlaceholder: 'Добавить человека…',
 					addPerson: 'Добавить',
@@ -2892,7 +2956,7 @@ export const translations = {
 				stepOrganize: '1 · Организация',
 				stepMetadata: '2 · Метаданные',
 				autoGroupByFilename: 'Автогруппировка по имени файла',
-				perObjectMetadata: 'Метаданные по объектам',
+				perObjectMetadata: 'Метаданные каждого объекта',
 				back: 'Назад',
 				continue: 'Продолжить',
 				preparing: 'Подготовка…',

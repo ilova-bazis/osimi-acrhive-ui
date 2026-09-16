@@ -1,4 +1,4 @@
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { createRawSnippet } from 'svelte';
@@ -42,6 +42,7 @@ vi.mock('$app/paths', () => ({
 }));
 
 import Layout from './+layout.svelte';
+import BaseDialog from '$lib/components/BaseDialog.svelte';
 import { locale } from '$lib/i18n/locale';
 import { page as mockedPage } from '$app/stores';
 
@@ -251,5 +252,108 @@ describe('root layout shell', () => {
 		);
 		const frame = document.querySelector('.app-mobile-frame') as HTMLDivElement;
 		expect(getComputedStyle(frame).overflow).toBe('visible');
+	});
+
+	it('marks the route scrollport as a modal scroll root', async () => {
+		renderLayout();
+
+		const scrollport = document.querySelector('.app-route-scrollport') as HTMLDivElement;
+		expect(scrollport).not.toBeNull();
+		expect(scrollport.hasAttribute('data-modal-scroll-root')).toBe(true);
+	});
+
+	it('locks and restores the route scrollport while a BaseDialog is open', async () => {
+		renderLayout();
+
+		const onClose = vi.fn();
+		const dialogView = render(BaseDialog, {
+			open: true,
+			label: 'Test dialog',
+			onClose,
+			children: createRawSnippet(() => ({
+				render: () => '<button>Close</button>'
+			}))
+		});
+		const scrollport = document.querySelector('.app-route-scrollport') as HTMLDivElement;
+		await vi.waitFor(() => {
+			expect(document.querySelector('dialog')?.open).toBe(true);
+		});
+		expect(scrollport.style.overflow).toBe('hidden');
+
+		await dialogView.rerender({
+			open: false,
+			label: 'Test dialog',
+			onClose,
+			children: createRawSnippet(() => ({
+				render: () => '<button>Close</button>'
+			}))
+		});
+		await vi.waitFor(() => {
+			expect(scrollport.style.overflow).toBe('');
+		});
+	});
+
+	it('renders exactly one visible language switcher in desktop utility row at 1280x720', async () => {
+		await page.viewport(1280, 720);
+		renderLayout();
+
+		const visibleGroups = page.getByRole('group', { name: 'Interface language' }).all();
+		expect(visibleGroups).toHaveLength(1); // Exactly one visible accessible group
+
+		const domGroups = document.querySelectorAll('[role="group"][aria-label="Interface language"]');
+		expect(domGroups).toHaveLength(2); // One in desktop utility row, one in hidden mobile header
+
+		const desktopRow = document.querySelector('.app-desktop-utility-row') as HTMLDivElement;
+		expect(desktopRow).not.toBeNull();
+		expect(getComputedStyle(desktopRow).display).toBe('flex');
+
+		const mobileHeader = document.querySelector('header.lg\\:hidden') as HTMLElement;
+		expect(getComputedStyle(mobileHeader).display).toBe('none');
+
+		// Utility row is inside content column and not inside aside
+		const contentColumn = document.querySelector('.app-content-column') as HTMLDivElement;
+		expect(contentColumn.contains(desktopRow)).toBe(true);
+
+		const aside = document.querySelector('aside') as HTMLElement;
+		expect(aside.contains(desktopRow)).toBe(false);
+		expect(aside.querySelector('[role="group"][aria-label="Interface language"]')).toBeNull();
+
+		// Clicking RU switches locale
+		const ruButton = desktopRow.querySelector('button:last-child') as HTMLButtonElement;
+		expect(ruButton.textContent?.trim()).toBe('RU');
+		await userEvent.click(ruButton);
+		expect(window.localStorage.getItem(STORAGE_KEY)).toBe('ru');
+		expect(document.documentElement.lang).toBe('ru');
+	});
+
+	it('renders exactly one visible language switcher in mobile header at 375x667', async () => {
+		await page.viewport(375, 667);
+		renderLayout();
+
+		const desktopRow = document.querySelector('.app-desktop-utility-row') as HTMLDivElement;
+		expect(desktopRow).not.toBeNull();
+		expect(getComputedStyle(desktopRow).display).toBe('none');
+
+		const mobileHeader = document.querySelector('header.lg\\:hidden') as HTMLElement;
+		expect(mobileHeader).not.toBeNull();
+		expect(getComputedStyle(mobileHeader).display).not.toBe('none');
+		expect(mobileHeader.querySelector('[role="group"][aria-label="Interface language"]')).not.toBeNull();
+	});
+
+	it('toggles visibility at the 1024px responsive breakpoint boundary', async () => {
+		// 1023px: mobile active, desktop hidden
+		await page.viewport(1023, 768);
+		renderLayout();
+
+		const desktopRow = document.querySelector('.app-desktop-utility-row') as HTMLDivElement;
+		const mobileHeader = document.querySelector('header.lg\\:hidden') as HTMLElement;
+
+		expect(getComputedStyle(desktopRow).display).toBe('none');
+		expect(getComputedStyle(mobileHeader).display).not.toBe('none');
+
+		// 1024px: desktop active, mobile hidden
+		await page.viewport(1024, 768);
+		expect(getComputedStyle(desktopRow).display).toBe('flex');
+		expect(getComputedStyle(mobileHeader).display).toBe('none');
 	});
 });

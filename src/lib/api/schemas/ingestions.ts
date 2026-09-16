@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { pipelinePresets } from '$lib/ingestion/pipelineCapabilities';
 
 export const classificationTypeSchema = z.enum([
 	'newspaper_article',
@@ -185,15 +186,7 @@ export const createIngestionRequestSchema = z
 		classification_type: classificationTypeSchema,
 		item_kind: itemKindSchema,
 		language_code: z.string().min(1),
-		pipeline_preset: z.enum([
-			'auto',
-			'none',
-			'ocr_text',
-			'audio_transcript',
-			'video_transcript',
-			'ocr_and_audio_transcript',
-			'ocr_and_video_transcript'
-		]),
+		pipeline_preset: z.enum(pipelinePresets),
 		access_level: z.enum(['private', 'family', 'public']),
 		embargo_until: z.string().datetime().nullable().optional(),
 		rights_note: z.string().nullable().optional(),
@@ -208,17 +201,7 @@ export const updateIngestionRequestSchema = z
 		classification_type: classificationTypeSchema.optional(),
 		item_kind: itemKindSchema.optional(),
 		language_code: z.string().min(1).optional(),
-		pipeline_preset: z
-			.enum([
-				'auto',
-				'none',
-				'ocr_text',
-				'audio_transcript',
-				'video_transcript',
-				'ocr_and_audio_transcript',
-				'ocr_and_video_transcript'
-			])
-			.optional(),
+		pipeline_preset: z.enum(pipelinePresets).optional(),
 		access_level: z.enum(['private', 'family', 'public']).optional(),
 		embargo_until: z.string().datetime().nullable().optional(),
 		rights_note: z.string().nullable().optional(),

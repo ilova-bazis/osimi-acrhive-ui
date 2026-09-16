@@ -48,40 +48,77 @@ import { translations, type TranslationKey } from '$lib/i18n/translations';
 		return 'none';
 	};
 
-	const trackObjectKeyChange = (key: string | null): string | null => key;
-
 	let tagInput = $state('');
 	let personInput = $state('');
 	let localDatePrecision = $state<DatePrecision>('none');
 	let localDateApproximate = $state(false);
 
-	// Sync local state when the selected object changes
+	let lastObjectKey = $state<string | null>(null);
+	let pendingLocalDate = $state<{ value: string | null; approximate: boolean } | null>(null);
+
+	const emitDateChange = (newDate: { value: string | null; approximate: boolean } | undefined) => {
+		if (newDate === undefined) {
+			pendingLocalDate = null;
+			onMetadataChange({ date: undefined });
+		} else {
+			pendingLocalDate = { value: newDate.value, approximate: newDate.approximate };
+			onMetadataChange({ date: newDate });
+		}
+	};
+
+	// Sync local state when the selected object changes or parent date updates
 	$effect(() => {
-		trackObjectKeyChange(objectKey);
+		const currentKey = objectKey;
+		const parentDate = metadata.date;
+		const parentValue = parentDate?.value ?? null;
+		const parentApprox = parentDate?.approximate ?? false;
+
 		untrack(() => {
-			localDatePrecision = inferPrecision(metadata.date?.value ?? null);
-			localDateApproximate = metadata.date?.approximate ?? false;
-			tagInput = '';
-			personInput = '';
+			if (currentKey !== lastObjectKey) {
+				lastObjectKey = currentKey;
+				tagInput = '';
+				personInput = '';
+				pendingLocalDate = null;
+				localDatePrecision = inferPrecision(parentValue);
+				localDateApproximate = parentApprox;
+				return;
+			}
+
+			// Same object: check if parent date matches pending local date
+			if (pendingLocalDate) {
+				const matchesPending =
+					parentValue === pendingLocalDate.value &&
+					parentApprox === pendingLocalDate.approximate;
+				if (matchesPending) {
+					// Consume one parent echo while retaining the user-selected precision.
+					pendingLocalDate = null;
+					return;
+				}
+			}
+
+			// Non-matching or external parent change: treat as authoritative
+			pendingLocalDate = null;
+			localDatePrecision = inferPrecision(parentValue);
+			localDateApproximate = parentApprox;
 		});
 	});
 
 	const setDatePrecision = (precision: DatePrecision) => {
 		localDatePrecision = precision;
 		if (precision === 'none') {
-			onMetadataChange({ date: undefined });
+			emitDateChange(undefined);
 		} else {
-			onMetadataChange({ date: { value: null, approximate: localDateApproximate } });
+			emitDateChange({ value: null, approximate: localDateApproximate });
 		}
 	};
 
 	const updateDateValue = (value: string) => {
-		onMetadataChange({ date: { value: value || null, approximate: localDateApproximate } });
+		emitDateChange({ value: value || null, approximate: localDateApproximate });
 	};
 
 	const toggleApproximate = (checked: boolean) => {
 		localDateApproximate = checked;
-		onMetadataChange({ date: { value: metadata.date?.value ?? null, approximate: checked } });
+		emitDateChange({ value: metadata.date?.value ?? null, approximate: checked });
 	};
 
 	const addTag = () => {
@@ -150,7 +187,7 @@ import { translations, type TranslationKey } from '$lib/i18n/translations';
 					placeholder={batchTitle || t('ingestionSetup.objectMetadata.fields.titlePlaceholder')}
 					value={metadata.title ?? ''}
 					oninput={(e) =>
-						onMetadataChange({ title: e.currentTarget.value.trim() })}
+						onMetadataChange({ title: e.currentTarget.value })}
 				/>
 				{#if !(metadata.title ?? '').trim()}
 					<p class="mt-1 text-[10px] text-burnt-peach">{t('ingestionSetup.objectMetadata.fields.required')}</p>
@@ -165,6 +202,7 @@ import { translations, type TranslationKey } from '$lib/i18n/translations';
 				</p>
 				<div class="mt-2 grid grid-cols-2 gap-2">
 					<select
+						aria-label={t('ingestionSetup.objectMetadata.fields.date')}
 						class={`rounded-xl border bg-surface-white px-3 py-2 text-sm text-text-ink ${metadata.date?.value == null ? 'border-burnt-peach/50' : 'border-border-soft'}`}
 						value={localDatePrecision}
 						onchange={(e) => setDatePrecision(e.currentTarget.value as DatePrecision)}

@@ -140,14 +140,14 @@ const mapItemFile = (dto: IngestionItemFileDto): IngestionDetailItemFile => ({
 });
 
 const mapItem = (dto: IngestionItemDto, files: IngestionDetailItemFile[]): IngestionDetailItem => {
-	const title = typeof dto.title === 'string' && dto.title.length > 0 ? dto.title : undefined;
 	const statusResolution = resolveItemStatus(dto.status);
 	return {
 		id: dto.id,
 		itemIndex: dto.item_index,
-		...(title ? { label: title } : {}),
+		...(dto.title !== undefined ? { label: dto.title ?? '' } : {}),
 		status: statusResolution.value,
 		statusRaw: statusResolution.raw,
+		itemKind: dto.item_kind ?? null,
 		summary: dto.summary ?? {},
 		files
 	};
@@ -253,6 +253,36 @@ export const apiIngestionDetailService: IngestionDetailService = {
 		]);
 
 		return mapDetail(detailResponse.ingestion, detailResponse.files ?? [], items);
+	},
+	getPipelineCapabilityContext: async ({ fetchFn, token, batchId }) => {
+		const [detailResponse, itemsResponse] = await Promise.all([
+			backendRequest({
+				fetchFn,
+				path: toIngestionPath(batchId),
+				context: 'ingestions.detail',
+				method: 'GET',
+				token,
+				responseSchema: ingestionDetailResponseSchema
+			}),
+			backendRequest({
+				fetchFn,
+				path: toItemsPath(batchId),
+				context: 'ingestions.items.list',
+				method: 'GET',
+				token,
+				responseSchema: listItemsResponseSchema
+			})
+		]);
+
+		const ingestion = detailResponse.ingestion;
+		return {
+			classificationType: normalizeClassificationType(
+				ingestion.classification_type ?? ingestion.document_type
+			),
+			itemKind: normalizeItemKind(ingestion.item_kind),
+			pipelinePreset: ingestion.pipeline_preset ?? 'auto',
+			itemOverrides: itemsResponse.items.map((item) => item.item_kind ?? null)
+		};
 	},
 	listItems: async ({ fetchFn, token, batchId }: ListItemsRequest): Promise<IngestionDetailItem[]> => {
 		return fetchItemsWithFiles(fetchFn, token, batchId);

@@ -112,6 +112,33 @@ describe('/ingestion/[batchId]/setup +page.server', () => {
 		});
 	});
 
+	it('keeps backend item kind authoritative when a stale redirect cookie exists', async () => {
+		getCapabilitiesMock.mockResolvedValue(capabilities);
+		getDetailMock.mockResolvedValue({
+			...createDetail('draft'),
+			classificationType: 'other',
+			itemKind: 'photo'
+		});
+		const deleteCookie = vi.fn();
+
+		const result = await load({
+			params: { batchId: 'batch-3' },
+			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
+			cookies: {
+				get: (name: string) =>
+					name === 'ingestion-item-kind:batch-3' ? 'video' : 'token-1',
+				delete: deleteCookie
+			},
+			fetch: vi.fn()
+		} as never);
+
+		const pageData = result as Exclude<typeof result, void>;
+		expect(pageData.metadata.itemKind).toBe('photo');
+		expect(deleteCookie).toHaveBeenCalledWith('ingestion-item-kind:batch-3', {
+			path: '/ingestion/batch-3'
+		});
+	});
+
 	it('preserves missing detail item kind when there is no redirect cookie', async () => {
 		getCapabilitiesMock.mockResolvedValue({
 			mediaKinds: ['image', 'audio', 'video', 'document'],

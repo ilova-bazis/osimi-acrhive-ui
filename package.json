@@ -3,6 +3,9 @@
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
+	"engines": {
+		"node": "24.12.x"
+	},
 	"scripts": {
 		"dev": "vite dev",
 		"start": "node build",
@@ -27,7 +30,7 @@
 		"@tailwindcss/typography": "^0.5.19",
 		"@tailwindcss/vite": "^4.1.17",
 		"@types/node": "^24",
-		"@vitest/browser-playwright": "4.1.10",
+		"@vitest/browser-playwright": "4.1.11",
 		"eslint": "^9.39.1",
 		"eslint-plugin-svelte": "^3.13.1",
 		"globals": "^16.5.0",
@@ -38,10 +41,14 @@
 		"typescript": "^5.9.3",
 		"typescript-eslint": "^8.48.1",
 		"vite": "^7.2.6",
-		"vitest": "4.1.10",
+		"vitest": "4.1.11",
 		"vitest-browser-svelte": "^2.0.1"
 	},
 	"dependencies": {
+		"focus-trap": "^8.2.2",
 		"zod": "^4.3.6"
+	},
+	"overrides": {
+		"cookie": "0.7.2"
 	}
 }

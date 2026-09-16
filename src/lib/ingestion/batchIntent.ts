@@ -23,7 +23,7 @@ export const resolveBatchIntent = ({
 	metadataItemKind
 }: ResolveBatchIntentInput): BatchIntent => {
 	const itemKind =
-		storedItemKind ?? metadataItemKind ?? defaultItemKindForClassification(classificationType);
+		metadataItemKind ?? storedItemKind ?? defaultItemKindForClassification(classificationType);
 
 	return isItemKindAllowedForClassification(classificationType, itemKind)
 		? { classificationType, itemKind }

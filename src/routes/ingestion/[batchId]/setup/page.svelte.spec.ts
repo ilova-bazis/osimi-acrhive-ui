@@ -129,7 +129,7 @@ const pageData = (): {
 		}
 	],
 	metadata: {
-		classificationType: 'document' as const,
+		classificationType: 'image' as const,
 		itemKind: 'photo' as const,
 		languageCode: 'en',
 		pipelinePreset: 'none',
@@ -161,6 +161,7 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 
 	afterEach(() => {
 		vi.useRealTimers();
+		sessionStorage.clear();
 		locale.setLocale('en');
 	});
 
@@ -188,8 +189,6 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 		await expect.element(organizeContinue).not.toBeDisabled();
 		await organizeContinue.click();
 
-		const objectCard = page.getByRole('button', { name: /Object one/ }).last();
-		await objectCard.click();
 		const titleInput = page.getByRole('textbox', { name: 'Title' }).last();
 		await titleInput.fill('Changed title');
 
@@ -213,7 +212,6 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 
 		render(SetupPage, { data: pageData() });
 		await page.getByRole('button', { name: 'Continue' }).click();
-		await page.getByRole('button', { name: /Object one/ }).last().click();
 		await page.getByRole('textbox', { name: 'Title' }).last().fill('Changed title');
 		await new Promise((resolve) => setTimeout(resolve, 350));
 
@@ -238,7 +236,6 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 
 		render(SetupPage, { data: pageData() });
 		await page.getByRole('button', { name: 'Continue' }).click();
-		await page.getByRole('button', { name: /Object one/ }).last().click();
 		await page.getByRole('textbox', { name: 'Title' }).last().fill('Changed title');
 		await new Promise((resolve) => setTimeout(resolve, 350));
 
@@ -331,9 +328,69 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(fetchMock).toHaveBeenCalledWith(
+			'/ingestion/[batchId]/files/[fileId]/preview',
+			{ method: 'HEAD', signal: expect.any(AbortSignal) }
+		);
 		await expect
 			.element(page.getByRole('img', { name: 'page-1.jpg' }))
 			.toBeInTheDocument();
+	});
+
+	it('does not poll a pending video preview and presents the deferred state', async () => {
+		vi.useFakeTimers();
+		const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+		vi.stubGlobal('fetch', fetchMock);
+		const videoData = pageData();
+		videoData.existingFiles[0] = {
+			...videoData.existingFiles[0]!,
+			name: 'clip.mp4',
+			contentType: 'video/mp4',
+			preview: {
+				status: 'pending',
+				contentType: null,
+				width: null,
+				height: null,
+				url: null
+			}
+		};
+
+		render(SetupPage, { data: videoData });
+
+		await page.getByRole('button', { name: 'Continue' }).click();
+
+		await vi.advanceTimersByTimeAsync(18_000);
+		expect(fetchMock).not.toHaveBeenCalled();
+
+		await expect
+			.element(page.getByText('Video preview unavailable', { exact: true }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Check again' }))
+			.not.toBeInTheDocument();
+	});
+
+	it('renders a ready video preview without polling', async () => {
+		const fetchMock = vi.fn();
+		vi.stubGlobal('fetch', fetchMock);
+		const readyVideoData = pageData();
+		readyVideoData.existingFiles[0] = {
+			...readyVideoData.existingFiles[0]!,
+			name: 'clip.mp4',
+			contentType: 'video/mp4',
+			preview: {
+				status: 'ready',
+				contentType: 'image/jpeg',
+				width: 320,
+				height: 180,
+				url: '/api/ingestions/batch-1/files/file-1/preview'
+			}
+		};
+
+		render(SetupPage, { data: readyVideoData });
+
+		await expect.element(page.getByRole('img', { name: 'clip.mp4' })).toBeInTheDocument();
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it('retries only unfinished standalone item work after metadata save failure', async () => {
@@ -366,7 +423,7 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 				},
 				dates: {
 					...batchSummary.dates,
-					created: {
+					published: {
 						value: '2020',
 						approximate: false,
 						confidence: 'medium',
@@ -403,7 +460,6 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 
 		render(SetupPage, { data: pageData() });
 		await page.getByRole('button', { name: 'Continue' }).click();
-		await page.getByRole('button', { name: /Object one/ }).last().click();
 		const titleInput = page.getByRole('textbox', { name: 'Title' }).last();
 		await titleInput.fill('First change');
 		await new Promise((resolve) => setTimeout(resolve, 350));
@@ -464,7 +520,7 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 				classification: { tags: ['batch'], summary: null },
 				dates: {
 					...batchSummary.dates,
-					created: { value: '2020', approximate: false, confidence: 'medium', note: null }
+					published: { value: '2020', approximate: false, confidence: 'medium', note: null }
 				}
 			}
 		};
@@ -586,7 +642,6 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 		const organizeContinue = page.getByRole('button', { name: 'Continue' });
 		await expect.element(organizeContinue).not.toBeDisabled();
 		await organizeContinue.click();
-		await page.getByRole('button', { name: /Object one/ }).last().click();
 
 		await expect.element(page.getByText('2 items')).toBeInTheDocument();
 		await page
@@ -601,10 +656,7 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 			.element(page.getByRole('button', { name: 'Previous file' }))
 			.not.toBeDisabled();
 
-		await userEvent.keyboard('{Escape}');
-		await expect
-			.element(page.getByRole('button', { name: 'Preview page-2.jpg, 2 of 2' }))
-			.toHaveFocus();
+		await page.getByRole('button', { name: 'Close preview' }).click();
 	});
 
 	it('opens a one-file gallery for standalone files', async () => {
@@ -620,7 +672,6 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 		render(SetupPage, { data: standaloneData });
 
 		await page.getByRole('button', { name: 'Continue' }).click();
-		await page.getByRole('button', { name: /page-1\.jpg/ }).last().click();
 
 		await expect.element(page.getByText('1 item')).toBeInTheDocument();
 		await page
@@ -736,7 +787,6 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 		render(SetupPage, { data: failedData });
 
 		await page.getByRole('button', { name: 'Continue' }).click();
-		await page.getByRole('button', { name: /Object one/ }).last().click();
 
 		await expect.element(page.getByText('Preview failed')).toBeInTheDocument();
 		await expect
@@ -776,7 +826,6 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 		expect(fetchMock).not.toHaveBeenCalled();
 
 		await page.getByRole('button', { name: 'Continue' }).click();
-		await page.getByRole('button', { name: /Object one/ }).last().click();
 		await expect.element(page.getByText('Preview purged')).toBeInTheDocument();
 		await expect
 			.element(page.getByText('No visual preview', { exact: true }))
@@ -796,43 +845,25 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 		await expect
 			.element(page.getByText('Uploaded', { exact: true }).first())
 			.toBeInTheDocument();
-	});
 
-	it('shows localized backend file status labels in Russian', async () => {
 		locale.setLocale('ru');
-		vi.stubGlobal('fetch', vi.fn());
-		const standaloneData = pageData();
-		standaloneData.existingFiles = [standaloneData.existingFiles[0]!];
-		standaloneData.items = [];
-		render(SetupPage, { data: standaloneData });
-
 		await expect
 			.element(page.getByText('Загружен', { exact: true }).first())
 			.toBeInTheDocument();
 	});
 
-	it('keeps unknown backend file statuses visible as raw values', async () => {
+	it('keeps uppercase styles away from backend status labels', async () => {
 		vi.stubGlobal('fetch', vi.fn());
-		const unknownData = pageData();
-		unknownData.existingFiles = [
-			{ ...unknownData.existingFiles[0]!, status: null, statusRaw: 'Future_File_State' }
+		const standaloneData = pageData();
+		standaloneData.existingFiles = [
+			{
+				...standaloneData.existingFiles[0]!,
+				status: 'validated',
+				statusRaw: 'VALIDATED'
+			}
 		];
-		unknownData.items = [];
-		render(SetupPage, { data: unknownData });
-
-		await expect
-			.element(page.getByText('Future_File_State', { exact: true }).first())
-			.toBeInTheDocument();
-	});
-
-	it('labels validated backend files with their own localized status', async () => {
-		vi.stubGlobal('fetch', vi.fn());
-		const validatedData = pageData();
-		validatedData.existingFiles = [
-			{ ...validatedData.existingFiles[0]!, status: 'validated', statusRaw: 'VALIDATED' }
-		];
-		validatedData.items = [];
-		render(SetupPage, { data: validatedData });
+		standaloneData.items = [];
+		render(SetupPage, { data: standaloneData });
 
 		await expect
 			.element(page.getByText('Validated', { exact: true }).first())
@@ -854,11 +885,11 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 		await expect
 			.element(page.getByText('Автогруппировка по имени файла'))
 			.toBeInTheDocument();
-		await expect.element(page.getByRole('button', { name: /Продолжить/ })).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'Продолжить' })).toBeInTheDocument();
 		await expect.element(page.getByRole('link', { name: /Назад/ })).toBeInTheDocument();
 
-		await page.getByRole('button', { name: /Продолжить/ }).first().click();
-		await expect.element(page.getByText('Метаданные по объектам')).toBeInTheDocument();
+		await page.getByRole('button', { name: 'Продолжить' }).click();
+		await expect.element(page.getByText('Метаданные каждого объекта')).toBeInTheDocument();
 	});
 
 	it('localizes mutation failure labels reactively in Russian', async () => {
@@ -872,7 +903,6 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 
 		render(SetupPage, { data: pageData() });
 		await page.getByRole('button', { name: 'Continue' }).click();
-		await page.getByRole('button', { name: /Object one/ }).last().click();
 		await page.getByRole('textbox', { name: 'Title' }).last().fill('Changed title');
 		await new Promise((resolve) => setTimeout(resolve, 350));
 
@@ -911,7 +941,36 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('localizes organize counts in Russian with plural forms', async () => {
+	it('localizes Step 1 single group warning in Russian', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const tenFilesData = pageData();
+		tenFilesData.items = [];
+		tenFilesData.existingFiles = Array.from({ length: 10 }, (_, i) => ({
+			id: `file-${i + 1}`,
+			name: `photo-${i + 1}.jpg`,
+			status: 'uploaded',
+			statusRaw: 'uploaded',
+			contentType: 'image/jpeg',
+			sizeBytes: 100,
+			createdAt: null,
+			preview: null as IngestionDetailFile['preview']
+		}));
+		render(SetupPage, { data: tenFilesData });
+
+		locale.setLocale('ru');
+		await expect
+			.element(page.getByText('У вас 10 файлов, каждый из которых станет отдельным объектом. Это верно?'))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByText('Каждая группа станет'))
+			.toBeInTheDocument();
+		await expect.element(page.getByText('ОДНИМ объектом')).toBeInTheDocument();
+		await expect.element(page.getByText('в вашей библиотеке.')).toBeInTheDocument();
+		await expect.element(page.getByText('10 объектов', { exact: false }).first()).toBeInTheDocument();
+		await expect.element(page.getByText('10 файлов', { exact: false }).first()).toBeInTheDocument();
+	});
+
+	it('localizes Step 1 plural forms for single object and multiple files in Russian', async () => {
 		vi.stubGlobal('fetch', vi.fn());
 		locale.setLocale('ru');
 		render(SetupPage, { data: pageData() });
@@ -921,5 +980,464 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 		await expect.element(page.getByText('в вашей библиотеке.')).toBeInTheDocument();
 		await expect.element(page.getByText('1 объект', { exact: false }).first()).toBeInTheDocument();
 		await expect.element(page.getByText('2 файла', { exact: false }).first()).toBeInTheDocument();
+	});
+
+	it('disables incompatible preset options in setup preset dropdown', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const data = pageData(); // classification: image, itemKind: photo (allowed: auto, none)
+		render(SetupPage, { data });
+
+		// Navigate from Step 1 (Organize) to Step 2 (Metadata)
+		await page.getByRole('button', { name: 'Continue' }).click();
+
+		const presetSelect = document.querySelector('select#intent-pipeline-preset') as HTMLSelectElement;
+		expect(presetSelect).not.toBeNull();
+
+		const autoOption = presetSelect.querySelector('option[value="auto"]') as HTMLOptionElement;
+		const noneOption = presetSelect.querySelector('option[value="none"]') as HTMLOptionElement;
+		const ocrOption = presetSelect.querySelector('option[value="ocr_text"]') as HTMLOptionElement;
+		const audioOption = presetSelect.querySelector('option[value="audio_transcript"]') as HTMLOptionElement;
+
+		expect(autoOption.disabled).toBe(false);
+		expect(noneOption.disabled).toBe(false);
+		expect(ocrOption.disabled).toBe(true);
+		expect(audioOption.disabled).toBe(true);
+	});
+
+	it('renders warning banner and disables submit when batch has incompatible preset', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const data = pageData();
+		data.metadata.pipelinePreset = 'ocr_text'; // photo + ocr_text is incompatible!
+		render(SetupPage, { data });
+
+		// Navigate to Step 2 (Metadata)
+		await page.getByRole('button', { name: 'Continue' }).click();
+
+		await expect
+			.element(page.getByText('Selected pipeline preset is not compatible with all items in this batch.').first())
+			.toBeInTheDocument();
+
+		const continueButton = page.getByRole('button', { name: 'Continue' });
+		await expect.element(continueButton).toBeDisabled();
+	});
+
+	it('renders warning banner and disables submit when batch has unknown item override', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const data = pageData();
+		data.items[0].itemKind = 'unknown_custom_override';
+		render(SetupPage, { data });
+
+		// Navigate to Step 2 (Metadata)
+		await page.getByRole('button', { name: 'Continue' }).click();
+
+		await expect
+			.element(page.getByText('Batch contains items with unrecognized item kind overrides.').first())
+			.toBeInTheDocument();
+
+		const continueButton = page.getByRole('button', { name: 'Continue' });
+		await expect.element(continueButton).toBeDisabled();
+	});
+
+	it('treats an empty-string item override as unknown', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const data = pageData();
+		data.items[0].itemKind = '';
+		render(SetupPage, { data });
+
+		await page.getByRole('button', { name: 'Continue' }).click();
+
+		await expect
+			.element(page.getByText('Batch contains items with unrecognized item kind overrides.').first())
+			.toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
+	});
+
+	it('hydrates item kind from server metadata instead of stale session storage', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		sessionStorage.setItem('ingestion-item-kind:batch-1', 'video');
+		const data = pageData();
+		data.metadata.classificationType = 'other';
+		data.metadata.itemKind = 'photo';
+		render(SetupPage, { data });
+
+		await page.getByRole('button', { name: 'Continue' }).click();
+
+		const itemKindSelect = document.querySelector('select#intent-item-kind') as HTMLSelectElement;
+		expect(itemKindSelect.value).toBe('photo');
+		expect(sessionStorage.getItem('ingestion-item-kind:batch-1')).toBe('photo');
+	});
+
+	it('serializes metadata saves and keeps Continue blocked for the latest generation', async () => {
+		const resolvers: Array<(response: Response) => void> = [];
+		const fetchMock = vi.fn().mockImplementation(
+			() => new Promise<Response>((resolve) => resolvers.push(resolve))
+		);
+		vi.stubGlobal('fetch', fetchMock);
+		const data = pageData();
+		data.metadata.classificationType = 'other';
+		data.metadata.itemKind = 'photo';
+		render(SetupPage, { data });
+
+		await page.getByRole('button', { name: 'Continue' }).click();
+		const itemKindSelect = document.querySelector('select#intent-item-kind') as HTMLSelectElement;
+		await userEvent.selectOptions(itemKindSelect, 'audio');
+		await new Promise((resolve) => setTimeout(resolve, 350));
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+
+		await userEvent.selectOptions(itemKindSelect, 'video');
+		resolvers[0](new Response(null, { status: 200 }));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await expect.element(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
+
+		await new Promise((resolve) => setTimeout(resolve, 350));
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		const firstPayload = JSON.parse(fetchMock.mock.calls[0][1].body as string) as { itemKind: string };
+		const secondPayload = JSON.parse(fetchMock.mock.calls[1][1].body as string) as { itemKind: string };
+		expect(firstPayload.itemKind).toBe('audio');
+		expect(secondPayload.itemKind).toBe('video');
+
+		resolvers[1](new Response(null, { status: 200 }));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(sessionStorage.getItem('ingestion-item-kind:batch-1')).toBe('video');
+	});
+
+	it('rolls back to the latest successful save when a newer generation fails', async () => {
+		const resolvers: Array<(response: Response) => void> = [];
+		const fetchMock = vi.fn().mockImplementation(
+			() => new Promise<Response>((resolve) => resolvers.push(resolve))
+		);
+		vi.stubGlobal('fetch', fetchMock);
+		const data = pageData();
+		data.metadata.classificationType = 'other';
+		data.metadata.itemKind = 'photo';
+		render(SetupPage, { data });
+
+		await page.getByRole('button', { name: 'Continue' }).click();
+		const itemKindSelect = document.querySelector('select#intent-item-kind') as HTMLSelectElement;
+		await userEvent.selectOptions(itemKindSelect, 'audio');
+		await new Promise((resolve) => setTimeout(resolve, 350));
+		await userEvent.selectOptions(itemKindSelect, 'video');
+
+		resolvers[0](new Response(null, { status: 200 }));
+		await new Promise((resolve) => setTimeout(resolve, 350));
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		resolvers[1](
+			new Response(JSON.stringify({ error: 'Rejected latest intent.' }), {
+				status: 409,
+				headers: { 'content-type': 'application/json' }
+			})
+		);
+		await vi.waitFor(() => expect(itemKindSelect.value).toBe('audio'));
+		expect(sessionStorage.getItem('ingestion-item-kind:batch-1')).toBe('audio');
+		await expect.element(page.getByText('Rejected latest intent.')).toBeInTheDocument();
+	});
+
+	it('does not confirm or store an item kind after metadata save returns 401', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 401 }));
+		vi.stubGlobal('fetch', fetchMock);
+		const data = pageData();
+		data.metadata.classificationType = 'other';
+		data.metadata.itemKind = 'photo';
+		render(SetupPage, { data });
+
+		await page.getByRole('button', { name: 'Continue' }).click();
+		const itemKindSelect = document.querySelector('select#intent-item-kind') as HTMLSelectElement;
+		await userEvent.selectOptions(itemKindSelect, 'audio');
+		await new Promise((resolve) => setTimeout(resolve, 350));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(gotoMock).toHaveBeenCalledWith('/login');
+		expect(sessionStorage.getItem('ingestion-item-kind:batch-1')).toBe('photo');
+		await expect.element(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
+	});
+
+	it('does not send an already queued metadata generation after a 401', async () => {
+		let resolveFirst: (response: Response) => void = () => undefined;
+		const fetchMock = vi.fn().mockImplementation(
+			() => new Promise<Response>((resolve) => {
+				resolveFirst = resolve;
+			})
+		);
+		vi.stubGlobal('fetch', fetchMock);
+		const data = pageData();
+		data.metadata.classificationType = 'other';
+		data.metadata.itemKind = 'photo';
+		render(SetupPage, { data });
+
+		await page.getByRole('button', { name: 'Continue' }).click();
+		const itemKindSelect = document.querySelector('select#intent-item-kind') as HTMLSelectElement;
+		await userEvent.selectOptions(itemKindSelect, 'audio');
+		await new Promise((resolve) => setTimeout(resolve, 350));
+		await userEvent.selectOptions(itemKindSelect, 'video');
+		resolveFirst(new Response(null, { status: 401 }));
+		await new Promise((resolve) => setTimeout(resolve, 400));
+
+		expect(gotoMock).toHaveBeenCalledWith('/login');
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it('separates batch intent into Card A, Card B, and Card C with clear copy', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const data = pageData();
+		render(SetupPage, { data });
+
+		// Navigate to Step 2 (Metadata)
+		await page.getByRole('button', { name: 'Continue' }).click();
+
+		// Card A: Item metadata defaults
+		await expect.element(page.getByText('Item metadata defaults')).toBeInTheDocument();
+		await expect
+			.element(
+				page.getByText(
+					'Language applies as a batch default. Title, tags, description, and publication date prefill empty object metadata.'
+				)
+			)
+			.toBeInTheDocument();
+
+		// Card B: Batch record context
+		await expect.element(page.getByText('Batch record context')).toBeInTheDocument();
+		await expect
+			.element(
+				page.getByText(
+					'Creation date describes the batch record and is not copied to object metadata.'
+				)
+			)
+			.toBeInTheDocument();
+
+		// Card C: Processing and access policies
+		await expect.element(page.getByText('Processing and access policies')).toBeInTheDocument();
+		await expect
+			.element(
+				page.getByText(
+					'These settings apply to the whole ingestion and are not per-object metadata.'
+				)
+			)
+			.toBeInTheDocument();
+	});
+
+	it('handles single-object batch UX with collapsed defaults and auto-expanded sole object', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const data = pageData(); // existingFiles has 1 file (file-1) and items has 1 item
+		render(SetupPage, { data });
+
+		// Navigate to Step 2 (Metadata)
+		await page.getByRole('button', { name: 'Continue' }).click();
+
+		// Single object hint and edit button present
+		await expect
+			.element(
+				page.getByText(
+					'One object in this batch. Edit its metadata below, or expand these defaults if needed.'
+				)
+			)
+			.toBeInTheDocument();
+
+		const toggleButton = page.getByRole('button', { name: 'Edit defaults' });
+		await expect.element(toggleButton).toBeInTheDocument();
+		await expect.element(toggleButton).toHaveAttribute('aria-expanded', 'false');
+		await expect.element(toggleButton).toHaveAttribute('aria-controls', 'item-metadata-defaults-panel');
+		expect(document.querySelector('#item-metadata-defaults-panel')).toBeNull();
+
+		// Policy controls in Card C are visible initially while Card A is collapsed
+		await expect.element(page.getByRole('combobox', { name: 'Item kind' })).toBeVisible();
+		await expect.element(page.getByRole('combobox', { name: 'Classification type' })).toBeVisible();
+		await expect.element(page.getByRole('combobox', { name: 'Pipeline preset' })).toBeVisible();
+		await expect.element(page.getByRole('combobox', { name: 'Access level' })).toBeVisible();
+		expect(document.querySelector('input#intent-title')).toBeNull();
+
+		// Sole object card is auto-expanded (Object Details is visible)
+		await expect.element(page.getByText('Object Details')).toBeInTheDocument();
+
+		// Clicking Edit defaults expands Card A and updates button to Hide defaults
+		await userEvent.click(toggleButton);
+		const hideButton = page.getByRole('button', { name: 'Hide defaults' });
+		await expect.element(hideButton).toBeInTheDocument();
+		await expect.element(hideButton).toHaveAttribute('aria-expanded', 'true');
+		expect(document.querySelector('#item-metadata-defaults-panel')).not.toBeNull();
+		expect(document.querySelector('input#intent-title')).not.toBeNull();
+
+		await userEvent.click(hideButton);
+		await expect.element(page.getByRole('button', { name: 'Edit defaults' })).toHaveAttribute(
+			'aria-expanded',
+			'false'
+		);
+		expect(document.querySelector('#item-metadata-defaults-panel')).toBeNull();
+	});
+
+	it('uses the batch ID as the effective title when the editable default is blank', async () => {
+		const sentActions: Array<{ action: string; metadata?: Record<string, unknown> }> = [];
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockImplementation(async (_url, init) => {
+				const body = JSON.parse((init as RequestInit).body as string) as {
+					action: string;
+					metadata?: Record<string, unknown>;
+				};
+				sentActions.push(body);
+				return new Response(JSON.stringify({ ok: true }), { status: 200 });
+			})
+		);
+		const data = pageData();
+		data.metadata.summary = {
+			title: { primary: '   ', original_script: null, translations: [] },
+			classification: { tags: [], summary: null },
+			dates: {
+				published: { value: null, approximate: false, confidence: 'medium', note: null },
+				created: { value: null, approximate: false, confidence: 'medium', note: null }
+			}
+		};
+		data.items[0].label = undefined;
+		data.items[0].summary = {
+			classification: { tags: [], summary: null },
+			dates: { published: { value: null, approximate: false } },
+			people: { mentioned: [] }
+		};
+		render(SetupPage, { data });
+
+		await page.getByRole('button', { name: 'Continue' }).click();
+		const titleInput = document.querySelector('input[id^="obj-title-"]') as HTMLInputElement;
+		expect(titleInput?.value).toBe('batch-1');
+		await userEvent.clear(titleInput);
+		await userEvent.fill(titleInput, 'Changed object');
+		await new Promise((resolve) => setTimeout(resolve, 350));
+
+		const update = sentActions.find((action) => action.action === 'update_item');
+		expect(update?.metadata?.title).toBe('Changed object');
+		await expect.element(page.getByText('Customized')).toBeInTheDocument();
+	});
+
+	it('auto-expands each newly created sole object after regrouping', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const data = pageData();
+		data.items = [];
+		render(SetupPage, { data });
+
+		const selectStandaloneFiles = async (): Promise<void> => {
+			const checkboxes = [...document.querySelectorAll('input[type="checkbox"]')] as HTMLInputElement[];
+			expect(checkboxes).toHaveLength(2);
+			await userEvent.click(checkboxes[0]);
+			await userEvent.click(checkboxes[1]);
+			await userEvent.click(page.getByRole('button', { name: 'Merge' }));
+		};
+
+		await selectStandaloneFiles();
+		await page.getByRole('button', { name: 'Continue' }).click();
+		expect(document.querySelector('input[id^="obj-title-"]')).not.toBeNull();
+
+		await page.getByRole('button', { name: /Organize/ }).click();
+		await page.getByRole('button', { name: 'Ungroup' }).click();
+		await selectStandaloneFiles();
+		await page.getByRole('button', { name: 'Continue' }).click();
+		expect(document.querySelector('input[id^="obj-title-"]')).not.toBeNull();
+	});
+
+	it('propagates publication date and displays inheritance badges on object cards', async () => {
+		vi.stubGlobal('fetch', vi.fn());
+		const data = pageData();
+		data.items[0].label = 'Batch title';
+		data.items[0].summary = {
+			classification: { tags: ['archive'], summary: 'Shared description' },
+			dates: { published: { value: '1945', approximate: false } },
+			people: { mentioned: [] }
+		};
+		data.metadata.summary = {
+			title: { primary: 'Batch title', original_script: null, translations: [] },
+			classification: { tags: ['archive'], summary: 'Shared description' },
+			dates: {
+				published: { value: '1945', approximate: false, confidence: 'medium', note: null },
+				created: { value: '2026', approximate: false, confidence: 'medium', note: null }
+			}
+		};
+		render(SetupPage, { data });
+
+		await page.getByRole('button', { name: 'Continue' }).click();
+
+		// Object badge should reflect matches defaults
+		await expect.element(page.getByText('Matches defaults')).toBeInTheDocument();
+	});
+
+	it('restores publication default on No date and sends concrete dates.published update', async () => {
+		const sentActions: Array<{ action: string; metadata?: Record<string, unknown> }> = [];
+		const fetchMock = vi.fn().mockImplementation(async (_url, init) => {
+			const body = JSON.parse((init as RequestInit).body as string) as { action: string; metadata?: Record<string, unknown> };
+			sentActions.push(body);
+			return new Response(JSON.stringify({ ok: true }), { status: 200 });
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		const data = pageData();
+		data.items[0].id = 'item-1';
+		data.items[0].summary = {
+			classification: { tags: ['archive'], summary: 'Desc' },
+			dates: { published: { value: '2020', approximate: true } },
+			people: { mentioned: [] }
+		};
+		data.metadata.summary = {
+			title: { primary: 'Title', original_script: null, translations: [] },
+			classification: { tags: ['archive'], summary: 'Desc' },
+			dates: {
+				published: { value: '1945', approximate: false, confidence: 'medium', note: null },
+				created: { value: '2026', approximate: false, confidence: 'medium', note: null }
+			}
+		};
+		render(SetupPage, { data });
+
+		await page.getByRole('button', { name: 'Continue' }).click();
+
+		// Change object date precision to None (No date)
+		const dateSelect = page.getByRole('combobox', { name: 'Date' });
+		await userEvent.selectOptions(dateSelect, 'none');
+		await new Promise((resolve) => setTimeout(resolve, 350));
+
+		await expect.element(dateSelect).toHaveValue('year');
+		const restoredDateInput = dateSelect.element().parentElement?.querySelector('input[type="number"]');
+		expect(restoredDateInput).not.toBeNull();
+		expect((restoredDateInput as HTMLInputElement).value).toBe('1945');
+
+		const updateCall = sentActions.find((a) => a.action === 'update_item');
+		expect(updateCall).toBeDefined();
+		const date = updateCall?.metadata?.date as { value: string | null; approximate: boolean };
+		expect(date.value).toBe('1945');
+		expect(date.approximate).toBe(false);
+	});
+
+	it('sends explicit null date when clearing without a batch publication default', async () => {
+		const sentActions: Array<{ action: string; metadata?: Record<string, unknown> }> = [];
+		const fetchMock = vi.fn().mockImplementation(async (_url, init) => {
+			const body = JSON.parse((init as RequestInit).body as string) as { action: string; metadata?: Record<string, unknown> };
+			sentActions.push(body);
+			return new Response(JSON.stringify({ ok: true }), { status: 200 });
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		const data = pageData();
+		data.items[0].id = 'item-1';
+		data.items[0].summary = {
+			classification: { tags: ['archive'], summary: 'Desc' },
+			dates: { published: { value: '1990', approximate: false } },
+			people: { mentioned: [] }
+		};
+		data.metadata.summary = {
+			title: { primary: '', original_script: null, translations: [] },
+			classification: { tags: [], summary: null },
+			dates: {
+				published: { value: null, approximate: false, confidence: 'medium', note: null },
+				created: { value: null, approximate: false, confidence: 'medium', note: null }
+			}
+		};
+		render(SetupPage, { data });
+
+		await page.getByRole('button', { name: 'Continue' }).click();
+
+		// Change object date precision to None (No date)
+		const dateSelect = page.getByRole('combobox', { name: 'Date' });
+		await userEvent.selectOptions(dateSelect, 'none');
+		await new Promise((resolve) => setTimeout(resolve, 350));
+
+		const updateCall = sentActions.find((a) => a.action === 'update_item');
+		expect(updateCall).toBeDefined();
+		const date = updateCall?.metadata?.date as { value: string | null; approximate: boolean };
+		expect(date.value).toBeNull();
+		expect(date.approximate).toBe(false);
 	});
 });

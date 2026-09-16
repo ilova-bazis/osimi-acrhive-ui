@@ -19,6 +19,11 @@
         type ClassificationType,
         type ItemKind,
     } from "$lib/ingestion/kindMappings";
+    import {
+        getAllowedPipelinePresets,
+        getSuggestedPipelinePreset,
+        type PipelinePreset,
+    } from "$lib/ingestion/pipelineCapabilities";
 
     let { form } = $props<{ form: ActionData }>();
 
@@ -32,7 +37,7 @@
         defaultItemKindForClassification("document"),
     );
     let selectedLang = $state("fa");
-    let selectedPreset = $state("auto");
+    let selectedPreset = $state<PipelinePreset>("auto");
     let selectedVisibility = $state("private");
     let tagsInput = $state("");
     let summaryTags = $state<string[]>([]);
@@ -119,7 +124,7 @@
         { id: "unknown", label: t("ingestionNew.languages.unknown"), native: t("ingestionNew.languages.unknownNative") },
     ]);
 
-    type PresetDef = { id: string; label: string; sub: string };
+    type PresetDef = { id: PipelinePreset; label: string; sub: string };
     const presets = $derived<PresetDef[]>([
         {
             id: "auto",
@@ -189,36 +194,11 @@
     });
 
     const allowedPresets = $derived(
-        new Set<string>(
-            (
-                {
-                    scanned_document: ["auto", "none", "ocr_text"],
-                    photo: ["auto", "none"],
-                    audio: ["auto", "none", "audio_transcript"],
-                    video: [
-                        "auto",
-                        "none",
-                        "video_transcript",
-                        "ocr_and_video_transcript",
-                    ],
-                    document: ["auto", "none"],
-                    other: presets.map((p) => p.id),
-                } as Record<string, string[]>
-            )[selectedItemKind] ?? ["auto", "none"],
-        ),
+        new Set<PipelinePreset>(getAllowedPipelinePresets(selectedItemKind)),
     );
 
     const suggestedPresetId = $derived(
-        (
-            {
-                scanned_document: "ocr_text",
-                photo: "none",
-                audio: "audio_transcript",
-                video: "video_transcript",
-                document: "none",
-                other: "auto",
-            } as Record<string, string>
-        )[selectedItemKind] ?? "auto",
+        getSuggestedPipelinePreset(selectedItemKind),
     );
 
     const suggestedPresetLabel = $derived(
@@ -252,7 +232,7 @@
 </script>
 
 <!-- Page fills the main column from the layout grid -->
-<div class="flex flex-col min-h-full lg:min-h-screen">
+<div class="app-route-desktop-min-h flex flex-col min-h-full">
     <!-- Sticky top-bar -->
     <header
         class="sticky top-0 z-20 border-b border-border-soft bg-alabaster-grey px-4 py-3 sm:py-4 sm:px-6"

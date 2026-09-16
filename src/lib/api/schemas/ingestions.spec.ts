@@ -92,4 +92,66 @@ describe('ingestionDetailResponseSchema', () => {
 			}).success
 		).toBe(false);
 	});
+
+	it('accepts unknown pipeline_preset on inbound DTO', () => {
+		const parsed = ingestionDtoSchema.safeParse({
+			id: 'ing-1',
+			pipeline_preset: 'historical_unknown_preset'
+		});
+		expect(parsed.success).toBe(true);
+	});
+});
+
+describe('createIngestionRequestSchema and updateIngestionRequestSchema', () => {
+	it('accepts known pipeline presets and rejects unknown ones', async () => {
+		const { createIngestionRequestSchema, updateIngestionRequestSchema } = await import('./ingestions');
+
+		const validPayload = {
+			batch_label: 'Batch 1',
+			schema_version: '1.0' as const,
+			classification_type: 'document' as const,
+			item_kind: 'document' as const,
+			language_code: 'en',
+			pipeline_preset: 'ocr_text' as const,
+			access_level: 'private' as const,
+			summary: {
+				title: { primary: 'Batch 1', original_script: null, translations: [] },
+				classification: { tags: [], summary: null },
+				dates: {
+					published: { value: null, approximate: false, confidence: 'medium' as const, note: null },
+					created: { value: null, approximate: false, confidence: 'medium' as const, note: null }
+				}
+			}
+		};
+
+		expect(createIngestionRequestSchema.safeParse(validPayload).success).toBe(true);
+
+		const invalidPayload = {
+			...validPayload,
+			pipeline_preset: 'unknown_preset'
+		};
+		expect(createIngestionRequestSchema.safeParse(invalidPayload).success).toBe(false);
+
+		expect(updateIngestionRequestSchema.safeParse({ pipeline_preset: 'audio_transcript' }).success).toBe(true);
+		expect(updateIngestionRequestSchema.safeParse({ pipeline_preset: 'invalid_preset' }).success).toBe(false);
+	});
+});
+
+describe('ingestionItemSchema', () => {
+	it('accepts null, known kinds, and unknown strings for item_kind', async () => {
+		const { ingestionItemSchema } = await import('./ingestions');
+
+		const baseItem = {
+			id: 'item-1',
+			ingestion_id: 'ing-1',
+			item_index: 1,
+			status: 'DRAFT',
+			created_at: '2026-01-01T00:00:00Z',
+			updated_at: '2026-01-01T00:00:00Z'
+		};
+
+		expect(ingestionItemSchema.safeParse({ ...baseItem, item_kind: null }).success).toBe(true);
+		expect(ingestionItemSchema.safeParse({ ...baseItem, item_kind: 'photo' }).success).toBe(true);
+		expect(ingestionItemSchema.safeParse({ ...baseItem, item_kind: 'raw_legacy_override' }).success).toBe(true);
+	});
 });

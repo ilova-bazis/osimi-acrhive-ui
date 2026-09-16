@@ -10,7 +10,8 @@ const {
 	reorderItemsMock,
 	attachFileToItemMock,
 	reorderItemFilesMock,
-	deleteMock
+	deleteMock,
+	getPipelineCapabilityContextMock
 } = vi.hoisted(() => ({
 	presignFileMock: vi.fn(),
 	commitFileMock: vi.fn(),
@@ -20,7 +21,8 @@ const {
 	reorderItemsMock: vi.fn(),
 	attachFileToItemMock: vi.fn(),
 	reorderItemFilesMock: vi.fn(),
-	deleteMock: vi.fn()
+	deleteMock: vi.fn(),
+	getPipelineCapabilityContextMock: vi.fn()
 }));
 
 vi.mock('$lib/services', () => ({
@@ -35,7 +37,8 @@ vi.mock('$lib/services', () => ({
 		reorderItemFiles: reorderItemFilesMock
 	},
 	ingestionDetailService: {
-		delete: deleteMock
+		delete: deleteMock,
+		getPipelineCapabilityContext: getPipelineCapabilityContextMock
 	}
 }));
 
@@ -52,6 +55,13 @@ describe('/ingestion/[batchId]/setup +server', () => {
 		attachFileToItemMock.mockReset();
 		reorderItemFilesMock.mockReset();
 		deleteMock.mockReset();
+		getPipelineCapabilityContextMock.mockReset();
+		getPipelineCapabilityContextMock.mockResolvedValue({
+			classificationType: 'document',
+			itemKind: 'document',
+			pipelinePreset: 'auto',
+			itemOverrides: []
+		});
 	});
 
 	it('returns 401 when auth is missing', async () => {
@@ -387,5 +397,83 @@ describe('/ingestion/[batchId]/setup +server', () => {
 		} as never);
 
 		expect(response.status).toBe(423);
+	});
+
+	it('returns 409 INVALID_PIPELINE_CAPABILITY when submit has incompatible preset and item kinds', async () => {
+		getPipelineCapabilityContextMock.mockResolvedValue({
+			classificationType: 'image',
+			itemKind: 'photo',
+			pipelinePreset: 'ocr_text',
+			itemOverrides: []
+		});
+
+		const response = await POST({
+			request: new Request('https://example.test/ingestion/batch-1/setup', {
+				method: 'POST',
+				body: JSON.stringify({ action: 'submit' })
+			}),
+			params: { batchId: 'batch-1' },
+			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'archiver' } },
+			cookies: { get: () => 'token-1', delete: vi.fn() },
+			fetch: vi.fn()
+		} as never);
+
+		expect(response.status).toBe(409);
+		const data = await response.json();
+		expect(data).toMatchObject({
+			error: 'Incompatible pipeline preset for batch item kinds.',
+			code: 'INVALID_PIPELINE_CAPABILITY'
+		});
+		expect(submitMock).not.toHaveBeenCalled();
+	});
+
+	it('rejects submit when an item has an empty-string kind override', async () => {
+		getPipelineCapabilityContextMock.mockResolvedValue({
+			classificationType: 'document',
+			itemKind: 'scanned_document',
+			pipelinePreset: 'auto',
+			itemOverrides: ['']
+		});
+
+		const response = await POST({
+			request: new Request('https://example.test/ingestion/batch-1/setup', {
+				method: 'POST',
+				body: JSON.stringify({ action: 'submit' })
+			}),
+			params: { batchId: 'batch-1' },
+			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'archiver' } },
+			cookies: { get: () => 'token-1', delete: vi.fn() },
+			fetch: vi.fn()
+		} as never);
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			code: 'INVALID_PIPELINE_CAPABILITY',
+			details: { reason: 'unknown_item_kind', rawItemKind: '' }
+		});
+		expect(submitMock).not.toHaveBeenCalled();
+	});
+
+	it('accepts null inheritance with the canonical missing-kind fallback', async () => {
+		getPipelineCapabilityContextMock.mockResolvedValue({
+			classificationType: 'document',
+			itemKind: undefined,
+			pipelinePreset: 'ocr_text',
+			itemOverrides: [null]
+		});
+
+		const response = await POST({
+			request: new Request('https://example.test/ingestion/batch-1/setup', {
+				method: 'POST',
+				body: JSON.stringify({ action: 'submit' })
+			}),
+			params: { batchId: 'batch-1' },
+			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'archiver' } },
+			cookies: { get: () => 'token-1', delete: vi.fn() },
+			fetch: vi.fn()
+		} as never);
+
+		expect(response.status).toBe(200);
+		expect(submitMock).toHaveBeenCalledTimes(1);
 	});
 });

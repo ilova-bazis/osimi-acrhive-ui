@@ -1,21 +1,21 @@
 <script lang="ts">
 	import { locale } from '$lib/i18n/locale';
 	import { translations, type TranslationKey } from '$lib/i18n/translations';
-	import { formatTemplate, translate } from '$lib/i18n/translate';
+	import { translate } from '$lib/i18n/translate';
+
+	const id = $props.id();
 
 	let {
 		sourceLabel = 'Auto-extracted',
 		curatedLabel = 'Curated',
 		sourceText,
 		curatedText,
-		confidence,
 		onCuratedChange
 	}: {
 		sourceLabel?: string;
 		curatedLabel?: string;
 		sourceText: string;
 		curatedText: string;
-		confidence?: number;
 		onCuratedChange: (text: string) => void;
 	} = $props();
 
@@ -36,16 +36,15 @@
 	<div class="flex min-w-0 flex-1 flex-col">
 		<div class="mb-2 flex items-center justify-between">
 			<div class="flex items-center gap-2">
-				<span class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">{sourceLabel}</span>
-				{#if confidence !== undefined}
-					<span class="rounded-full bg-pale-sky/40 px-2 py-0.5 text-[9px] uppercase tracking-[0.12em] text-blue-slate">
-						{formatTemplate(t('objectEdit.editor.confidence'), { confidence })}
-					</span>
-				{/if}
+				<span id="{id}-source-label" class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">{sourceLabel}</span>
 			</div>
 			<span class="text-[9px] uppercase tracking-[0.12em] text-text-muted">{t('objectEdit.editor.readOnly')}</span>
 		</div>
-		<div class="flex-1 overflow-y-auto rounded-xl border border-blue-slate/15 bg-pale-sky/20 px-4 py-3 text-sm leading-relaxed text-blue-slate/85">
+		<div
+			role="region"
+			aria-labelledby="{id}-source-label"
+			class="flex-1 overflow-y-auto rounded-xl border border-blue-slate/15 bg-pale-sky/20 px-4 py-3 text-sm leading-relaxed text-blue-slate/85"
+		>
 			{#if sourceText}
 				{sourceText}
 			{:else}
@@ -57,7 +56,7 @@
 	<!-- Curated (editable) -->
 	<div class="flex min-w-0 flex-1 flex-col">
 		<div class="mb-2 flex items-center justify-between">
-			<span class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">{curatedLabel}</span>
+			<label for="{id}-curated" class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">{curatedLabel}</label>
 			<div class="flex items-center gap-2">
 				<button
 					type="button"
@@ -78,6 +77,7 @@
 			</div>
 		</div>
 		<textarea
+			id="{id}-curated"
 			class="flex-1 resize-none rounded-xl border border-pearl-beige/50 bg-pearl-beige/15 px-4 py-3 text-sm leading-relaxed text-text-ink placeholder:text-text-muted/50 focus:border-pearl-beige focus:outline-none focus:ring-1 focus:ring-pearl-beige/60"
 			rows="8"
 			placeholder={t('objectEdit.editor.curatedPlaceholder')}

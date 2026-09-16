@@ -21,6 +21,15 @@ const makeItem = (
 	preview
 });
 
+const makeVideoItem = (id: string, name: string): IngestionPreviewItem => ({
+	id,
+	name,
+	mediaType: 'video',
+	contentType: 'video/mp4',
+	sizeBytes: 12 * 1024 * 1024,
+	preview: { status: 'deferred' }
+});
+
 const buildFiles = (): IngestionPreviewItem[] => [
 	makeItem('f1', 'page-1.tif', { status: 'ready', url: PIXEL }),
 	makeItem('f2', 'page-2.tif', { status: 'ready', url: PIXEL }),
@@ -88,6 +97,26 @@ describe('IngestionFilePreview', () => {
 		await expect.element(page.getByText('Preview purged')).toBeInTheDocument();
 		await expect
 			.element(page.getByText('No visual preview', { exact: true }))
+			.toBeInTheDocument();
+	});
+
+	it('renders a deferred video state with a static label and no retry', async () => {
+		renderRail({ files: [makeVideoItem('f1', 'clip.mp4')] });
+
+		await expect
+			.element(page.getByText('Video preview unavailable', { exact: true }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Check again' }))
+			.not.toBeInTheDocument();
+	});
+
+	it('localizes the deferred video state in Russian', async () => {
+		locale.setLocale('ru');
+		renderRail({ files: [makeVideoItem('f1', 'clip.mp4')] });
+
+		await expect
+			.element(page.getByText('Предпросмотр видео недоступен', { exact: true }))
 			.toBeInTheDocument();
 	});
 

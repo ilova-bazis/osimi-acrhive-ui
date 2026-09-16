@@ -230,9 +230,38 @@ describe('apiIngestionDetailService', () => {
 			label: 'Stored title',
 			status: null,
 			statusRaw: 'DRAFT',
+			itemKind: null,
 			summary,
 			files: []
 		});
+	});
+
+	it('preserves explicit empty and null item titles while leaving missing titles absent', async () => {
+		const baseItem = {
+			ingestion_id: 'ing-titles',
+			status: 'DRAFT',
+			created_at: '2026-01-01T00:00:00.000Z',
+			updated_at: '2026-01-02T00:00:00.000Z'
+		};
+		backendRequestMock
+			.mockResolvedValueOnce({
+				items: [
+					{ ...baseItem, id: 'item-missing', item_index: 1 },
+					{ ...baseItem, id: 'item-empty', item_index: 2, title: '' },
+					{ ...baseItem, id: 'item-null', item_index: 3, title: null }
+				]
+			})
+			.mockResolvedValueOnce({ files: [] });
+
+		const items = await apiIngestionDetailService.listItems({
+			fetchFn: vi.fn() as never,
+			token: 'token-1',
+			batchId: 'ing-titles'
+		});
+
+		expect(items[0]).not.toHaveProperty('label');
+		expect(items[1]?.label).toBe('');
+		expect(items[2]?.label).toBe('');
 	});
 
 	it('maps a missing item summary to an empty object', async () => {
@@ -313,4 +342,80 @@ describe('apiIngestionDetailService', () => {
 		).rejects.toThrow('files failed');
 	});
 
+	describe('getPipelineCapabilityContext', () => {
+		it('makes exactly 2 requests in parallel and avoids fetching item files', async () => {
+			backendRequestMock
+				.mockResolvedValueOnce({
+					ingestion: {
+						ingestion_id: 'batch-cap-1',
+						classification_type: 'speech',
+						item_kind: 'audio',
+						pipeline_preset: 'audio_transcript'
+					}
+				})
+				.mockResolvedValueOnce({
+					items: [
+						{ id: 'item-1', item_index: 1, item_kind: null },
+						{ id: 'item-2', item_index: 2, item_kind: 'photo' },
+						{ id: 'item-3', item_index: 3, item_kind: 'custom_unknown' }
+					]
+				});
+
+			const fetchFn = vi.fn() as never;
+			const context = await apiIngestionDetailService.getPipelineCapabilityContext({
+				fetchFn,
+				token: 'token-123',
+				batchId: 'batch-cap-1'
+			});
+
+			expect(backendRequestMock).toHaveBeenCalledTimes(2);
+			expect(backendRequestMock).toHaveBeenNthCalledWith(
+				1,
+				expect.objectContaining({
+					path: '/api/ingestions/batch-cap-1',
+					method: 'GET'
+				})
+			);
+			expect(backendRequestMock).toHaveBeenNthCalledWith(
+				2,
+				expect.objectContaining({
+					path: '/api/ingestions/batch-cap-1/items',
+					method: 'GET'
+				})
+			);
+
+			expect(context).toEqual({
+				classificationType: 'speech',
+				itemKind: 'audio',
+				pipelinePreset: 'audio_transcript',
+				itemOverrides: [null, 'photo', 'custom_unknown']
+			});
+		});
+
+		it('handles zero items correctly and defaults missing pipeline preset', async () => {
+			backendRequestMock
+				.mockResolvedValueOnce({
+					ingestion: {
+						ingestion_id: 'batch-empty',
+						classification_type: 'image'
+					}
+				})
+				.mockResolvedValueOnce({
+					items: []
+				});
+
+			const context = await apiIngestionDetailService.getPipelineCapabilityContext({
+				fetchFn: vi.fn() as never,
+				token: 'token-123',
+				batchId: 'batch-empty'
+			});
+
+			expect(context).toEqual({
+				classificationType: 'image',
+				itemKind: undefined,
+				pipelinePreset: 'auto',
+				itemOverrides: []
+			});
+		});
+	});
 });

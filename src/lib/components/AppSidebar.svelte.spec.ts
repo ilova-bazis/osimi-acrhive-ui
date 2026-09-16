@@ -39,7 +39,7 @@ describe('AppSidebar', () => {
 			.toBeInTheDocument();
 		await expect
 			.element(page.getByRole('group', { name: 'Interface language' }))
-			.toBeInTheDocument();
+			.not.toBeInTheDocument();
 	});
 
 	it('keeps the adjacent brand logo decorative', async () => {
@@ -84,7 +84,7 @@ describe('AppSidebar', () => {
 	it('updates shell labels reactively when switching to Russian', async () => {
 		renderSidebar();
 
-		await userEvent.click(page.getByRole('button', { name: 'RU' }));
+		locale.setLocale('ru');
 
 		await expect.element(page.getByText('Панель')).toBeInTheDocument();
 		await expect.element(page.getByText('Обзор')).toBeInTheDocument();

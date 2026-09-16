@@ -21,6 +21,15 @@ const makeItem = (
 	preview
 });
 
+const makeVideoItem = (id: string, name: string): IngestionPreviewItem => ({
+	id,
+	name,
+	mediaType: 'video',
+	contentType: 'video/mp4',
+	sizeBytes: 12 * 1024 * 1024,
+	preview: { status: 'deferred' }
+});
+
 const buildItems = (): IngestionPreviewItem[] => [
 	makeItem('f1', 'page-1.tif', { status: 'ready', url: PIXEL }),
 	makeItem('f2', 'page-2.tif', { status: 'ready', url: PIXEL }),
@@ -64,6 +73,7 @@ describe('IngestionPreviewOverlay', () => {
 		renderOverlay();
 
 		expect(dialogElement().open).toBe(true);
+		expect(dialogElement().firstElementChild?.classList).toContain('justify-items-center');
 		await expect
 			.element(page.getByRole('dialog'))
 			.toHaveAccessibleName('Preview: page-1.tif');
@@ -173,6 +183,50 @@ describe('IngestionPreviewOverlay', () => {
 			.not.toBeInTheDocument();
 	});
 
+	it('renders the deferred video panel with explanation and no retry', async () => {
+		const { view } = renderOverlay({
+			items: [makeVideoItem('f1', 'clip.mp4')],
+			activeIndex: 0
+		});
+
+		await expect
+			.element(page.getByText('Video preview unavailable', { exact: true }))
+			.toBeInTheDocument();
+		await expect
+			.element(
+				page.getByText(
+					'Video thumbnail generation is not currently available. The uploaded video is unaffected.'
+				)
+			)
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Check again' }))
+			.not.toBeInTheDocument();
+
+		await view.unmount();
+	});
+
+	it('localizes the deferred video panel in Russian', async () => {
+		locale.setLocale('ru');
+		const { view } = renderOverlay({
+			items: [makeVideoItem('f1', 'clip.mp4')],
+			activeIndex: 0
+		});
+
+		await expect
+			.element(page.getByText('Предпросмотр видео недоступен', { exact: true }))
+			.toBeInTheDocument();
+		await expect
+			.element(
+				page.getByText(
+					'Создание миниатюры для видео сейчас недоступно. Загруженное видео не затронуто.'
+				)
+			)
+			.toBeInTheDocument();
+
+		await view.unmount();
+	});
+
 	it('hides navigation and filmstrip in single-file mode', async () => {
 		renderOverlay({
 			items: [buildItems()[0]],
@@ -207,7 +261,9 @@ describe('IngestionPreviewOverlay', () => {
 	it('closes when the backdrop area of the dialog is clicked', async () => {
 		const { onClose } = renderOverlay();
 
-		dialogElement().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const dialog = dialogElement();
+		dialog.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+		dialog.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
 		expect(onClose).toHaveBeenCalledOnce();
 	});
 

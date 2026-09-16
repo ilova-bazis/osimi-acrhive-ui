@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import BaseDialog from '$lib/components/BaseDialog.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import type { IngestionDetail } from '$lib/services/ingestionDetail';
 	import { actionsFromCapabilities, type IngestionAction } from '$lib/services/ingestionOverview';
@@ -314,36 +315,35 @@
 		{/if}
 	</section>
 
-	{#if confirmAction}
-		<div class="fixed inset-0 z-40 bg-blue-slate/35" role="presentation" onclick={() => (confirmAction = null)}></div>
-		<div class="fixed inset-0 z-50 flex items-center justify-center px-4" role="dialog" aria-modal="true">
-			<div class="w-full max-w-md rounded-2xl border border-border-soft bg-surface-white p-6 shadow-2xl">
-				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionDetail.actions.confirmTitle')}</p>
-				<h3 class="mt-2 font-display text-xl text-text-ink">{confirmActionLabel}</h3>
-				<p class="mt-3 text-sm text-text-muted">{confirmActionMessage}</p>
-				<div class="mt-6 flex justify-end gap-3">
-					<button
-						type="button"
-						class="rounded-full border border-border-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted"
-						onclick={() => (confirmAction = null)}
-					>
-						{t('common.close')}
-					</button>
-					<button
-						type="button"
-						class="rounded-full bg-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-surface-white"
-						onclick={() => {
-							const action = confirmAction;
-							confirmAction = null;
-							if (action) {
-								void runAction(action);
-							}
-						}}
-					>
-						{t('common.confirm')}
-					</button>
-				</div>
-			</div>
-		</div>
-	{/if}
+<BaseDialog
+	open={confirmAction !== null}
+	labelledBy="ingestion-action-dialog-title"
+	onClose={() => (confirmAction = null)}
+>
+	<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('ingestionDetail.actions.confirmTitle')}</p>
+	<h3 id="ingestion-action-dialog-title" class="mt-2 font-display text-xl text-text-ink">{confirmActionLabel()}</h3>
+	<p class="mt-3 text-sm text-text-muted">{confirmActionMessage()}</p>
+	<div class="mt-6 flex justify-end gap-3">
+		<button
+			type="button"
+			class="rounded-full border border-border-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted"
+			onclick={() => (confirmAction = null)}
+		>
+			{t('common.close')}
+		</button>
+		<button
+			type="button"
+			class="rounded-full bg-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-surface-white"
+			onclick={() => {
+				const action = confirmAction;
+				confirmAction = null;
+				if (action) {
+					void runAction(action);
+				}
+			}}
+		>
+			{t('common.confirm')}
+		</button>
+	</div>
+</BaseDialog>
 </main>

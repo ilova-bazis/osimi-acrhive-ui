@@ -79,7 +79,7 @@ export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) =
 
 	metadata = {
 		classificationType: detail.classificationType,
-		itemKind: fallbackItemKind ?? detail.itemKind,
+		itemKind: detail.itemKind ?? fallbackItemKind ?? undefined,
 		languageCode: detail.languageCode,
 		pipelinePreset: detail.pipelinePreset,
 		accessLevel: detail.accessLevel,

@@ -3,6 +3,7 @@ import type { IngestionMediaKind } from '$lib/services/ingestionCapabilities';
 export type PreviewPresentation =
 	| { status: 'ready'; url: string }
 	| { status: 'pending' }
+	| { status: 'deferred' }
 	| { status: 'check-timeout' }
 	| { status: 'failed' }
 	| { status: 'purged' }

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import BaseButton from '$lib/components/BaseButton.svelte';
+	import BaseDialog from '$lib/components/BaseDialog.svelte';
 	import Chip from '$lib/components/Chip.svelte';
 	import { locale } from '$lib/i18n/locale';
 	import { translations, type TranslationKey } from '$lib/i18n/translations';
@@ -255,23 +256,22 @@
 	</div>
 </section>
 
-{#if isDrawerOpen}
-	<button
-		type="button"
-		aria-label={t('objects.filters.closeFilters')}
-		class="fixed inset-0 z-40 bg-dark-grey/60"
-		onclick={() => (isDrawerOpen = false)}
-	></button>
-	<aside class="fixed right-0 top-0 z-50 h-full w-full max-w-md border-l border-border-soft bg-surface-white p-6 shadow-[0_30px_80px_rgba(31,47,56,0.35)]">
-		<div class="flex items-start justify-between">
-			<div>
-				<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.filters.drawerTitle')}</p>
-				<h3 class="mt-2 font-display text-xl text-text-ink">{formatTemplate(t('objects.filters.drawerSubtitle'), { count: drawerActiveCount() })}</h3>
-			</div>
-			<button class="text-sm text-text-muted" onclick={() => (isDrawerOpen = false)}>{t('common.close')}</button>
+<BaseDialog
+	open={isDrawerOpen}
+	labelledBy="objects-filter-drawer-title"
+	onClose={() => (isDrawerOpen = false)}
+	containerClass="justify-items-end"
+	panelClass="flex h-full w-full max-w-md flex-col border-l border-border-soft bg-surface-white p-6 shadow-[0_30px_80px_rgba(31,47,56,0.35)]"
+>
+	<div class="flex items-start justify-between">
+		<div>
+			<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.filters.drawerTitle')}</p>
+			<h3 id="objects-filter-drawer-title" class="mt-2 font-display text-xl text-text-ink">{formatTemplate(t('objects.filters.drawerSubtitle'), { count: drawerActiveCount() })}</h3>
 		</div>
+		<button type="button" class="text-sm text-text-muted" onclick={() => (isDrawerOpen = false)}>{t('common.close')}</button>
+	</div>
 
-		<form method="GET" action={resolve('/objects')} class="mt-6 space-y-4 text-sm text-text-muted">
+	<form method="GET" action={resolve('/objects')} class="mt-6 space-y-4 overflow-y-auto text-sm text-text-muted">
 			<input type="hidden" name="q" value={filters.q ?? ''} />
 			<input type="hidden" name="availability_state" value={filters.availabilityState ?? ''} />
 			<input type="hidden" name="access_level" value={filters.accessLevel ?? ''} />
@@ -367,5 +367,4 @@
 				</BaseButton>
 			</div>
 		</form>
-	</aside>
-{/if}
+</BaseDialog>

@@ -552,11 +552,19 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 		await expect
 			.element(page.getByRole('button', { name: 'Copy from source' }))
 			.toBeInTheDocument();
+		await expect.element(page.getByRole('region', { name: 'OCR text' })).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('textbox', { name: 'Curated text' }))
+			.toBeInTheDocument();
 
 		locale.setLocale('ru');
 
 		await expect
 			.element(page.getByRole('button', { name: 'Скопировать из источника' }))
+			.toBeInTheDocument();
+		await expect.element(page.getByRole('region', { name: 'OCR-текст' })).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('textbox', { name: 'Курированный текст' }))
 			.toBeInTheDocument();
 	});
 
@@ -624,6 +632,193 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 		for (const label of ['Без даты', 'Год', 'Год и месяц', 'Полная дата']) {
 			await expect.element(page.getByText(label, { exact: true })).toBeInTheDocument();
 		}
+	});
+
+	it('exposes precision options as a named pressed-button group', async () => {
+		renderPage();
+
+		const group = page.getByRole('group', { name: 'Date precision' });
+		await expect.element(group).toBeInTheDocument();
+		await expect
+			.element(group.getByRole('button', { pressed: true }))
+			.toHaveTextContent('No date');
+	});
+
+	it('activates a focused precision option with Enter', async () => {
+		renderPage();
+
+		page.getByRole('button', { name: 'Year', exact: true }).element().focus();
+		await userEvent.keyboard('{Enter}');
+
+		await expect
+			.element(page.getByRole('button', { name: 'Year', exact: true, pressed: true }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'No date', pressed: true }))
+			.not.toBeInTheDocument();
+	});
+
+	it('activates a focused precision option with Space', async () => {
+		renderPage();
+
+		page.getByRole('button', { name: 'Year', exact: true }).element().focus();
+		await userEvent.keyboard(' ');
+
+		await expect
+			.element(page.getByRole('button', { name: 'Year', exact: true, pressed: true }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'No date', pressed: true }))
+			.not.toBeInTheDocument();
+	});
+
+	it('labels the publication date input when a precision is selected', async () => {
+		renderPage({
+			...editPayload,
+			metadata: {
+				...editPayload.metadata,
+				publicationDate: '2026',
+				datePrecision: 'year' as const
+			}
+		});
+
+		await expect
+			.element(page.getByRole('textbox', { name: 'Publication date' }))
+			.toBeInTheDocument();
+	});
+
+	it('renders the precision group and publication date label in Russian', async () => {
+		locale.setLocale('ru');
+		renderPage({
+			...editPayload,
+			metadata: {
+				...editPayload.metadata,
+				publicationDate: '2026',
+				datePrecision: 'year' as const
+			}
+		});
+
+		await expect.element(page.getByRole('group', { name: 'Точность даты' })).toBeInTheDocument();
+		await expect
+			.element(page.getByRole('textbox', { name: 'Дата публикации' }))
+			.toBeInTheDocument();
+	});
+
+	it('links the publication date error to the input and hides both when precision becomes none', async () => {
+		render(EditPage, {
+			data: {
+				editPayload: {
+					...editPayload,
+					metadata: {
+						...editPayload.metadata,
+						publicationDate: '2026',
+						datePrecision: 'year' as const
+					}
+				},
+				isLockedByOtherUser: false
+			},
+			form: {
+				errorCode: 'highlightedFields',
+				fieldErrors: { publicationDate: 'publicationDateInvalid' }
+			}
+		});
+
+		const input = page.getByRole('textbox', { name: 'Publication date' });
+		await expect.element(input).toHaveAttribute('aria-invalid', 'true');
+		await expect.element(input).toHaveAttribute(
+			'aria-describedby',
+			'edit-publication-date-error'
+		);
+		await expect
+			.element(page.getByText('Publication date does not match selected precision.'))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByText('Check the highlighted fields.'))
+			.toBeInTheDocument();
+
+		await page.getByRole('button', { name: 'No date' }).click();
+
+		await expect.element(input).not.toBeInTheDocument();
+		await expect
+			.element(page.getByText('Publication date does not match selected precision.'))
+			.not.toBeInTheDocument();
+		await expect
+			.element(page.getByText('Check the highlighted fields.'))
+			.not.toBeInTheDocument();
+	});
+
+	it('clears date and approximation when precision returns to none and submits cleared metadata', async () => {
+		const fetchMock = vi.fn().mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
+			if (init?.method === 'POST') {
+				return Promise.resolve(actionResponse('success', { editPayload }));
+			}
+			return Promise.resolve(
+				new Response(JSON.stringify({ request: null }), {
+					status: 200,
+					headers: { 'content-type': 'application/json' }
+				})
+			);
+		});
+		vi.stubGlobal('fetch', fetchMock);
+		renderPage({
+			...editPayload,
+			metadata: {
+				...editPayload.metadata,
+				publicationDate: '2026-05',
+				datePrecision: 'month' as const,
+				dateApproximate: true
+			}
+		});
+
+		await expect
+			.element(page.getByRole('button', { name: 'Year + Month', pressed: true }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('textbox', { name: 'Publication date' }))
+			.toHaveValue('2026-05');
+		await expect
+			.element(page.getByRole('checkbox', { name: 'Approximate date' }))
+			.toBeChecked();
+
+		await page.getByRole('button', { name: 'No date' }).click();
+
+		await expect
+			.element(page.getByRole('textbox', { name: 'Publication date' }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('checkbox', { name: 'Approximate date' }))
+			.not.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'No date', pressed: true }))
+			.toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'Save draft' })).toBeEnabled();
+
+		await page.getByRole('button', { name: 'Save draft' }).click();
+
+		await vi.waitFor(() => {
+			const postCalls = fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST');
+			expect(postCalls).toHaveLength(1);
+		});
+
+		const postBodies = fetchMock.mock.calls
+			.filter(([, init]) => init?.method === 'POST')
+			.map(([, init]) => init?.body as URLSearchParams);
+		expect(JSON.parse(postBodies[0]?.get('metadata') ?? '{}')).toEqual({
+			title: 'Object title',
+			publicationDate: '',
+			datePrecision: 'none',
+			dateApproximate: false,
+			language: 'en',
+			tags: [],
+			people: [],
+			description: null
+		});
+		expect(JSON.parse(postBodies[0]?.get('rights') ?? '{}')).toEqual({
+			rightsNote: null,
+			sensitivityNote: null
+		});
+		expect(postBodies[0]?.get('revision')).toBe('4');
+		expect(postBodies[0]?.has('pages')).toBe(false);
 	});
 });
 

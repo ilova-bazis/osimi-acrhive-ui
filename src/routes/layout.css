@@ -30,6 +30,7 @@
 	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
 	--font-farsi: 'Vazirmatn', 'Iranian Sans', sans-serif;
 	--font-scale: 1;
+	--app-desktop-utility-height: 3.75rem;
 }
 
 
@@ -134,5 +135,40 @@
 	.app-route-scrollport {
 		flex: none;
 		overflow-y: visible;
+	}
+}
+
+.app-desktop-utility-row {
+	display: none;
+}
+
+@media (min-width: 1024px) {
+	.app-desktop-utility-row {
+		display: flex;
+		height: var(--app-desktop-utility-height);
+		align-items: center;
+		justify-content: flex-end;
+		padding-right: 1.5rem;
+		flex-shrink: 0;
+	}
+}
+
+.app-route-desktop-min-h {
+	min-height: 100%;
+}
+
+@media (min-width: 1024px) {
+	.app-route-desktop-min-h {
+		min-height: calc(100vh - var(--app-desktop-utility-height));
+	}
+}
+
+.app-route-desktop-exact-h {
+	height: 100%;
+}
+
+@media (min-width: 1024px) {
+	.app-route-desktop-exact-h {
+		height: calc(100vh - var(--app-desktop-utility-height));
 	}
 }

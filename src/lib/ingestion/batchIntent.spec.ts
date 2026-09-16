@@ -34,6 +34,19 @@ describe('batchIntent helpers', () => {
 		});
 	});
 
+	it('prefers backend metadata over stale stored item kind', () => {
+		expect(
+			resolveBatchIntent({
+				classificationType: 'other',
+				metadataItemKind: 'photo',
+				storedItemKind: 'video'
+			})
+		).toEqual({
+			classificationType: 'other',
+			itemKind: 'photo'
+		});
+	});
+
 	it('normalizes incompatible stored item kind back to a valid default', () => {
 		expect(
 			resolveBatchIntent({

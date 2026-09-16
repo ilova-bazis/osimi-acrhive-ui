@@ -45,8 +45,7 @@ const readPublishedDate = (summary: UnknownRecord): ObjectItemMetadata['date'] |
 
 export const mapIngestionItemMetadata = (item: IngestionDetailItem): ObjectItemMetadata => {
 	const metadata: ObjectItemMetadata = {};
-	const title = item.label?.trim();
-	if (title) metadata.title = title;
+	if (item.label !== undefined) metadata.title = item.label.trim();
 
 	const summary = item.summary;
 	const classification = asRecord(summary.classification);

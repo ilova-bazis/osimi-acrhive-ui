@@ -4,6 +4,20 @@ import { AUTH_COOKIE_NAME, clearSessionCookie } from '$lib/server/auth';
 import { isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
 import { translate, formatTemplate } from '$lib/i18n/translate';
 import { translations, type LocaleKey } from '$lib/i18n/translations';
+import {
+	classificationTypeSchema,
+	itemKindSchema
+} from '$lib/api/schemas/ingestions';
+import {
+	isItemKindAllowedForClassification,
+	type ClassificationType,
+	type ItemKind
+} from '$lib/ingestion/kindMappings';
+import {
+	isPipelinePreset,
+	isPipelinePresetAllowedForItemKind,
+	type PipelinePreset
+} from '$lib/ingestion/pipelineCapabilities';
 import type { Actions } from './$types';
 
 const DEFAULTS = {
@@ -80,42 +94,82 @@ export const actions: Actions = {
 			String(data.get('name') ?? ''),
 			String(data.get('locale') ?? '')
 		);
-		const inputClassificationType =
-			(String(data.get('classificationType') ?? data.get('documentType') ?? '').trim() as
-				| 'newspaper_article'
-				| 'magazine_article'
-				| 'book_chapter'
-				| 'book'
-				| 'letter'
-				| 'speech'
-				| 'interview'
-				| 'report'
-				| 'manuscript'
-				| 'image'
-				| 'document'
-				| 'other') || '';
-		const itemKind =
-			(String(data.get('itemKind') ?? '').trim() as
-				| 'photo'
-				| 'audio'
-				| 'video'
-				| 'scanned_document'
-				| 'document'
-				| 'other') || DEFAULTS.itemKind;
-		const classificationType = inputClassificationType || classificationFromItemKind(itemKind);
+
+		const rawItemKind = String(data.get('itemKind') ?? '').trim();
+		let itemKind: ItemKind;
+		if (rawItemKind.length > 0) {
+			const parsedKind = itemKindSchema.safeParse(rawItemKind);
+			if (!parsedKind.success) {
+				return fail(400, {
+					error: 'Invalid item kind.',
+					code: 'INVALID_PIPELINE_CAPABILITY'
+				});
+			}
+			itemKind = parsedKind.data;
+		} else {
+			itemKind = DEFAULTS.itemKind;
+		}
+
+		const rawClassificationType = String(
+			data.get('classificationType') ?? data.get('documentType') ?? ''
+		).trim();
+		let classificationType: ClassificationType;
+		if (rawClassificationType.length > 0) {
+			const parsedClassification = classificationTypeSchema.safeParse(rawClassificationType);
+			if (!parsedClassification.success) {
+				return fail(400, {
+					error: 'Invalid classification type.',
+					code: 'INVALID_PIPELINE_CAPABILITY'
+				});
+			}
+			classificationType = parsedClassification.data;
+		} else {
+			classificationType = classificationFromItemKind(itemKind);
+		}
+
+		if (!isItemKindAllowedForClassification(classificationType, itemKind)) {
+			return fail(400, {
+				error: 'Incompatible classification type and item kind.',
+				code: 'INVALID_PIPELINE_CAPABILITY'
+			});
+		}
+
+		const rawPipelinePreset = String(data.get('pipelinePreset') ?? '').trim();
+		let pipelinePreset: PipelinePreset;
+		if (rawPipelinePreset.length > 0) {
+			if (!isPipelinePreset(rawPipelinePreset)) {
+				return fail(400, {
+					error: 'Invalid pipeline preset.',
+					code: 'INVALID_PIPELINE_CAPABILITY'
+				});
+			}
+			pipelinePreset = rawPipelinePreset;
+		} else {
+			pipelinePreset = DEFAULTS.pipelinePreset;
+		}
+
+		if (!isPipelinePresetAllowedForItemKind(pipelinePreset, itemKind)) {
+			return fail(400, {
+				error: 'Incompatible pipeline preset and item kind.',
+				code: 'INVALID_PIPELINE_CAPABILITY'
+			});
+		}
+
+		const rawAccessLevel = String(data.get('accessLevel') ?? '').trim();
+		let accessLevel: 'private' | 'family' | 'public';
+		if (rawAccessLevel.length > 0) {
+			if (rawAccessLevel !== 'private' && rawAccessLevel !== 'family' && rawAccessLevel !== 'public') {
+				return fail(400, {
+					error: 'Invalid access level.',
+					code: 'INVALID_PIPELINE_CAPABILITY'
+				});
+			}
+			accessLevel = rawAccessLevel;
+		} else {
+			accessLevel = DEFAULTS.accessLevel;
+		}
+
 		const languageCode = String(data.get('languageCode') ?? '').trim() || DEFAULTS.languageCode;
-		const pipelinePreset =
-			(String(data.get('pipelinePreset') ?? '').trim() as
-				| 'auto'
-				| 'none'
-				| 'ocr_text'
-				| 'audio_transcript'
-				| 'video_transcript'
-				| 'ocr_and_audio_transcript'
-				| 'ocr_and_video_transcript') || DEFAULTS.pipelinePreset;
-		const accessLevel =
-			(String(data.get('accessLevel') ?? '').trim() as 'private' | 'family' | 'public') ||
-			DEFAULTS.accessLevel;
 		const embargoUntil = toRfc3339(toOptionalString(data.get('embargoUntil')));
 		const rightsNote = toOptionalString(data.get('rightsNote'));
 		const sensitivityNote = toOptionalString(data.get('sensitivityNote'));

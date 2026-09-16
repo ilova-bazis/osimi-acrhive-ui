@@ -116,4 +116,22 @@ describe('login page localization', () => {
 
 		await expect.element(page.getByRole('alert')).toHaveTextContent('Sign-in failed. Please try again.');
 	});
+
+	it('preserves entered form field values across locale switches', async () => {
+		render(LoginPage, { form: undefined });
+
+		const usernameInput = page.getByRole('textbox', { name: 'Username' });
+		const passwordInput = page.getByRole('textbox', { name: 'Password' });
+
+		await userEvent.fill(usernameInput, 'entered-user');
+		await userEvent.fill(passwordInput, 'entered-secret');
+
+		await userEvent.click(page.getByRole('button', { name: 'RU' }));
+
+		const ruUsernameInput = page.getByRole('textbox', { name: 'Имя пользователя' });
+		const ruPasswordInput = page.getByRole('textbox', { name: 'Пароль' });
+
+		await expect.element(ruUsernameInput).toHaveValue('entered-user');
+		await expect.element(ruPasswordInput).toHaveValue('entered-secret');
+	});
 });

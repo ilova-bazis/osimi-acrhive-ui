@@ -23,6 +23,7 @@
     } from "$lib/i18n/domainLabels";
     import { SvelteMap } from "svelte/reactivity";
     import { untrack, onDestroy } from "svelte";
+    import BaseDialog from "$lib/components/BaseDialog.svelte";
     import StatusBadge from "$lib/components/StatusBadge.svelte";
     import ObjectGroupRow from "$lib/components/ObjectGroupRow.svelte";
     import ObjectMetadataPanel from "$lib/components/ObjectMetadataPanel.svelte";
@@ -53,11 +54,24 @@
         type ItemKind,
     } from "$lib/ingestion/kindMappings";
     import {
+        pipelinePresets,
+        getAllowedPipelinePresets,
+        getSuggestedPipelinePreset,
+        isPipelinePreset,
+        isItemKind,
+        type PipelinePreset,
+    } from "$lib/ingestion/pipelineCapabilities";
+    import {
         createSetupItemIndexAllocator,
         type SetupItemIndexAllocator,
     } from "$lib/ingestion/setupItemIndexAllocator";
     import { hydrateIngestionItems } from "$lib/ingestion/setupItemHydration";
     import type { IngestionPreviewItem } from "$lib/ingestion/previewPresentation";
+    import {
+        getItemDefaultsBadgeState,
+        getEffectiveDateFromEditor,
+        type ItemDefaultsBadgeState,
+    } from "$lib/ingestion/itemDefaultsBadge";
 
     let { data } = $props<{
         data: {
@@ -137,6 +151,11 @@
         } else if (file.preview?.status === "unsupported") {
             preview = { status: "unsupported" };
         } else if (
+            file.preview?.status === "pending" &&
+            file.mediaType === "video"
+        ) {
+            preview = { status: "deferred" };
+        } else if (
             file.preview?.status === "pending" ||
             (file.mediaType !== "audio" &&
                 file.mediaType !== "document" &&
@@ -204,16 +223,6 @@
     };
 
     const languages = ["en", "ru", "fa", "tg", "mixed"] as const;
-
-    const pipelinePresets = [
-        "auto",
-        "none",
-        "ocr_text",
-        "audio_transcript",
-        "video_transcript",
-        "ocr_and_audio_transcript",
-        "ocr_and_video_transcript",
-    ] as const;
 
     let selectedIds = $state<number[]>([]);
     let activeFileId = $state(0);
@@ -378,13 +387,28 @@
         patch: Partial<ObjectItemMetadata>,
     ) => {
         if (!key || itemMutationFailure) return;
+
+        let resolvedPatch = patch;
+        if ("date" in patch && patch.date === undefined) {
+            const batchPublished = getEffectiveDateFromEditor(
+                summaryDateEditors.published,
+            );
+            const resolvedDate = batchPublished
+                ? {
+                      value: batchPublished.value,
+                      approximate: batchPublished.approximate,
+                  }
+                : { value: null, approximate: false };
+            resolvedPatch = { ...patch, date: resolvedDate };
+        }
+
         objectMetadata = {
             ...objectMetadata,
-            [key]: { ...objectMetadata[key], ...patch },
+            [key]: { ...objectMetadata[key], ...resolvedPatch },
         };
 
-        if (!key.startsWith("file:") && patch.title !== undefined) {
-            const label = patch.title.trim() || undefined;
+        if (!key.startsWith("file:") && resolvedPatch.title !== undefined) {
+            const label = resolvedPatch.title.trim() || undefined;
             objectGroups = objectGroups.map((group) =>
                 group.id === key ? { ...group, label } : group,
             );
@@ -392,7 +416,7 @@
 
         const serverId = serverItemIdForKey(key);
         if (serverId) {
-            scheduleItemMetadataSave(key, serverId, patch);
+            scheduleItemMetadataSave(key, serverId, resolvedPatch);
         }
     };
 
@@ -649,23 +673,6 @@
     const storageItemKindKey = (id: string): string =>
         `ingestion-item-kind:${id}`;
 
-    const readStoredItemKind = (id: string): ItemKind | null => {
-        if (typeof sessionStorage === "undefined") return null;
-        const value = sessionStorage.getItem(storageItemKindKey(id));
-        if (
-            value === "photo" ||
-            value === "audio" ||
-            value === "video" ||
-            value === "scanned_document" ||
-            value === "document" ||
-            value === "other"
-        ) {
-            return value;
-        }
-
-        return null;
-    };
-
     const storeItemKind = (id: string, itemKind: ItemKind): void => {
         if (typeof sessionStorage === "undefined") return;
         sessionStorage.setItem(storageItemKindKey(id), itemKind);
@@ -679,17 +686,6 @@
         published: toSummaryDateEditor(defaultSummaryDate()),
         created: toSummaryDateEditor(defaultSummaryDate()),
     });
-
-    const summaryDateSections = [
-        {
-            key: "published",
-            labelKey: "ingestionSetup.batchIntent.publishedDate",
-        },
-        { key: "created", labelKey: "ingestionSetup.batchIntent.createdDate" },
-    ] as const satisfies ReadonlyArray<{
-        key: SummaryDateKey;
-        labelKey: string;
-    }>;
 
     const updateSummaryDatePrecision = (
         key: SummaryDateKey,
@@ -753,6 +749,7 @@
         rightsNote: "",
         sensitivityNote: "",
     });
+    const effectiveItemTitle = $derived(batchDefaults.title.trim() || batchId);
     let summaryTags = $state<string[]>([]);
     let summaryTagInput = $state("");
 
@@ -802,7 +799,6 @@
         const summaryDates = readSummaryDates(metadata.summary);
         const initialIntent = resolveBatchIntent({
             classificationType: metadata.classificationType,
-            storedItemKind: readStoredItemKind(batchId),
             metadataItemKind: metadata.itemKind,
         });
         summaryDateEditors = {
@@ -1231,6 +1227,94 @@
             : itemKindLabel(batchDefaults.itemKind),
     );
 
+    const hasUnknownItemOverrides = $derived(
+        data.items.some(
+            (item: IngestionDetailItem) =>
+                item.itemKind !== null &&
+                item.itemKind !== undefined &&
+                !isItemKind(item.itemKind),
+        ),
+    );
+
+    const effectiveItemKinds = $derived.by<ItemKind[]>(() => {
+        if (hasUnknownItemOverrides) return [];
+        if (data.items.length === 0) {
+            return [batchDefaults.itemKind];
+        }
+        return data.items.map((item: IngestionDetailItem) => {
+            if (item.itemKind && isItemKind(item.itemKind)) {
+                return item.itemKind;
+            }
+            return batchDefaults.itemKind;
+        });
+    });
+
+    const isPersistedPresetKnown = $derived(
+        isPipelinePreset(batchDefaults.pipelinePreset),
+    );
+
+    const allowedPresets = $derived.by<Set<PipelinePreset>>(() => {
+        if (hasUnknownItemOverrides || effectiveItemKinds.length === 0) {
+            return new Set();
+        }
+        const firstKind = effectiveItemKinds[0];
+        let intersection = new Set(getAllowedPipelinePresets(firstKind));
+        for (let i = 1; i < effectiveItemKinds.length; i++) {
+            const allowedForKind = new Set(
+                getAllowedPipelinePresets(effectiveItemKinds[i]),
+            );
+            intersection = new Set(
+                [...intersection].filter((preset) => allowedForKind.has(preset)),
+            );
+        }
+        return intersection;
+    });
+
+    const isPresetCompatible = $derived(
+        isPersistedPresetKnown &&
+            !hasUnknownItemOverrides &&
+            allowedPresets.has(batchDefaults.pipelinePreset as PipelinePreset),
+    );
+
+    const reconcilePresetForBatchIntent = (
+        newBatchKind: ItemKind,
+        currentPreset: string,
+    ): string => {
+        if (hasUnknownItemOverrides) return currentPreset;
+
+        const proposedEffectiveKinds =
+            data.items.length === 0
+                ? [newBatchKind]
+                : data.items.map((item: IngestionDetailItem) =>
+                      item.itemKind && isItemKind(item.itemKind)
+                          ? item.itemKind
+                          : newBatchKind,
+                  );
+
+        let intersection = new Set(
+            getAllowedPipelinePresets(proposedEffectiveKinds[0]),
+        );
+        for (let i = 1; i < proposedEffectiveKinds.length; i++) {
+            const allowed = new Set(
+                getAllowedPipelinePresets(proposedEffectiveKinds[i]),
+            );
+            intersection = new Set(
+                [...intersection].filter((p) => allowed.has(p)),
+            );
+        }
+
+        if (isPipelinePreset(currentPreset) && intersection.has(currentPreset)) {
+            return currentPreset;
+        }
+
+        const suggestion = getSuggestedPipelinePreset(newBatchKind);
+        if (intersection.has(suggestion)) {
+            return suggestion;
+        }
+
+        return "auto";
+    };
+
     const currentBatchIntent = (): BatchIntent => ({
         classificationType: batchDefaults.classificationType,
         itemKind: batchDefaults.itemKind,
@@ -1239,7 +1323,10 @@
     const applyBatchIntent = (intent: BatchIntent) => {
         batchDefaults.classificationType = intent.classificationType;
         batchDefaults.itemKind = intent.itemKind;
-        storeItemKind(batchId, intent.itemKind);
+        batchDefaults.pipelinePreset = reconcilePresetForBatchIntent(
+            intent.itemKind,
+            batchDefaults.pipelinePreset,
+        );
     };
 
     const restoreConfirmedBatchIntent = () => {
@@ -1331,10 +1418,7 @@
         files = mappedFiles;
 
         for (const f of mappedFiles) {
-            if (
-                !f.backendFileId ||
-                (f.mediaType !== "image" && f.mediaType !== "video")
-            )
+            if (!f.backendFileId || !needsFilePreviewHandling(f))
                 continue;
             if (f.preview?.status === "ready") {
                 previewUrls = {
@@ -1740,19 +1824,13 @@
     // "Untouched" = still undefined. Once a user types anything the field is defined and won't be overwritten.
     $effect(() => {
         const keys = allObjectKeys;
-        const defaultTitle = batchDefaults.title.trim();
+        const defaultTitle = effectiveItemTitle;
         const defaultTags = summaryTags;
-        const createdEditor = summaryDateEditors.created;
+        const effectivePubDate = getEffectiveDateFromEditor(summaryDateEditors.published);
         const defaultDescription = batchDefaults.summaryText.trim();
 
-        const batchDateValue =
-            createdEditor.precision !== "none"
-                ? createdEditor.year ||
-                  createdEditor.month ||
-                  createdEditor.day ||
-                  null
-                : null;
-        const batchDateApproximate = createdEditor.approximate;
+        const batchDateValue = effectivePubDate?.value ?? null;
+        const batchDateApproximate = effectivePubDate?.approximate ?? false;
 
         if (
             !defaultTitle &&
@@ -1900,13 +1978,16 @@
         });
     let metadataSaveTimer: ReturnType<typeof setTimeout> | null = null;
     let metadataSavedTimer: ReturnType<typeof setTimeout> | null = null;
-    let metadataSaveAttempt = 0;
+    let metadataSaveGeneration = 0;
+    let metadataSaveChain: Promise<void> = Promise.resolve();
+    let metadataSaveClosed = false;
     let metadataSaveError = $state("");
     let metadataSaveState = $state<
         "idle" | "pending" | "saving" | "saved" | "error"
     >("idle");
 
     onDestroy(() => {
+        metadataSaveClosed = true;
         if (metadataSaveTimer) {
             clearTimeout(metadataSaveTimer);
         }
@@ -2033,7 +2114,7 @@
         const embargoIso = batchDefaults.embargoUntil
             ? new Date(batchDefaults.embargoUntil).toISOString()
             : null;
-        const batchLabel = batchDefaults.title.trim() || batchId;
+        const batchLabel = effectiveItemTitle;
         const summaryDatesPayload: SummaryDates = {
             published: {
                 value: toSummaryDateValue(
@@ -2087,8 +2168,9 @@
         });
 
         if (response.status === 401) {
+            metadataSaveClosed = true;
             await goto(resolve("/login"));
-            return attemptedIntent;
+            throw new Error("Unauthorized metadata update.");
         }
 
         if (!response.ok) {
@@ -2104,6 +2186,9 @@
     };
 
     const queueBatchMetadataSave = () => {
+        if (metadataSaveClosed) return;
+
+        const generation = ++metadataSaveGeneration;
         metadataSaveError = "";
         metadataSaveState = "pending";
         if (metadataSaveTimer) {
@@ -2113,44 +2198,54 @@
             clearTimeout(metadataSavedTimer);
         }
 
-        metadataSaveTimer = setTimeout(async () => {
-            const attempt = ++metadataSaveAttempt;
-            metadataSaveState = "saving";
-            try {
-                const savedIntent = await saveBatchMetadata();
-                if (attempt !== metadataSaveAttempt) {
-                    return;
-                }
-                confirmedBatchIntent = savedIntent;
-                batchIntentError = "";
-                metadataSaveState = "saved";
-                metadataSavedTimer = setTimeout(() => {
-                    if (attempt === metadataSaveAttempt) {
-                        metadataSaveState = "idle";
+        metadataSaveTimer = setTimeout(() => {
+            metadataSaveTimer = null;
+            metadataSaveChain = metadataSaveChain
+                .catch(() => undefined)
+                .then(async () => {
+                    if (
+                        metadataSaveClosed ||
+                        generation !== metadataSaveGeneration
+                    ) {
+                        return;
                     }
-                }, 1500);
-            } catch (error) {
-                if (attempt !== metadataSaveAttempt) {
-                    return;
-                }
-                metadataSaveError =
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to update ingestion defaults.";
-                if (
-                    confirmedBatchIntent &&
-                    !isBatchIntentEqual(
-                        currentBatchIntent(),
-                        confirmedBatchIntent,
-                    )
-                ) {
-                    restoreConfirmedBatchIntent();
-                    batchIntentError = t(
-                        "ingestionSetup.batchIntent.intentSaveRollback",
-                    );
-                }
-                metadataSaveState = "error";
-            }
+
+                    metadataSaveState = "saving";
+                    try {
+                        const savedIntent = await saveBatchMetadata();
+                        confirmedBatchIntent = savedIntent;
+                        storeItemKind(batchId, savedIntent.itemKind);
+                        if (generation !== metadataSaveGeneration) return;
+
+                        batchIntentError = "";
+                        metadataSaveState = "saved";
+                        metadataSavedTimer = setTimeout(() => {
+                            if (generation === metadataSaveGeneration) {
+                                metadataSaveState = "idle";
+                            }
+                        }, 1500);
+                    } catch (error) {
+                        if (generation !== metadataSaveGeneration) return;
+
+                        metadataSaveError =
+                            error instanceof Error
+                                ? error.message
+                                : "Failed to update ingestion defaults.";
+                        if (
+                            confirmedBatchIntent &&
+                            !isBatchIntentEqual(
+                                currentBatchIntent(),
+                                confirmedBatchIntent,
+                            )
+                        ) {
+                            restoreConfirmedBatchIntent();
+                            batchIntentError = t(
+                                "ingestionSetup.batchIntent.intentSaveRollback",
+                            );
+                        }
+                        metadataSaveState = "error";
+                    }
+                });
         }, 300);
     };
 
@@ -2403,9 +2498,7 @@
 
             setFileStatus(file.id, "approved", presigned.fileId);
             releaseRawFile(file.id);
-            if (file.mediaType === "image") {
-                void pollFilePreview(file.id, presigned.fileId);
-            } else if (file.mediaType === "video") {
+            if (needsFilePreviewHandling(file)) {
                 void pollFilePreview(file.id, presigned.fileId);
             }
         } catch (error) {
@@ -2441,6 +2534,11 @@
     const hasCommittedFiles = $derived(
         files.some((file) => file.status === "approved"),
     );
+    const hasPendingMetadataSave = $derived(
+        metadataSaveState === "pending" ||
+            metadataSaveState === "saving" ||
+            Boolean(metadataSaveError),
+    );
     const canStartIngestion = $derived(
         isReady &&
             hasCommittedFiles &&
@@ -2448,7 +2546,10 @@
             !hasUploadFailures &&
             hasRequiredItemMetadata &&
             !hasItemMutationBlock &&
-            !isSubmitting,
+            !isSubmitting &&
+            isPresetCompatible &&
+            !hasUnknownItemOverrides &&
+            !hasPendingMetadataSave,
     );
 
     // --- Step state ---
@@ -2461,6 +2562,70 @@
     let step1DragSourceId = $state<number | null>(null);
     let step1DragTargetFileId = $state<number | null>(null);
     let expandedMetadataKeys = $state<string[]>([]);
+    let autoExpandedMetadataKeys = $state<string[]>([]);
+    let defaultsDisclosureTouched = $state(false);
+    let defaultsDisclosureChoice = $state(false);
+
+    const isSingleObjectBatch = $derived(
+        objectGroups.length + standaloneFiles.length === 1,
+    );
+    const itemDefaultsExpanded = $derived(
+        defaultsDisclosureTouched
+            ? defaultsDisclosureChoice
+            : !isSingleObjectBatch,
+    );
+
+    $effect(() => {
+        const currentStep = step;
+        const keys = allObjectKeys;
+        untrack(() => {
+            let nextExpanded = expandedMetadataKeys.filter((key) =>
+                keys.includes(key),
+            );
+            if (
+                currentStep === "metadata" &&
+                keys.length === 1 &&
+                !autoExpandedMetadataKeys.includes(keys[0])
+            ) {
+                autoExpandedMetadataKeys = [
+                    ...autoExpandedMetadataKeys,
+                    keys[0],
+                ];
+                if (!nextExpanded.includes(keys[0])) {
+                    nextExpanded = [...nextExpanded, keys[0]];
+                }
+            }
+            if (
+                nextExpanded.length !== expandedMetadataKeys.length ||
+                nextExpanded.some(
+                    (key, index) => key !== expandedMetadataKeys[index],
+                )
+            ) {
+                expandedMetadataKeys = nextExpanded;
+            }
+        });
+    });
+
+    const toggleItemDefaults = (): void => {
+        defaultsDisclosureTouched = true;
+        defaultsDisclosureChoice = !itemDefaultsExpanded;
+    };
+
+    const getItemDefaultsBadge = (key: string): ItemDefaultsBadgeState => {
+        const meta = objectMetadata[key];
+        const effectivePubDate = getEffectiveDateFromEditor(
+            summaryDateEditors.published,
+        );
+        return getItemDefaultsBadgeState({
+            objectMetadata: meta,
+            defaults: {
+                effectiveTitle: effectiveItemTitle,
+                description: batchDefaults.summaryText.trim(),
+                tags: summaryTags,
+                publicationDate: effectivePubDate,
+            },
+        });
+    };
 
     const singleGroupWarning = $derived(
         objectGroups.length === 0 &&
@@ -2502,6 +2667,9 @@
             batchId,
             fileId: backendFileId,
         });
+
+    const needsFilePreviewHandling = (file: LocalIngestionFile): boolean =>
+        file.mediaType === "image" || file.preview?.status === "ready";
 
     type PreviewPollHandle = {
         generation: number;
@@ -2900,7 +3068,7 @@
     };
 </script>
 
-<div class="flex flex-col min-h-full lg:min-h-screen">
+<div class="app-route-desktop-min-h flex flex-col min-h-full">
     <!-- Sticky top-bar -->
     <header
         class="sticky top-0 z-20 border-b border-border-soft bg-alabaster-grey px-4 sm:px-6 py-4"
@@ -3558,16 +3726,39 @@
         {:else}
             <!-- ══════════════ STEP 2: METADATA ══════════════ -->
 
-            <!-- Batch defaults -->
+            <!-- Card A: Item Metadata Defaults -->
             <div
                 class="rounded-2xl border border-border-soft bg-surface-white px-6 py-6"
             >
-                <p class="text-xs uppercase tracking-[0.2em] text-blue-slate">
-                    {t("ingestionSetup.batchIntent.title")}
-                </p>
-                <p class="mt-2 text-sm text-text-muted">
-                    {t("ingestionSetup.batchIntent.description")}
-                </p>
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.2em] text-blue-slate">
+                            {t("ingestionSetup.batchIntent.title")}
+                        </p>
+                        <p class="mt-2 text-sm text-text-muted">
+                            {t("ingestionSetup.batchIntent.description")}
+                        </p>
+                        {#if isSingleObjectBatch}
+                            <p class="mt-2 text-xs text-text-muted">
+                                {t("ingestionSetup.singleObject.hint")}
+                            </p>
+                        {/if}
+                    </div>
+                    {#if isSingleObjectBatch || defaultsDisclosureTouched}
+                        <button
+                            type="button"
+                            aria-expanded={itemDefaultsExpanded}
+                            aria-controls="item-metadata-defaults-panel"
+                            class="rounded-full border border-border-soft px-3 py-1.5 text-xs uppercase tracking-[0.18em] text-blue-slate hover:border-blue-slate/60"
+                            onclick={toggleItemDefaults}
+                        >
+                            {itemDefaultsExpanded
+                                ? t("ingestionSetup.singleObject.collapseDefaults")
+                                : t("ingestionSetup.singleObject.expandDefaults")}
+                        </button>
+                    {/if}
+                </div>
+
                 <p
                     class="mt-3 text-xs uppercase tracking-[0.2em] text-text-muted"
                 >
@@ -3588,258 +3779,179 @@
                         {metadataSaveError}
                     </p>
                 {/if}
-                <div class="mt-4 text-sm">
-                    <details open class="py-2">
-                        <summary
-                            class="cursor-pointer text-xs uppercase tracking-[0.2em] text-blue-slate"
-                        >
-                            {t(
-                                "ingestionSetup.batchIntent.sections.coreMetadata",
-                            )}
-                        </summary>
-                        <div class="mt-3 grid gap-3 md:grid-cols-2">
-                            <div class="md:col-span-2">
-                                <label
-                                    for="intent-title"
-                                    class="text-xs uppercase tracking-[0.2em] text-text-muted"
-                                    >{t(
-                                        "ingestionSetup.batchIntent.titleLabel",
-                                    )}</label
-                                >
-                                <input
-                                    id="intent-title"
-                                    class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
-                                    value={batchDefaults.title}
-                                    oninput={(event) => {
-                                        batchDefaults.title =
-                                            event.currentTarget.value;
-                                        queueBatchMetadataSave();
-                                    }}
-                                />
-                            </div>
-                            <div>
-                                <label
-                                    for="intent-language"
-                                    class="text-xs uppercase tracking-[0.2em] text-text-muted"
-                                    >{t(
-                                        "ingestionSetup.batchIntent.language",
-                                    )}</label
-                                >
-                                <select
-                                    id="intent-language"
-                                    class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
-                                    value={batchDefaults.language}
-                                    onchange={(event) => {
-                                        batchDefaults.language =
-                                            event.currentTarget.value;
-                                        queueBatchMetadataSave();
-                                    }}
-                                >
-                                    <option value=""
-                                        >{t(
-                                            "ingestionSetup.batchIntent.selectLanguage",
-                                        )}</option
-                                    >
-                                    {#each languages as language (language)}
-                                        <option value={language}
-                                            >{t(
-                                                `ingestionSetup.languages.${language}`,
-                                            )}</option
-                                        >
-                                    {/each}
-                                </select>
-                            </div>
-                            <div>
-                                <label
-                                    for="intent-item-kind"
-                                    class="text-xs uppercase tracking-[0.2em] text-text-muted"
-                                    >{t(
-                                        "ingestionSetup.batchIntent.itemKind",
-                                    )}</label
-                                >
-                                <select
-                                    id="intent-item-kind"
-                                    class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
-                                    value={batchDefaults.itemKind}
-                                    onchange={(event) =>
-                                        setItemKind(
-                                            event.currentTarget
-                                                .value as ItemKind,
-                                        )}
-                                >
-                                    {#each allowedItemKinds as itemKind (itemKind)}
-                                        <option value={itemKind}
-                                            >{t(
-                                                `ingestionSetup.itemKinds.${itemKind}`,
-                                            )}</option
-                                        >
-                                    {/each}
-                                </select>
-                            </div>
-                            <div>
-                                <label
-                                    for="intent-classification-type"
-                                    class="text-xs uppercase tracking-[0.2em] text-text-muted"
-                                    >{t(
-                                        "ingestionSetup.batchIntent.classificationType",
-                                    )}</label
-                                >
-                                <select
-                                    id="intent-classification-type"
-                                    class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
-                                    value={batchDefaults.classificationType}
-                                    onchange={(event) =>
-                                        setClassificationType(
-                                            event.currentTarget
-                                                .value as ClassificationType,
-                                        )}
-                                >
-                                    <option value=""
-                                        >{t(
-                                            "ingestionSetup.batchIntent.selectType",
-                                        )}</option
-                                    >
-                                    {#each classificationTypes as type (type)}
-                                        <option value={type}
-                                            >{t(
-                                                `ingestionSetup.classificationTypes.${type}`,
-                                            )}</option
-                                        >
-                                    {/each}
-                                </select>
-                                <p class="mt-1 text-xs text-text-muted">
-                                    {#if batchDefaults.itemKind === "document" || batchDefaults.itemKind === "scanned_document"}
-                                        {t(
-                                            "ingestionSetup.batchIntent.classificationHintDocument",
-                                        )}
-                                    {:else}
-                                        {t(
-                                            "ingestionSetup.batchIntent.classificationHintAuto",
-                                        )}
-                                    {/if}
-                                </p>
-                                {#if batchIntentError}
-                                    <p
-                                        class="mt-2 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach"
-                                    >
-                                        {batchIntentError}
-                                    </p>
-                                {/if}
-                            </div>
-                        </div>
-                    </details>
 
-                    <details class="border-t border-border-soft py-3">
-                        <summary
-                            class="cursor-pointer text-xs uppercase tracking-[0.2em] text-blue-slate"
-                        >
-                            {t(
-                                "ingestionSetup.batchIntent.sections.summaryContext",
-                            )}
-                        </summary>
-                        <div class="mt-3 space-y-3">
-                            <div>
-                                <label
-                                    for="intent-tags"
-                                    class="text-xs uppercase tracking-[0.2em] text-text-muted"
-                                    >{t(
-                                        "ingestionSetup.batchIntent.tags",
-                                    )}</label
-                                >
-                                <div class="mt-2 flex items-center gap-2">
+                {#if itemDefaultsExpanded}
+                    <div
+                        id="item-metadata-defaults-panel"
+                        class="mt-4 space-y-4 text-sm"
+                    >
+                        <!-- Identification / coreMetadata -->
+                        <details open class="py-2">
+                            <summary
+                                class="cursor-pointer text-xs uppercase tracking-[0.2em] text-blue-slate"
+                            >
+                                {t(
+                                    "ingestionSetup.batchIntent.sections.coreMetadata",
+                                )}
+                            </summary>
+                            <div class="mt-3 grid gap-3 md:grid-cols-2">
+                                <div class="md:col-span-2">
+                                    <label
+                                        for="intent-title"
+                                        class="text-xs uppercase tracking-[0.2em] text-text-muted"
+                                        >{t(
+                                            "ingestionSetup.batchIntent.titleLabel",
+                                        )}</label
+                                    >
                                     <input
-                                        id="intent-tags"
-                                        class="w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
-                                        placeholder={t(
-                                            "ingestionSetup.batchIntent.tagsPlaceholder",
-                                        )}
-                                        value={summaryTagInput}
-                                        oninput={(event) =>
-                                            (summaryTagInput =
-                                                event.currentTarget.value)}
-                                        onkeydown={(event) => {
-                                            if (event.key === "Enter") {
-                                                event.preventDefault();
-                                                addSummaryTag();
-                                            }
+                                        id="intent-title"
+                                        class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+                                        value={batchDefaults.title}
+                                        oninput={(event) => {
+                                            batchDefaults.title =
+                                                event.currentTarget.value;
+                                            queueBatchMetadataSave();
                                         }}
                                     />
-                                    <button
-                                        type="button"
-                                        onclick={addSummaryTag}
-                                        class="rounded-full border border-border-soft px-3 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate"
-                                    >
-                                        {t("ingestionSetup.batchIntent.addTag")}
-                                    </button>
                                 </div>
-                                {#if summaryTags.length > 0}
-                                    <div class="mt-2 flex flex-wrap gap-2">
-                                        {#each summaryTags as tag (tag)}
-                                            <button
-                                                type="button"
-                                                onclick={() =>
-                                                    removeSummaryTag(tag)}
-                                                class="rounded-full border border-border-soft px-3 py-1 text-xs uppercase tracking-[0.2em] text-blue-slate"
-                                            >
-                                                {tag} ×
-                                            </button>
-                                        {/each}
-                                    </div>
-                                {/if}
-                            </div>
-                            <div>
-                                <label
-                                    for="intent-summary"
-                                    class="text-xs uppercase tracking-[0.2em] text-text-muted"
-                                    >{t(
-                                        "ingestionSetup.batchIntent.summary",
-                                    )}</label
-                                >
-                                <textarea
-                                    id="intent-summary"
-                                    rows="2"
-                                    class="mt-2 w-full resize-none rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
-                                    value={batchDefaults.summaryText}
-                                    oninput={(event) => {
-                                        batchDefaults.summaryText =
-                                            event.currentTarget.value;
-                                        queueBatchMetadataSave();
-                                    }}
-                                ></textarea>
-                            </div>
-                        </div>
-                    </details>
-
-                    <details open class="border-t border-border-soft py-3">
-                        <summary
-                            class="cursor-pointer text-xs uppercase tracking-[0.2em] text-blue-slate"
-                        >
-                            {t("ingestionSetup.batchIntent.sections.dates")}
-                        </summary>
-                        <p class="mt-2 text-xs text-text-muted">
-                            {t("ingestionSetup.batchIntent.dateHint")}
-                        </p>
-                        <div class="mt-3 space-y-4">
-                            {#each summaryDateSections as section, index (section.key)}
-                                {@const editor =
-                                    summaryDateEditors[section.key]}
-                                <div
-                                    class={index === 0
-                                        ? "space-y-2"
-                                        : "space-y-2 border-t border-border-soft pt-4"}
-                                >
-                                    <p
+                                <div>
+                                    <label
+                                        for="intent-language"
                                         class="text-xs uppercase tracking-[0.2em] text-text-muted"
+                                        >{t(
+                                            "ingestionSetup.batchIntent.language",
+                                        )}</label
                                     >
-                                        {t(section.labelKey)}
-                                    </p>
+                                    <select
+                                        id="intent-language"
+                                        class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+                                        value={batchDefaults.language}
+                                        onchange={(event) => {
+                                            batchDefaults.language =
+                                                event.currentTarget.value;
+                                            queueBatchMetadataSave();
+                                        }}
+                                    >
+                                        <option value=""
+                                            >{t(
+                                                "ingestionSetup.batchIntent.selectLanguage",
+                                            )}</option
+                                        >
+                                        {#each languages as language (language)}
+                                            <option value={language}
+                                                >{t(
+                                                    `ingestionSetup.languages.${language}`,
+                                                )}</option
+                                            >
+                                        {/each}
+                                    </select>
+                                </div>
+                            </div>
+                        </details>
+
+                        <!-- Description and tags / summaryContext -->
+                        <details class="border-t border-border-soft py-3">
+                            <summary
+                                class="cursor-pointer text-xs uppercase tracking-[0.2em] text-blue-slate"
+                            >
+                                {t(
+                                    "ingestionSetup.batchIntent.sections.summaryContext",
+                                )}
+                            </summary>
+                            <div class="mt-3 space-y-3">
+                                <div>
+                                    <label
+                                        for="intent-tags"
+                                        class="text-xs uppercase tracking-[0.2em] text-text-muted"
+                                        >{t(
+                                            "ingestionSetup.batchIntent.tags",
+                                        )}</label
+                                    >
+                                    <div class="mt-2 flex items-center gap-2">
+                                        <input
+                                            id="intent-tags"
+                                            class="w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+                                            placeholder={t(
+                                                "ingestionSetup.batchIntent.tagsPlaceholder",
+                                            )}
+                                            value={summaryTagInput}
+                                            oninput={(event) =>
+                                                (summaryTagInput =
+                                                    event.currentTarget.value)}
+                                            onkeydown={(event) => {
+                                                if (event.key === "Enter") {
+                                                    event.preventDefault();
+                                                    addSummaryTag();
+                                                }
+                                            }}
+                                        />
+                                        <button
+                                            type="button"
+                                            onclick={addSummaryTag}
+                                            class="rounded-full border border-border-soft px-3 py-2 text-xs uppercase tracking-[0.2em] text-blue-slate"
+                                        >
+                                            {t(
+                                                "ingestionSetup.batchIntent.addTag",
+                                            )}
+                                        </button>
+                                    </div>
+                                    {#if summaryTags.length > 0}
+                                        <div class="mt-2 flex flex-wrap gap-2">
+                                            {#each summaryTags as tag (tag)}
+                                                <button
+                                                    type="button"
+                                                    onclick={() =>
+                                                        removeSummaryTag(tag)}
+                                                    class="rounded-full border border-border-soft px-3 py-1 text-xs uppercase tracking-[0.2em] text-blue-slate"
+                                                >
+                                                    {tag} ×
+                                                </button>
+                                            {/each}
+                                        </div>
+                                    {/if}
+                                </div>
+                                <div>
+                                    <label
+                                        for="intent-summary"
+                                        class="text-xs uppercase tracking-[0.2em] text-text-muted"
+                                        >{t(
+                                            "ingestionSetup.batchIntent.summary",
+                                        )}</label
+                                    >
+                                    <textarea
+                                        id="intent-summary"
+                                        rows="2"
+                                        class="mt-2 w-full resize-none rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+                                        value={batchDefaults.summaryText}
+                                        oninput={(event) => {
+                                            batchDefaults.summaryText =
+                                                event.currentTarget.value;
+                                            queueBatchMetadataSave();
+                                        }}
+                                    ></textarea>
+                                </div>
+                            </div>
+                        </details>
+
+                        <!-- Publication date only -->
+                        <details open class="border-t border-border-soft py-3">
+                            <summary
+                                class="cursor-pointer text-xs uppercase tracking-[0.2em] text-blue-slate"
+                            >
+                                {t("ingestionSetup.batchIntent.publishedDate")}
+                            </summary>
+                            <p class="mt-2 text-xs text-text-muted">
+                                {t("ingestionSetup.batchIntent.dateHint")}
+                            </p>
+                            <div class="mt-3 space-y-4">
+                                <div class="space-y-2">
                                     <div class="grid gap-2 md:grid-cols-2">
                                         <select
                                             class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
-                                            value={editor.precision}
+                                            value={summaryDateEditors.published.precision}
                                             onchange={(event) =>
                                                 updateSummaryDatePrecision(
-                                                    section.key,
+                                                    "published",
                                                     event.currentTarget
                                                         .value as SummaryDatePrecision,
                                                 )}
@@ -3865,7 +3977,7 @@
                                                 )}</option
                                             >
                                         </select>
-                                        {#if editor.precision === "none"}
+                                        {#if summaryDateEditors.published.precision === "none"}
                                             <div
                                                 class="px-1 py-2 text-xs text-text-muted"
                                             >
@@ -3873,7 +3985,7 @@
                                                     "ingestionSetup.batchIntent.noDateSelected",
                                                 )}
                                             </div>
-                                        {:else if editor.precision === "year"}
+                                        {:else if summaryDateEditors.published.precision === "year"}
                                             <input
                                                 type="number"
                                                 min="1000"
@@ -3882,22 +3994,22 @@
                                                     "ingestionSetup.batchIntent.yearPlaceholder",
                                                 )}
                                                 class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
-                                                value={editor.year}
+                                                value={summaryDateEditors.published.year}
                                                 oninput={(event) =>
                                                     updateSummaryDateValue(
-                                                        section.key,
+                                                        "published",
                                                         event.currentTarget
                                                             .value,
                                                     )}
                                             />
-                                        {:else if editor.precision === "month"}
+                                        {:else if summaryDateEditors.published.precision === "month"}
                                             <input
                                                 type="month"
                                                 class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
-                                                value={editor.month}
+                                                value={summaryDateEditors.published.month}
                                                 onchange={(event) =>
                                                     updateSummaryDateValue(
-                                                        section.key,
+                                                        "published",
                                                         event.currentTarget
                                                             .value,
                                                     )}
@@ -3906,24 +4018,26 @@
                                             <input
                                                 type="date"
                                                 class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
-                                                value={editor.day}
+                                                value={summaryDateEditors.published.day}
                                                 onchange={(event) =>
                                                     updateSummaryDateValue(
-                                                        section.key,
+                                                        "published",
                                                         event.currentTarget
                                                             .value,
                                                     )}
                                             />
                                         {/if}
                                     </div>
-                                    {#if editor.precision !== "none"}
-                                        <div class="grid gap-2 md:grid-cols-3">
+                                    {#if summaryDateEditors.published.precision !== "none"}
+                                        <div
+                                            class="grid gap-2 md:grid-cols-3"
+                                        >
                                             <select
                                                 class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
-                                                value={editor.confidence}
+                                                value={summaryDateEditors.published.confidence}
                                                 onchange={(event) =>
                                                     updateSummaryDateConfidence(
-                                                        section.key,
+                                                        "published",
                                                         event.currentTarget
                                                             .value as
                                                             | "low"
@@ -3952,10 +4066,10 @@
                                             >
                                                 <input
                                                     type="checkbox"
-                                                    checked={editor.approximate}
+                                                    checked={summaryDateEditors.published.approximate}
                                                     onchange={(event) =>
                                                         updateSummaryDateApproximate(
-                                                            section.key,
+                                                            "published",
                                                             event.currentTarget
                                                                 .checked,
                                                         )}
@@ -3969,10 +4083,10 @@
                                                 placeholder={t(
                                                     "ingestionSetup.batchIntent.dateNotePlaceholder",
                                                 )}
-                                                value={editor.note}
+                                                value={summaryDateEditors.published.note}
                                                 oninput={(event) =>
                                                     updateSummaryDateNote(
-                                                        section.key,
+                                                        "published",
                                                         event.currentTarget
                                                             .value,
                                                     )}
@@ -3980,19 +4094,271 @@
                                         </div>
                                     {/if}
                                 </div>
-                            {/each}
-                        </div>
-                    </details>
+                            </div>
+                        </details>
+                    </div>
+                {/if}
+            </div>
 
-                    <details class="border-t border-border-soft py-3">
+            <!-- Card B: Batch Record Context -->
+            <div
+                class="rounded-2xl border border-border-soft bg-surface-white px-6 py-6"
+            >
+                <p class="text-xs uppercase tracking-[0.2em] text-blue-slate">
+                    {t("ingestionSetup.batchRecordContext.title")}
+                </p>
+                <p class="mt-2 text-sm text-text-muted">
+                    {t("ingestionSetup.batchRecordContext.description")}
+                </p>
+                <div class="mt-4 text-sm">
+                    <div class="space-y-2">
+                        <p
+                            class="text-xs uppercase tracking-[0.2em] text-text-muted"
+                        >
+                            {t("ingestionSetup.batchIntent.createdDate")}
+                        </p>
+                        <div class="grid gap-2 md:grid-cols-2">
+                            <select
+                                class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+                                value={summaryDateEditors.created.precision}
+                                onchange={(event) =>
+                                    updateSummaryDatePrecision(
+                                        "created",
+                                        event.currentTarget
+                                            .value as SummaryDatePrecision,
+                                    )}
+                            >
+                                <option value="none"
+                                    >{t(
+                                        "ingestionSetup.batchIntent.precisionNone",
+                                    )}</option
+                                >
+                                <option value="year"
+                                    >{t(
+                                        "ingestionSetup.batchIntent.precisionYear",
+                                    )}</option
+                                >
+                                <option value="month"
+                                    >{t(
+                                        "ingestionSetup.batchIntent.precisionMonth",
+                                    )}</option
+                                >
+                                <option value="day"
+                                    >{t(
+                                        "ingestionSetup.batchIntent.precisionDay",
+                                    )}</option
+                                >
+                            </select>
+                            {#if summaryDateEditors.created.precision === "none"}
+                                <div
+                                    class="px-1 py-2 text-xs text-text-muted"
+                                >
+                                    {t(
+                                        "ingestionSetup.batchIntent.noDateSelected",
+                                    )}
+                                </div>
+                            {:else if summaryDateEditors.created.precision === "year"}
+                                <input
+                                    type="number"
+                                    min="1000"
+                                    max="2999"
+                                    placeholder={t(
+                                        "ingestionSetup.batchIntent.yearPlaceholder",
+                                    )}
+                                    class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+                                    value={summaryDateEditors.created.year}
+                                    oninput={(event) =>
+                                        updateSummaryDateValue(
+                                            "created",
+                                            event.currentTarget.value,
+                                        )}
+                                />
+                            {:else if summaryDateEditors.created.precision === "month"}
+                                <input
+                                    type="month"
+                                    class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+                                    value={summaryDateEditors.created.month}
+                                    onchange={(event) =>
+                                        updateSummaryDateValue(
+                                            "created",
+                                            event.currentTarget.value,
+                                        )}
+                                />
+                            {:else}
+                                <input
+                                    type="date"
+                                    class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+                                    value={summaryDateEditors.created.day}
+                                    onchange={(event) =>
+                                        updateSummaryDateValue(
+                                            "created",
+                                            event.currentTarget.value,
+                                        )}
+                                />
+                            {/if}
+                        </div>
+                        {#if summaryDateEditors.created.precision !== "none"}
+                            <div class="grid gap-2 md:grid-cols-3">
+                                <select
+                                    class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+                                    value={summaryDateEditors.created.confidence}
+                                    onchange={(event) =>
+                                        updateSummaryDateConfidence(
+                                            "created",
+                                            event.currentTarget.value as
+                                                | "low"
+                                                | "medium"
+                                                | "high",
+                                        )}
+                                >
+                                    <option value="low"
+                                        >{t(
+                                            "ingestionSetup.batchIntent.confidenceLow",
+                                        )}</option
+                                    >
+                                    <option value="medium"
+                                        >{t(
+                                            "ingestionSetup.batchIntent.confidenceMedium",
+                                        )}</option
+                                    >
+                                    <option value="high"
+                                        >{t(
+                                            "ingestionSetup.batchIntent.confidenceHigh",
+                                        )}</option
+                                    >
+                                </select>
+                                <label
+                                    class="flex items-center gap-2 rounded-xl border border-border-soft px-3 py-2 text-xs text-text-muted"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={summaryDateEditors.created.approximate}
+                                        onchange={(event) =>
+                                            updateSummaryDateApproximate(
+                                                "created",
+                                                event.currentTarget
+                                                    .checked,
+                                            )}
+                                    />
+                                    {t(
+                                        "ingestionSetup.batchIntent.approximateDate",
+                                    )}
+                                </label>
+                                <input
+                                    class="rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+                                    placeholder={t(
+                                        "ingestionSetup.batchIntent.dateNotePlaceholder",
+                                    )}
+                                    value={summaryDateEditors.created.note}
+                                    oninput={(event) =>
+                                        updateSummaryDateNote(
+                                            "created",
+                                            event.currentTarget.value,
+                                        )}
+                                />
+                            </div>
+                        {/if}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card C: Processing and Access Policies -->
+            <div
+                class="rounded-2xl border border-border-soft bg-surface-white px-6 py-6"
+            >
+                <p class="text-xs uppercase tracking-[0.2em] text-blue-slate">
+                    {t("ingestionSetup.policies.title")}
+                </p>
+                <p class="mt-2 text-sm text-text-muted">
+                    {t("ingestionSetup.policies.description")}
+                </p>
+                <div class="mt-4 space-y-4 text-sm">
+                    <details open class="py-2">
                         <summary
                             class="cursor-pointer text-xs uppercase tracking-[0.2em] text-blue-slate"
                         >
-                            {t(
-                                "ingestionSetup.batchIntent.sections.accessPolicy",
-                            )}
+                            {t("ingestionSetup.policies.processing")}
                         </summary>
-                        <div class="mt-3 grid gap-3 md:grid-cols-2">
+                        <div class="mt-3 space-y-4">
+                            <div class="grid gap-3 md:grid-cols-2">
+                                <div>
+                                    <label
+                                        for="intent-item-kind"
+                                        class="text-xs uppercase tracking-[0.2em] text-text-muted"
+                                        >{t(
+                                            "ingestionSetup.batchIntent.itemKind",
+                                        )}</label
+                                    >
+                                    <select
+                                        id="intent-item-kind"
+                                        class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+                                        value={batchDefaults.itemKind}
+                                        onchange={(event) =>
+                                            setItemKind(
+                                                event.currentTarget
+                                                    .value as ItemKind,
+                                            )}
+                                    >
+                                        {#each allowedItemKinds as itemKind (itemKind)}
+                                            <option value={itemKind}
+                                                >{t(
+                                                    `ingestionSetup.itemKinds.${itemKind}`,
+                                                )}</option
+                                            >
+                                        {/each}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label
+                                        for="intent-classification-type"
+                                        class="text-xs uppercase tracking-[0.2em] text-text-muted"
+                                        >{t(
+                                            "ingestionSetup.batchIntent.classificationType",
+                                        )}</label
+                                    >
+                                    <select
+                                        id="intent-classification-type"
+                                        class="mt-2 w-full rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink"
+                                        value={batchDefaults.classificationType}
+                                        onchange={(event) =>
+                                            setClassificationType(
+                                                event.currentTarget
+                                                    .value as ClassificationType,
+                                            )}
+                                    >
+                                        <option value=""
+                                            >{t(
+                                                "ingestionSetup.batchIntent.selectType",
+                                            )}</option
+                                        >
+                                        {#each classificationTypes as type (type)}
+                                            <option value={type}
+                                                >{t(
+                                                    `ingestionSetup.classificationTypes.${type}`,
+                                                )}</option
+                                            >
+                                        {/each}
+                                    </select>
+                                    <p class="mt-1 text-xs text-text-muted">
+                                        {#if batchDefaults.itemKind === "document" || batchDefaults.itemKind === "scanned_document"}
+                                            {t(
+                                                "ingestionSetup.batchIntent.classificationHintDocument",
+                                            )}
+                                        {:else}
+                                            {t(
+                                                "ingestionSetup.batchIntent.classificationHintAuto",
+                                            )}
+                                        {/if}
+                                    </p>
+                                    {#if batchIntentError}
+                                        <p
+                                            class="mt-2 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach"
+                                        >
+                                            {batchIntentError}
+                                        </p>
+                                    {/if}
+                                </div>
+                            </div>
                             <div>
                                 <label
                                     for="intent-pipeline-preset"
@@ -4011,15 +4377,56 @@
                                         queueBatchMetadataSave();
                                     }}
                                 >
+                                    {#if !isPersistedPresetKnown}
+                                        <option
+                                            value={batchDefaults.pipelinePreset}
+                                            disabled
+                                        >
+                                            {batchDefaults.pipelinePreset}
+                                        </option>
+                                    {/if}
                                     {#each pipelinePresets as preset (preset)}
-                                        <option value={preset}
+                                        <option
+                                            value={preset}
+                                            disabled={!allowedPresets.has(preset)}
                                             >{t(
                                                 `ingestionSetup.pipelinePresets.${preset}`,
                                             )}</option
                                         >
                                     {/each}
                                 </select>
+                                {#if !isPersistedPresetKnown}
+                                    <p
+                                        class="mt-2 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach"
+                                    >
+                                        {t("ingestionSetup.errors.unknownPreset")}
+                                    </p>
+                                {:else if hasUnknownItemOverrides}
+                                    <p
+                                        class="mt-2 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach"
+                                    >
+                                        {t("ingestionSetup.errors.unknownItemKind")}
+                                    </p>
+                                {:else if !isPresetCompatible}
+                                    <p
+                                        class="mt-2 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach"
+                                    >
+                                        {t(
+                                            "ingestionSetup.errors.incompatiblePreset",
+                                        )}
+                                    </p>
+                                {/if}
                             </div>
+                        </div>
+                    </details>
+
+                    <details open class="border-t border-border-soft py-3">
+                        <summary
+                            class="cursor-pointer text-xs uppercase tracking-[0.2em] text-blue-slate"
+                        >
+                            {t("ingestionSetup.policies.access")}
+                        </summary>
+                        <div class="mt-3 grid gap-3 md:grid-cols-2">
                             <div>
                                 <label
                                     for="intent-access-level"
@@ -4078,7 +4485,7 @@
                                     }}
                                 />
                             </div>
-                            <div>
+                            <div class="md:col-span-2">
                                 <label
                                     for="intent-rights-note"
                                     class="text-xs uppercase tracking-[0.2em] text-text-muted"
@@ -4224,6 +4631,20 @@
                                     { count: formatCount(group.fileIds.length, $locale) },
                                 )}
                             </span>
+                            {#if getItemDefaultsBadge(key) !== null}
+                                {@const bState = getItemDefaultsBadge(key)}
+                                <span
+                                    class="shrink-0 rounded-full border border-border-soft bg-surface-white px-2.5 py-0.5 text-[9px] uppercase tracking-[0.15em] text-blue-slate"
+                                >
+                                    {#if bState === 'matches-defaults'}
+                                        {t('ingestionSetup.defaultsBadges.matches')}
+                                    {:else if bState === 'mixed'}
+                                        {t('ingestionSetup.defaultsBadges.mixed')}
+                                    {:else if bState === 'customized'}
+                                        {t('ingestionSetup.defaultsBadges.customized')}
+                                    {/if}
+                                </span>
+                            {/if}
                             {#if !isItemMetadataComplete(key)}
                                 {@const missing = getItemMissingFields(key)}
                                 <span
@@ -4248,24 +4669,11 @@
                                     objectLabel={group.label ?? ""}
                                     files={panelFiles}
                                     metadata={meta}
-                                    batchTitle={batchDefaults.title}
+                                    batchTitle={effectiveItemTitle}
                                     batchTags={summaryTags}
-                                    batchDate={summaryDateEditors.created
-                                        .precision !== "none"
-                                        ? {
-                                              value:
-                                                  summaryDateEditors.created
-                                                      .year ||
-                                                  summaryDateEditors.created
-                                                      .month ||
-                                                  summaryDateEditors.created
-                                                      .day ||
-                                                  null,
-                                              approximate:
-                                                  summaryDateEditors.created
-                                                      .approximate,
-                                          }
-                                        : null}
+                                    batchDate={getEffectiveDateFromEditor(
+                                        summaryDateEditors.published,
+                                    )}
                                     batchDescription={batchDefaults.summaryText}
                                     onMetadataChange={(patch) =>
                                         setObjectMeta(key, patch)}
@@ -4331,6 +4739,20 @@
                             <span class="shrink-0 text-xs text-text-muted"
                                 >{formatFileSize(file.sizeBytes, $locale)}</span
                             >
+                            {#if getItemDefaultsBadge(key) !== null}
+                                {@const bState = getItemDefaultsBadge(key)}
+                                <span
+                                    class="shrink-0 rounded-full border border-border-soft bg-surface-white px-2.5 py-0.5 text-[9px] uppercase tracking-[0.15em] text-blue-slate"
+                                >
+                                    {#if bState === 'matches-defaults'}
+                                        {t('ingestionSetup.defaultsBadges.matches')}
+                                    {:else if bState === 'mixed'}
+                                        {t('ingestionSetup.defaultsBadges.mixed')}
+                                    {:else if bState === 'customized'}
+                                        {t('ingestionSetup.defaultsBadges.customized')}
+                                    {/if}
+                                </span>
+                            {/if}
                             {#if !isItemMetadataComplete(key)}
                                 {@const missing = getItemMissingFields(key)}
                                 <span
@@ -4355,24 +4777,11 @@
                                     objectLabel={file.name}
                                     files={panelFiles}
                                     metadata={meta}
-                                    batchTitle={batchDefaults.title}
+                                    batchTitle={effectiveItemTitle}
                                     batchTags={summaryTags}
-                                    batchDate={summaryDateEditors.created
-                                        .precision !== "none"
-                                        ? {
-                                              value:
-                                                  summaryDateEditors.created
-                                                      .year ||
-                                                  summaryDateEditors.created
-                                                      .month ||
-                                                  summaryDateEditors.created
-                                                      .day ||
-                                                  null,
-                                              approximate:
-                                                  summaryDateEditors.created
-                                                      .approximate,
-                                          }
-                                        : null}
+                                    batchDate={getEffectiveDateFromEditor(
+                                        summaryDateEditors.published,
+                                    )}
                                     batchDescription={batchDefaults.summaryText}
                                     onMetadataChange={(patch) =>
                                         setObjectMeta(key, patch)}
@@ -4401,23 +4810,29 @@
                         <p class="text-sm text-text-muted">
                             {canStartIngestion
                                 ? t("ingestionSetup.readiness.ready")
-                                : itemMutationFailure
-                                  ? t(
-                                        "ingestionSetup.mutations.reconcileHint",
-                                    )
-                                  : hasPendingItemMutations
-                                    ? t(
-                                        "ingestionSetup.mutations.saving",
-                                    )
-                                : hasPendingUploads
-                                  ? t("ingestionSetup.readiness.uploading")
-                                  : hasUploadFailures
-                                    ? t("ingestionSetup.readiness.uploadFailed")
-                                    : !isReady
-                                      ? t("ingestionSetup.readiness.missing")
-                                      : t(
-                                            "ingestionSetup.readiness.missingItemMetadata",
-                                        )}
+                                : !isPersistedPresetKnown
+                                  ? t("ingestionSetup.errors.unknownPreset")
+                                  : hasUnknownItemOverrides
+                                    ? t("ingestionSetup.errors.unknownItemKind")
+                                    : !isPresetCompatible
+                                      ? t("ingestionSetup.errors.incompatiblePreset")
+                                      : itemMutationFailure
+                                        ? t(
+                                              "ingestionSetup.mutations.reconcileHint",
+                                          )
+                                        : hasPendingItemMutations
+                                          ? t(
+                                                "ingestionSetup.mutations.saving",
+                                            )
+                                          : hasPendingUploads
+                                            ? t("ingestionSetup.readiness.uploading")
+                                            : hasUploadFailures
+                                              ? t("ingestionSetup.readiness.uploadFailed")
+                                              : !isReady
+                                                ? t("ingestionSetup.readiness.missing")
+                                                : t(
+                                                      "ingestionSetup.readiness.missingItemMetadata",
+                                                  )}
                         </p>
                         {#if !isReady}
                             <div
@@ -4517,31 +4932,30 @@
             </section>
         {/if}
 
-        {#if showConfirm}
-            <div
-                class="fixed inset-0 z-50 flex items-center justify-center bg-dark-grey/60 px-6"
-            >
-                <div
-                    class="w-full max-w-xl rounded-2xl border border-border-soft bg-surface-white p-6 shadow-[0_30px_80px_rgba(31,47,56,0.35)]"
+        <BaseDialog
+            open={showConfirm}
+            labelledBy="ingestion-setup-confirm-title"
+            onClose={() => (showConfirm = false)}
+            panelClass="w-full max-w-xl rounded-2xl border border-border-soft bg-surface-white p-6 shadow-[0_30px_80px_rgba(31,47,56,0.35)]"
+        >
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <p
+                        class="text-xs uppercase tracking-[0.2em] text-blue-slate"
+                    >
+                        {t("ingestionSetup.confirmation.title")}
+                    </p>
+                    <h3 id="ingestion-setup-confirm-title" class="mt-2 font-display text-xl text-text-ink">
+                        {t("ingestionSetup.confirmation.subtitle")}
+                    </h3>
+                </div>
+                <button
+                    class="text-sm text-text-muted"
+                    onclick={() => (showConfirm = false)}
                 >
-                    <div class="flex items-start justify-between gap-4">
-                        <div>
-                            <p
-                                class="text-xs uppercase tracking-[0.2em] text-blue-slate"
-                            >
-                                {t("ingestionSetup.confirmation.title")}
-                            </p>
-                            <h3 class="mt-2 font-display text-xl text-text-ink">
-                                {t("ingestionSetup.confirmation.subtitle")}
-                            </h3>
-                        </div>
-                        <button
-                            class="text-sm text-text-muted"
-                            onclick={() => (showConfirm = false)}
-                        >
-                            {t("common.close")}
-                        </button>
-                    </div>
+                    {t("common.close")}
+                </button>
+            </div>
                     <div class="mt-4 space-y-3 text-sm text-text-muted">
                         <p>
                             <span class="text-text-ink"
@@ -4614,34 +5028,32 @@
                                 : t("common.confirmStart")}
                         </button>
                     </div>
-                </div>
-            </div>
-        {/if}
+        </BaseDialog>
 
-        {#if mismatchDialog?.open}
-            <div
-                class="fixed inset-0 z-50 flex items-center justify-center bg-dark-grey/60 px-6"
-            >
-                <div
-                    class="w-full max-w-xl rounded-2xl border border-border-soft bg-surface-white p-6 shadow-[0_30px_80px_rgba(31,47,56,0.35)]"
+        <BaseDialog
+            open={mismatchDialog?.open ?? false}
+            labelledBy="ingestion-setup-mismatch-title"
+            onClose={closeMismatchDialog}
+            panelClass="w-full max-w-xl rounded-2xl border border-border-soft bg-surface-white p-6 shadow-[0_30px_80px_rgba(31,47,56,0.35)]"
+        >
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <p
+                        class="text-xs uppercase tracking-[0.2em] text-burnt-peach"
+                    >
+                        {t("ingestionSetup.mismatch.title")}
+                    </p>
+                    <h3 id="ingestion-setup-mismatch-title" class="mt-2 font-display text-xl text-text-ink">
+                        {t("ingestionSetup.mismatch.subtitle")}
+                    </h3>
+                </div>
+                <button
+                    class="text-sm text-text-muted"
+                    onclick={closeMismatchDialog}
+                    >{t("common.close")}</button
                 >
-                    <div class="flex items-start justify-between gap-4">
-                        <div>
-                            <p
-                                class="text-xs uppercase tracking-[0.2em] text-burnt-peach"
-                            >
-                                {t("ingestionSetup.mismatch.title")}
-                            </p>
-                            <h3 class="mt-2 font-display text-xl text-text-ink">
-                                {t("ingestionSetup.mismatch.subtitle")}
-                            </h3>
-                        </div>
-                        <button
-                            class="text-sm text-text-muted"
-                            onclick={closeMismatchDialog}
-                            >{t("common.close")}</button
-                        >
-                    </div>
+            </div>
+            {#if mismatchDialog}
                     <div class="mt-4 space-y-2 text-sm text-text-muted">
                         <p>
                             {format(t("ingestionSetup.mismatch.details"), {
@@ -4674,38 +5086,37 @@
                             {t("ingestionSetup.mismatch.switchAndContinue")}
                         </button>
                     </div>
-                </div>
-            </div>
-        {/if}
+            {/if}
+        </BaseDialog>
 
         <!-- Abandon dialog: shown when user navigates away from an empty batch -->
-        {#if abandonDialog?.open}
-            <div
-                class="fixed inset-0 z-50 flex items-center justify-center bg-dark-grey/60 px-6"
-            >
-                <div
-                    class="w-full max-w-xl rounded-2xl border border-border-soft bg-surface-white p-6 shadow-[0_30px_80px_rgba(31,47,56,0.35)]"
+        <BaseDialog
+            open={abandonDialog?.open ?? false}
+            labelledBy="ingestion-setup-abandon-title"
+            closeOnBackdrop={!abandonDeleting}
+            onClose={keepDraftAndLeave}
+            panelClass="w-full max-w-xl rounded-2xl border border-border-soft bg-surface-white p-6 shadow-[0_30px_80px_rgba(31,47,56,0.35)]"
+        >
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <p
+                        class="text-xs uppercase tracking-[0.2em] text-blue-slate"
+                    >
+                        {t("ingestionSetup.abandon.title")}
+                    </p>
+                    <h3 id="ingestion-setup-abandon-title" class="mt-2 font-display text-xl text-text-ink">
+                        {t("ingestionSetup.abandon.subtitle")}
+                    </h3>
+                </div>
+                <button
+                    type="button"
+                    disabled={abandonDeleting}
+                    class="text-sm text-text-muted"
+                    onclick={keepDraftAndLeave}>{t(
+                        "common.close",
+                    )}</button
                 >
-                    <div class="flex items-start justify-between gap-4">
-                        <div>
-                            <p
-                                class="text-xs uppercase tracking-[0.2em] text-blue-slate"
-                            >
-                                {t("ingestionSetup.abandon.title")}
-                            </p>
-                            <h3 class="mt-2 font-display text-xl text-text-ink">
-                                {t("ingestionSetup.abandon.subtitle")}
-                            </h3>
-                        </div>
-                        <button
-                            type="button"
-                            disabled={abandonDeleting}
-                            class="text-sm text-text-muted"
-                            onclick={keepDraftAndLeave}>{t(
-                                "common.close",
-                            )}</button
-                        >
-                    </div>
+            </div>
                     <div class="mt-4 text-sm text-text-muted">
                         <p>
                             {t("ingestionSetup.abandon.body")}
@@ -4742,9 +5153,7 @@
                                   : t("ingestionSetup.abandon.deleteBatch")}</button
                         >
                     </div>
-                </div>
-            </div>
-        {/if}
+        </BaseDialog>
 
         {#if itemMutationFailure}
             <div
@@ -4816,13 +5225,19 @@
                 <span class="text-sm text-text-muted">
                     {canStartIngestion
                         ? t("ingestionSetup.readiness.ready")
-                        : itemMutationFailure
-                          ? t("ingestionSetup.mutations.reconcileHint")
-                          : hasPendingItemMutations
-                            ? t("ingestionSetup.mutations.saving")
-                        : hasPendingUploads
-                          ? t("ingestionSetup.readiness.uploading")
-                          : t("ingestionSetup.readiness.missingItemMetadata")}
+                        : !isPersistedPresetKnown
+                          ? t("ingestionSetup.errors.unknownPreset")
+                          : hasUnknownItemOverrides
+                            ? t("ingestionSetup.errors.unknownItemKind")
+                            : !isPresetCompatible
+                              ? t("ingestionSetup.errors.incompatiblePreset")
+                              : itemMutationFailure
+                                ? t("ingestionSetup.mutations.reconcileHint")
+                                : hasPendingItemMutations
+                                  ? t("ingestionSetup.mutations.saving")
+                                  : hasPendingUploads
+                                    ? t("ingestionSetup.readiness.uploading")
+                                    : t("ingestionSetup.readiness.missingItemMetadata")}
                 </span>
             {/if}
         {/snippet}

@@ -94,6 +94,36 @@ describe('setup item hydration', () => {
 		expect(result.serverItemIds).toEqual({ 'file:3': 'item-standalone' });
 	});
 
+	it('preserves explicit empty titles for grouped and standalone items', () => {
+		const result = hydrateIngestionItems(
+			[
+				makeItem({
+					id: 'item-group',
+					label: '',
+					files: [
+						{ id: 'link-1', ingestionFileId: 'file-1', sortOrder: 1 },
+						{ id: 'link-2', ingestionFileId: 'file-2', sortOrder: 2 }
+					]
+				}),
+				makeItem({
+					id: 'item-standalone',
+					itemIndex: 2,
+					label: '',
+					files: [{ id: 'link-3', ingestionFileId: 'file-3', sortOrder: 1 }]
+				})
+			],
+			new Map([
+				['file-1', 1],
+				['file-2', 2],
+				['file-3', 3]
+			]),
+			() => 'group-empty'
+		);
+
+		expect(result.metadata['group-empty']?.title).toBe('');
+		expect(result.metadata['file:3']?.title).toBe('');
+	});
+
 	it('ignores malformed nested values without failing item hydration', () => {
 		const metadata = mapIngestionItemMetadata(
 			makeItem({

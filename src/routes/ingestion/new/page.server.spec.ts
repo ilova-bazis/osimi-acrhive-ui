@@ -183,4 +183,121 @@ describe('/ingestion/new +page.server', () => {
 			data: { error: 'Request failed for ingestions.create' }
 		});
 	});
+
+	it('returns fail(400) when item kind is unknown without calling createDraft', async () => {
+		const form = new FormData();
+		form.set('itemKind', 'unknown_kind');
+		const request = new Request('https://example.test/ingestion/new', { method: 'POST', body: form });
+
+		const result = await actions.default({
+			request,
+			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
+			cookies: { get: () => 'token-1', set: vi.fn(), delete: vi.fn() },
+			fetch: vi.fn()
+		} as never);
+
+		expect(result).toMatchObject({
+			status: 400,
+			data: { error: 'Invalid item kind.', code: 'INVALID_PIPELINE_CAPABILITY' }
+		});
+		expect(createDraftMock).not.toHaveBeenCalled();
+	});
+
+	it('returns fail(400) when classification type is unknown without calling createDraft', async () => {
+		const form = new FormData();
+		form.set('classificationType', 'unknown_type');
+		const request = new Request('https://example.test/ingestion/new', { method: 'POST', body: form });
+
+		const result = await actions.default({
+			request,
+			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
+			cookies: { get: () => 'token-1', set: vi.fn(), delete: vi.fn() },
+			fetch: vi.fn()
+		} as never);
+
+		expect(result).toMatchObject({
+			status: 400,
+			data: { error: 'Invalid classification type.', code: 'INVALID_PIPELINE_CAPABILITY' }
+		});
+		expect(createDraftMock).not.toHaveBeenCalled();
+	});
+
+	it('returns fail(400) when pipeline preset is unknown without calling createDraft', async () => {
+		const form = new FormData();
+		form.set('pipelinePreset', 'unknown_preset');
+		const request = new Request('https://example.test/ingestion/new', { method: 'POST', body: form });
+
+		const result = await actions.default({
+			request,
+			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
+			cookies: { get: () => 'token-1', set: vi.fn(), delete: vi.fn() },
+			fetch: vi.fn()
+		} as never);
+
+		expect(result).toMatchObject({
+			status: 400,
+			data: { error: 'Invalid pipeline preset.', code: 'INVALID_PIPELINE_CAPABILITY' }
+		});
+		expect(createDraftMock).not.toHaveBeenCalled();
+	});
+
+	it('returns fail(400) when access level is unknown without calling createDraft', async () => {
+		const form = new FormData();
+		form.set('accessLevel', 'unknown_access');
+		const request = new Request('https://example.test/ingestion/new', { method: 'POST', body: form });
+
+		const result = await actions.default({
+			request,
+			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
+			cookies: { get: () => 'token-1', set: vi.fn(), delete: vi.fn() },
+			fetch: vi.fn()
+		} as never);
+
+		expect(result).toMatchObject({
+			status: 400,
+			data: { error: 'Invalid access level.', code: 'INVALID_PIPELINE_CAPABILITY' }
+		});
+		expect(createDraftMock).not.toHaveBeenCalled();
+	});
+
+	it('returns fail(400) when classification and item kind are incompatible without calling createDraft', async () => {
+		const form = new FormData();
+		form.set('classificationType', 'image');
+		form.set('itemKind', 'document');
+		const request = new Request('https://example.test/ingestion/new', { method: 'POST', body: form });
+
+		const result = await actions.default({
+			request,
+			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
+			cookies: { get: () => 'token-1', set: vi.fn(), delete: vi.fn() },
+			fetch: vi.fn()
+		} as never);
+
+		expect(result).toMatchObject({
+			status: 400,
+			data: { error: 'Incompatible classification type and item kind.', code: 'INVALID_PIPELINE_CAPABILITY' }
+		});
+		expect(createDraftMock).not.toHaveBeenCalled();
+	});
+
+	it('returns fail(400) when preset and item kind are incompatible without calling createDraft', async () => {
+		const form = new FormData();
+		form.set('classificationType', 'image');
+		form.set('itemKind', 'photo');
+		form.set('pipelinePreset', 'ocr_text');
+		const request = new Request('https://example.test/ingestion/new', { method: 'POST', body: form });
+
+		const result = await actions.default({
+			request,
+			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
+			cookies: { get: () => 'token-1', set: vi.fn(), delete: vi.fn() },
+			fetch: vi.fn()
+		} as never);
+
+		expect(result).toMatchObject({
+			status: 400,
+			data: { error: 'Incompatible pipeline preset and item kind.', code: 'INVALID_PIPELINE_CAPABILITY' }
+		});
+		expect(createDraftMock).not.toHaveBeenCalled();
+	});
 });

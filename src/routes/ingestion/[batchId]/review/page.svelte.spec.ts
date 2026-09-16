@@ -47,7 +47,7 @@ const pageData = (): PageData => ({
 	activeBatches: [],
 	batchId: 'batch-1',
 	batchLabel: 'Batch label',
-	classificationType: 'document',
+	classificationType: 'image',
 	itemKind: 'photo',
 	languageCode: 'en',
 	pipelinePreset: 'none',
@@ -198,6 +198,8 @@ describe('/ingestion/[batchId]/review +page.svelte', () => {
 		'renders preset $id with a localized label and correct stages',
 		async ({ id, en, ocr, transcribe }) => {
 			const data = pageData();
+			data.classificationType = 'other';
+			data.itemKind = 'other';
 			data.pipelinePreset = id;
 			render(ReviewPage, { data });
 
@@ -220,6 +222,8 @@ describe('/ingestion/[batchId]/review +page.svelte', () => {
 
 	it('describes auto as automatic detection without claiming concrete stages', async () => {
 		const data = pageData();
+		data.classificationType = 'other';
+		data.itemKind = 'other';
 		data.pipelinePreset = 'auto';
 		render(ReviewPage, { data });
 
@@ -239,6 +243,8 @@ describe('/ingestion/[batchId]/review +page.svelte', () => {
 	it('describes auto as automatic detection in Russian', async () => {
 		locale.setLocale('ru');
 		const data = pageData();
+		data.classificationType = 'other';
+		data.itemKind = 'other';
 		data.pipelinePreset = 'auto';
 		render(ReviewPage, { data });
 
@@ -251,9 +257,23 @@ describe('/ingestion/[batchId]/review +page.svelte', () => {
 		await expect.element(page.getByText('OCR', { exact: true })).not.toBeInTheDocument();
 	});
 
+	it('renders Index in the footprint for explicit OCR presets', async () => {
+		const data = pageData();
+		data.classificationType = 'other';
+		data.itemKind = 'other';
+		data.pipelinePreset = 'ocr_text';
+		render(ReviewPage, { data });
+
+		await expect.element(page.getByText('OCR', { exact: true }).first()).toBeInTheDocument();
+		await expect.element(page.getByText('Index', { exact: true })).toBeInTheDocument();
+		await expect.element(page.getByText('Transcribe', { exact: true })).not.toBeInTheDocument();
+	});
+
 	it('localizes supported presets in Russian', async () => {
 		locale.setLocale('ru');
 		const data = pageData();
+		data.classificationType = 'other';
+		data.itemKind = 'other';
 		data.pipelinePreset = 'video_transcript';
 		render(ReviewPage, { data });
 
@@ -396,5 +416,86 @@ describe('/ingestion/[batchId]/review +page.svelte', () => {
 		await expect
 			.element(page.getByText('mystery', { exact: true }))
 			.toBeInTheDocument();
+	});
+
+	it('renders warning banner and disables submit when batch has incompatible preset', async () => {
+		const data = pageData(); // classification: image, itemKind: photo
+		data.pipelinePreset = 'ocr_text'; // photo + ocr_text is incompatible
+		render(ReviewPage, { data });
+
+		await expect
+			.element(page.getByText('Pipeline preset is not compatible with one or more items in this batch.'))
+			.toBeInTheDocument();
+
+		const fixLink = page.getByRole('link', { name: 'Change configuration in Setup' });
+		await expect.element(fixLink).toBeInTheDocument();
+		await expect.element(fixLink).toHaveAttribute('href', '/ingestion/batch-1/setup');
+
+		const submitBtn = page.getByRole('button', { name: 'Begin processing' });
+		await expect.element(submitBtn).toBeDisabled();
+	});
+
+	it('renders warning banner and disables submit when batch has unknown preset', async () => {
+		const data = pageData();
+		data.pipelinePreset = 'unknown_preset';
+		render(ReviewPage, { data });
+
+		await expect
+			.element(page.getByText('Pipeline preset is unrecognized.'))
+			.toBeInTheDocument();
+
+		const submitBtn = page.getByRole('button', { name: 'Begin processing' });
+		await expect.element(submitBtn).toBeDisabled();
+	});
+
+	it('renders warning banner and disables submit when item has unknown item override', async () => {
+		const data = pageData();
+		data.items = [
+			{
+				id: 'item-1',
+				itemIndex: 1,
+				itemKind: 'unknown_custom_kind',
+				label: 'Item 1',
+				status: null,
+				statusRaw: 'DRAFT',
+				summary: {},
+				files: []
+			}
+		];
+		render(ReviewPage, { data });
+
+		await expect
+			.element(page.getByText('Batch contains unrecognized item kinds.'))
+			.toBeInTheDocument();
+
+		const submitBtn = page.getByRole('button', { name: 'Begin processing' });
+		await expect.element(submitBtn).toBeDisabled();
+	});
+
+	it('localizes a submit-time capability conflict and blocks retries', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(
+				JSON.stringify({
+					code: 'INVALID_PIPELINE_CAPABILITY',
+					error: 'Incompatible pipeline preset for batch item kinds.'
+				}),
+				{ status: 409, headers: { 'content-type': 'application/json' } }
+			)
+		);
+		vi.stubGlobal('fetch', fetchMock);
+		render(ReviewPage, { data: pageData() });
+
+		await page.getByRole('checkbox').click();
+		const submitBtn = page.getByRole('button', { name: 'Begin processing' });
+		await submitBtn.click();
+
+		await expect
+			.element(page.getByText('Pipeline preset is not compatible with one or more items in this batch.'))
+			.toBeInTheDocument();
+		await expect.element(submitBtn).toBeDisabled();
+		await expect
+			.element(page.getByText('Incompatible pipeline preset for batch item kinds.'))
+			.not.toBeInTheDocument();
+		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 });

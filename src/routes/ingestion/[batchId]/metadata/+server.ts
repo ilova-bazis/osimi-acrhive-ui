@@ -1,5 +1,13 @@
 import { ingestionDetailService } from '$lib/services';
-import { ingestionSummarySchema } from '$lib/api/schemas/ingestions';
+import {
+	classificationTypeSchema,
+	itemKindSchema,
+	ingestionSummarySchema
+} from '$lib/api/schemas/ingestions';
+import {
+	pipelinePresets,
+	validatePipelinePresetCompatibility
+} from '$lib/ingestion/pipelineCapabilities';
 import { clearSessionCookie } from '$lib/server/auth';
 import { isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
 import { isAuthFailureResponse, mapApiErrorStatus, requireMutationAuth } from '$lib/server/routeGuards';
@@ -10,37 +18,10 @@ import type { RequestHandler } from './$types';
 const metadataUpdateSchema = z
 	.object({
 		batchLabel: z.string().min(1).optional(),
-		classificationType: z
-			.enum([
-				'newspaper_article',
-				'magazine_article',
-				'book_chapter',
-				'book',
-				'letter',
-				'speech',
-				'interview',
-				'report',
-				'manuscript',
-				'image',
-				'document',
-				'other'
-			])
-			.optional(),
-		itemKind: z
-			.enum(['photo', 'audio', 'video', 'scanned_document', 'document', 'other'])
-			.optional(),
+		classificationType: classificationTypeSchema.optional(),
+		itemKind: itemKindSchema.optional(),
 		languageCode: z.string().min(1).optional(),
-		pipelinePreset: z
-			.enum([
-				'auto',
-				'none',
-				'ocr_text',
-				'audio_transcript',
-				'video_transcript',
-				'ocr_and_audio_transcript',
-				'ocr_and_video_transcript'
-			])
-			.optional(),
+		pipelinePreset: z.enum(pipelinePresets).optional(),
 		accessLevel: z.enum(['private', 'family', 'public']).optional(),
 		embargoUntil: z.string().datetime().nullable().optional(),
 		rightsNote: z.string().nullable().optional(),
@@ -61,6 +42,41 @@ export const PATCH: RequestHandler = async ({ params, request, locals, cookies, 
 	}
 
 	try {
+		if (
+			parsed.data.itemKind !== undefined ||
+			parsed.data.pipelinePreset !== undefined ||
+			parsed.data.classificationType !== undefined
+		) {
+			const context = await ingestionDetailService.getPipelineCapabilityContext({
+				fetchFn: fetch,
+				token,
+				batchId: params.batchId
+			});
+
+			const targetPreset = parsed.data.pipelinePreset ?? context.pipelinePreset;
+			const targetItemKind = parsed.data.itemKind ?? context.itemKind;
+			const targetClassificationType =
+				parsed.data.classificationType ?? context.classificationType;
+
+			const validation = validatePipelinePresetCompatibility({
+				preset: targetPreset,
+				batchItemKind: targetItemKind,
+				classificationType: targetClassificationType,
+				itemOverrides: context.itemOverrides
+			});
+
+			if (!validation.valid) {
+				return json(
+					{
+						error: 'Incompatible pipeline preset.',
+						code: 'INVALID_PIPELINE_CAPABILITY',
+						details: validation
+					},
+					{ status: 400 }
+				);
+			}
+		}
+
 		await ingestionDetailService.update({
 			fetchFn: fetch,
 			token,

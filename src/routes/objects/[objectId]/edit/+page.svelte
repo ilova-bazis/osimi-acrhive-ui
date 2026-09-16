@@ -66,11 +66,20 @@
 		publicationRevision?: number | null;
 		targetVersion?: string | null;
 	};
-	const fieldErrors = $derived(form?.fieldErrors ?? {});
+	let dismissedFieldErrors = $state<ObjectEditField[]>([]);
+	const effectiveFieldErrors = $derived.by(() => {
+		const errors: Partial<Record<ObjectEditField, ObjectEditFieldErrorCode>> = {
+			...(form?.fieldErrors ?? {})
+		};
+		for (const field of dismissedFieldErrors) {
+			delete errors[field];
+		}
+		return errors;
+	});
 	const localizedFieldError = (code: ObjectEditFieldErrorCode): string =>
 		t(objectEditFieldErrorKeys[code]);
 	const fieldError = (field: ObjectEditField): string | undefined => {
-		const code = fieldErrors[field];
+		const code = effectiveFieldErrors[field];
 		return code ? localizedFieldError(code) : undefined;
 	};
 	const localizedFormError = (code: ObjectEditErrorCode, requestId?: string): string => {
@@ -81,7 +90,18 @@
 	};
 	const formError = $derived.by(() => {
 		if (!form?.errorCode) return '';
+		if (
+			form.errorCode === 'highlightedFields' &&
+			Object.keys(effectiveFieldErrors).length === 0
+		) {
+			return '';
+		}
 		return localizedFormError(form.errorCode, form.errorRequestId);
+	});
+
+	$effect(() => {
+		void form?.fieldErrors;
+		dismissedFieldErrors = [];
 	});
 	const mediaTypeLabel = (mediaType: ObjectEditMediaType): string =>
 		t(objectEditMediaTypeKeys[mediaType]);
@@ -519,7 +539,7 @@
 	<title>{formatTemplate(t('objectEdit.pageTitle'), { title: payload.metadata.title })}</title>
 </svelte:head>
 
-<div class="flex h-full min-h-0 flex-col overflow-hidden bg-alabaster-grey lg:h-screen">
+<div class="app-route-desktop-exact-h flex h-full min-h-0 flex-col overflow-hidden bg-alabaster-grey">
 
 	<!-- Top bar -->
 	<header class="flex shrink-0 items-center gap-3 border-b border-border-soft bg-surface-white/95 px-4 py-2.5 backdrop-blur sm:px-6">
@@ -1002,31 +1022,36 @@
 
 		<!-- Publication date -->
 		<div>
-			<p class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">{t('objectEdit.metadata.datePrecision')}</p>
-			<div class="mt-1.5 flex gap-1.5">
+			<p id="edit-date-precision-label" class="text-[10px] uppercase tracking-[0.2em] text-blue-slate">{t('objectEdit.metadata.datePrecision')}</p>
+			<div role="group" aria-labelledby="edit-date-precision-label" class="mt-1.5 flex gap-1.5">
 				{#each (['none', 'year', 'month', 'day'] as const) as p (p)}
 					<button
 						type="button"
-						onclick={() => { datePrecision = p; if (p === 'none') { publicationDate = ''; dateApproximate = false; } }}
+						aria-pressed={datePrecision === p}
+						onclick={() => { datePrecision = p; if (p === 'none') { publicationDate = ''; dateApproximate = false; dismissedFieldErrors = [...dismissedFieldErrors, 'publicationDate']; } }}
 						class="rounded-full px-2.5 py-1 text-[9px] uppercase tracking-[0.12em] transition {datePrecision === p ? 'bg-blue-slate text-surface-white' : 'border border-border-soft text-text-muted hover:bg-pale-sky/20'}"
 					>{precisionLabel(p)}</button>
 				{/each}
 			</div>
 			{#if datePrecision !== 'none'}
+				<label class="mt-1.5 block text-[10px] uppercase tracking-[0.2em] text-blue-slate" for="edit-publication-date">{t('objectEdit.metadata.publicationDate')}</label>
 				<input
+					id="edit-publication-date"
 					type="text"
 					class="mt-1.5 w-full rounded-lg border bg-surface-white px-3 py-2 text-sm text-text-ink placeholder:text-text-muted/50 focus:outline-none focus:ring-1 {fieldError('publicationDate') ? 'border-burnt-peach focus:border-burnt-peach/60 focus:ring-burnt-peach/20' : 'border-border-soft focus:border-blue-slate/40 focus:ring-blue-slate/20'}"
 					placeholder={datePrecision === 'year' ? t('objectEdit.metadata.yearPlaceholder') : datePrecision === 'month' ? t('objectEdit.metadata.monthPlaceholder') : t('objectEdit.metadata.dayPlaceholder')}
 					value={publicationDate}
 					oninput={(e) => (publicationDate = e.currentTarget.value)}
+					aria-invalid={fieldError('publicationDate') ? 'true' : undefined}
+					aria-describedby={fieldError('publicationDate') ? 'edit-publication-date-error' : undefined}
 				/>
 				<label class="mt-1.5 flex items-center gap-2 text-[10px] text-text-muted">
 					<input type="checkbox" bind:checked={dateApproximate} class="rounded" />
 					{t('objectEdit.metadata.approximateDate')}
 				</label>
-			{/if}
-			{#if fieldError('publicationDate')}
-				<p class="mt-1 text-xs text-burnt-peach" role="alert">{fieldError('publicationDate')}</p>
+				{#if fieldError('publicationDate')}
+					<p id="edit-publication-date-error" class="mt-1 text-xs text-burnt-peach" role="alert">{fieldError('publicationDate')}</p>
+				{/if}
 			{/if}
 		</div>
 

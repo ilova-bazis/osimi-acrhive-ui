@@ -41,6 +41,8 @@ import { translations, type TranslationKey } from '$lib/i18n/translations';
 				return t('ingestionSetup.previewViewer.ready');
 			case 'pending':
 				return t('ingestionSetup.previewViewer.pending');
+			case 'deferred':
+				return t('ingestionSetup.previewViewer.deferred');
 			case 'check-timeout':
 				return t('ingestionSetup.previewViewer.checkTimedOut');
 			case 'failed':
@@ -118,8 +120,19 @@ import { translations, type TranslationKey } from '$lib/i18n/translations';
 								{stateLabel('pending')}
 							</span>
 						</button>
-					{:else if file.preview.status === 'check-timeout'}
+					{:else if file.preview.status === 'deferred'}
 						<button
+							type="button"
+							class="flex h-full w-full cursor-zoom-in flex-col items-center justify-center gap-1.5 border-0 bg-alabaster-grey/70 p-2 text-center text-text-muted"
+							onclick={() => onPreview(file.id)}
+							aria-label={tileAriaLabel(file, index)}
+						>
+							<Icon name="video" size={18} />
+							<span class="text-[9px] uppercase leading-tight tracking-[0.14em]">
+								{stateLabel('deferred')}
+							</span>
+						</button>
+					{:else if file.preview.status === 'check-timeout'}						<button
 							type="button"
 							class="flex h-full w-full cursor-zoom-in flex-col items-center justify-center gap-1.5 border-0 bg-burnt-peach/10 p-2 text-center text-burnt-peach"
 							onclick={() => onPreview(file.id)}

@@ -5,7 +5,8 @@
 	import { afterNavigate, beforeNavigate } from '$app/navigation';
 	import AppMobileHeader from '$lib/components/AppMobileHeader.svelte';
 	import AppSidebar from '$lib/components/AppSidebar.svelte';
-import { setSession } from '$lib/auth/session';
+	import LocaleSwitcher from '$lib/components/LocaleSwitcher.svelte';
+	import { setSession } from '$lib/auth/session';
 import type { Session } from '$lib/auth/types';
 import { locale } from '$lib/i18n/locale';
 import type { IngestionStatus } from '$lib/services/ingestionOverview';
@@ -90,8 +91,11 @@ let { children, data } = $props<{
 			/>
 		</div>
 		<div class="app-content-column">
+			<div class="app-desktop-utility-row hidden lg:flex">
+				<LocaleSwitcher />
+			</div>
 			<AppMobileHeader currentPath={$page.url.pathname} onLogout={handleLogout} />
-			<div class="app-route-scrollport" bind:this={routeScrollport}>
+			<div class="app-route-scrollport" data-modal-scroll-root bind:this={routeScrollport}>
 				{@render children()}
 			</div>
 		</div>

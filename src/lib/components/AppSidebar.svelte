@@ -7,7 +7,6 @@
 	import { isShellRouteActive, shellNavItems } from '$lib/navigation/appShell';
 	import type { IngestionStatus } from '$lib/services/ingestionOverview';
 	import Icon from './Icon.svelte';
-	import LocaleSwitcher from './LocaleSwitcher.svelte';
 	import ThinProgress from './ThinProgress.svelte';
 
 	type ActiveBatch = {
@@ -126,10 +125,6 @@
 			</div>
 		</div>
 	{/if}
-
-	<div class="pt-2 pl-1">
-		<LocaleSwitcher />
-	</div>
 
 	<!-- User profile -->
 	<div class="mt-auto pt-4 flex items-center gap-3 pl-1">

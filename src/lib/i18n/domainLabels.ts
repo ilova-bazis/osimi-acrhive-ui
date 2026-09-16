@@ -10,15 +10,13 @@ import type {
 } from '$lib/services/objects';
 import type { ArchiveRequestStatus } from '$lib/services/archiveRequests';
 import type { ObjectEditMediaType } from '$lib/services/objectEdit';
-import type { UpdateIngestionRequest } from '$lib/services/ingestionDetail';
+import type { PipelinePreset } from '$lib/ingestion/pipelineCapabilities';
 import type {
 	DashboardActivityEventCode,
 	DashboardRoleCopyCode
 } from '$lib/services/dashboard';
 
-export type IngestionPipelinePreset = NonNullable<
-	UpdateIngestionRequest['payload']['pipelinePreset']
->;
+export type IngestionPipelinePreset = PipelinePreset;
 
 export const dashboardRoleCopyKeys: Record<
 	DashboardRoleCopyCode,

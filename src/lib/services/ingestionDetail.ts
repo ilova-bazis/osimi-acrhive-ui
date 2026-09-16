@@ -9,6 +9,7 @@ import type {
 	classificationTypeSchema,
 	itemKindSchema
 } from '$lib/api/schemas/ingestions';
+import type { PipelinePreset } from '$lib/ingestion/pipelineCapabilities';
 import type { z } from 'zod';
 
 type ClassificationType = z.infer<typeof classificationTypeSchema>;
@@ -44,6 +45,7 @@ export type IngestionDetailItem = {
 	label?: string;
 	status: IngestionItemStatus | null;
 	statusRaw: string;
+	itemKind?: string | null;
 	summary: Record<string, unknown>;
 	files: IngestionDetailItemFile[];
 };
@@ -111,14 +113,7 @@ export type UpdateIngestionRequest = {
 		classificationType?: ClassificationType;
 		itemKind?: ItemKind;
 		languageCode?: string;
-		pipelinePreset?:
-			| 'auto'
-			| 'none'
-			| 'ocr_text'
-			| 'audio_transcript'
-			| 'video_transcript'
-			| 'ocr_and_audio_transcript'
-			| 'ocr_and_video_transcript';
+		pipelinePreset?: PipelinePreset;
 		accessLevel?: 'private' | 'family' | 'public';
 		embargoUntil?: string | null;
 		rightsNote?: string | null;
@@ -133,8 +128,16 @@ export type ListItemsRequest = {
 	batchId: string;
 };
 
+export type PipelineCapabilityContext = {
+	classificationType: ClassificationType;
+	itemKind?: ItemKind;
+	pipelinePreset: string;
+	itemOverrides: Array<string | null>;
+};
+
 export type IngestionDetailService = {
 	getDetail: (request: IngestionDetailRequest) => Promise<IngestionDetail>;
+	getPipelineCapabilityContext: (request: IngestionDetailRequest) => Promise<PipelineCapabilityContext>;
 	listItems: (request: ListItemsRequest) => Promise<IngestionDetailItem[]>;
 	retry: (request: RetryIngestionRequest) => Promise<void>;
 	cancel: (request: CancelIngestionRequest) => Promise<void>;

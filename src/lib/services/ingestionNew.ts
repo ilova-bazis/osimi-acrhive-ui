@@ -3,6 +3,7 @@ import type {
 	classificationTypeSchema,
 	itemKindSchema
 } from '$lib/api/schemas/ingestions';
+import type { PipelinePreset } from '$lib/ingestion/pipelineCapabilities';
 import type { z } from 'zod';
 
 type ClassificationType = z.infer<typeof classificationTypeSchema>;
@@ -13,14 +14,7 @@ export type CreateIngestionRequest = {
 	classificationType: ClassificationType;
 	itemKind: ItemKind;
 	languageCode: string;
-	pipelinePreset:
-		| 'auto'
-		| 'none'
-		| 'ocr_text'
-		| 'audio_transcript'
-		| 'video_transcript'
-		| 'ocr_and_audio_transcript'
-		| 'ocr_and_video_transcript';
+	pipelinePreset: PipelinePreset;
 	accessLevel: 'private' | 'family' | 'public';
 	embargoUntil?: string;
 	rightsNote?: string;

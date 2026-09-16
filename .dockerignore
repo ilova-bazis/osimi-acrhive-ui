@@ -1,0 +1,14 @@
+.git
+.github
+.svelte-kit
+.umati
+build
+coverage
+docs
+node_modules
+test-results
+.env
+.env.*
+*.log
+Dockerfile*
+README.md

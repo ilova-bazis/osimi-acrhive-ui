@@ -167,11 +167,11 @@ const updateItem = async (request: UpdateItemRequest): Promise<void> => {
 	const body: Record<string, unknown> = {};
 
 	if (request.label !== undefined) {
-		body.title = request.label || null;
+		body.title = request.label.trim() || null;
 	}
 
 	if (metadata) {
-		if (metadata.title !== undefined) body.title = metadata.title || null;
+		if (metadata.title !== undefined) body.title = metadata.title.trim() || null;
 		if (metadata.description !== undefined) body.description = metadata.description || null;
 		if (metadata.tags !== undefined) body.tags = metadata.tags;
 		if (metadata.people !== undefined) body.people = metadata.people;

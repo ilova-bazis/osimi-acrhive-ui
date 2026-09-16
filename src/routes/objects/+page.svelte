@@ -1,4 +1,5 @@
 <script lang="ts">
+	import BaseDialog from '$lib/components/BaseDialog.svelte';
 	import ObjectsFilterPanel from '$lib/components/ObjectsFilterPanel.svelte';
 	import ObjectsRecentStrip from '$lib/components/ObjectsRecentStrip.svelte';
 	import ObjectsTable from '$lib/components/ObjectsTable.svelte';
@@ -340,33 +341,29 @@
 </div>
 </main>
 
-{#if showResyncConfirm}
-	<button
-		type="button"
-		aria-label={t('common.close')}
-		class="fixed inset-0 z-40 bg-blue-slate/35"
-		onclick={() => (showResyncConfirm = false)}
-	></button>
-	<div class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border-soft bg-surface-white p-6 shadow-[0_30px_80px_rgba(31,47,56,0.35)]">
-		<p class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.resync.confirmTitle')}</p>
-		<p class="mt-3 text-sm text-text-muted">
-			{formatTemplate(t('objects.resync.confirmBodyBulk'), { count: formatCount(selectedIds.length, $locale) })}
-		</p>
-		<div class="mt-5 flex justify-end gap-3">
-			<button
-				type="button"
-				onclick={() => (showResyncConfirm = false)}
-				class="rounded-full border border-border-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:border-blue-slate/35 hover:text-blue-slate"
-			>
-				{t('common.cancel')}
-			</button>
-			<button
-				type="button"
-				onclick={requestBulkResync}
-				class="rounded-full bg-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-surface-white hover:bg-blue-slate-mid-dark"
-			>
-				{t('common.confirm')}
-			</button>
-		</div>
+<BaseDialog
+	open={showResyncConfirm}
+	labelledBy="bulk-resync-dialog-title"
+	onClose={() => (showResyncConfirm = false)}
+>
+	<p id="bulk-resync-dialog-title" class="text-xs uppercase tracking-[0.2em] text-blue-slate">{t('objects.resync.confirmTitle')}</p>
+	<p class="mt-3 text-sm text-text-muted">
+		{formatTemplate(t('objects.resync.confirmBodyBulk'), { count: formatCount(selectedIds.length, $locale) })}
+	</p>
+	<div class="mt-5 flex justify-end gap-3">
+		<button
+			type="button"
+			onclick={() => (showResyncConfirm = false)}
+			class="rounded-full border border-border-soft px-4 py-2 text-xs uppercase tracking-[0.2em] text-text-muted hover:border-blue-slate/35 hover:text-blue-slate"
+		>
+			{t('common.cancel')}
+		</button>
+		<button
+			type="button"
+			onclick={requestBulkResync}
+			class="rounded-full bg-blue-slate px-4 py-2 text-xs uppercase tracking-[0.2em] text-surface-white hover:bg-blue-slate-mid-dark"
+		>
+			{t('common.confirm')}
+		</button>
 	</div>
-{/if}
+</BaseDialog>
