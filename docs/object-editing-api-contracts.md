@@ -10,7 +10,8 @@ It covers only the backend editing foundation that exists today:
 - loading object edit state
 - editing object metadata and rights notes
 - editing OCR page curation for document objects
-- submitting OCR curation for archive apply
+- submitting object changes (metadata, rights/access policy, and curated OCR) as one immutable archive revision
+- querying archive synchronization status and retrying failed submissions
 - revision conflicts
 - validation failures
 - edit history read
@@ -22,16 +23,18 @@ This document does not define transcript or caption editing payloads yet.
 - `GET /api/objects/:object_id/edit`
 - `PATCH /api/objects/:object_id/metadata`
 - `PUT /api/objects/:object_id/curation/document`
-- `POST /api/objects/:object_id/curation/submit`
+- `POST /api/objects/:object_id/changes/submit`
+- `GET /api/objects/:object_id/changes/status`
+- `POST /api/objects/:object_id/change-submissions/:request_id/retry`
 - `DELETE /api/objects/:object_id/edit-lock`
 - `GET /api/objects/:object_id/curation/history`
 
 ## Source of Truth
 
 - UI reads editing state from backend only.
-- UI writes metadata edits, OCR page edits, and curation submits to backend only.
+- UI writes metadata edits, OCR page edits, and object change submissions to backend only.
 - Backend owns edit revisioning and conflict detection.
-- Archive integration is asynchronous and not part of the UI request path for this V1 slice.
+- Archive apply is asynchronous: the UI observes submission status through the backend and never talks to the archive worker directly.
 - `src/lib/api/objectEdit.contract.json` is a vendored copy of the backend-owned `osimi-backend/docs/object-edit-contract-fixtures.json`; update both files in the same change and run their contract tests.
 
 ## GET `/api/objects/:object_id/edit`
@@ -80,7 +83,8 @@ Load the current editing state for one object. Calling this endpoint auto-acquir
   "capabilities": {
     "can_edit_metadata": true,
     "can_curate_text": true,
-    "can_submit_review": true
+    "can_submit_review": true,
+    "can_submit_changes": true
   },
   "curation_payload": {
     "kind": "document",
@@ -127,8 +131,13 @@ Load the current editing state for one object. Calling this endpoint auto-acquir
   - `true` for document objects when the caller is authorized and no other user owns the active lock
   - `false` for non-document objects or a foreign active lock
 - `capabilities.can_submit_review`
+  - legacy wire name for the OCR-publication capability
   - `true` for document objects when the caller is authorized and no other user owns the active lock
   - `false` for non-document objects or a foreign active lock
+- `capabilities.can_submit_changes`
+  - `true` for authorized archiver and admin users when no other user owns the active lock and object change submission is enabled for the environment
+  - `false` for a foreign active lock or a disabled submission feature
+  - applies to every media type; metadata-only submissions do not require a document OCR page projection
 - `curation_payload.kind`
   - currently mirrors `media_type`
   - for `document`, `curation_payload.pages[]` contains OCR editing data
@@ -268,71 +277,145 @@ HTTP `422`
 - On `403 FORBIDDEN`
   - UI should treat the editor as read-only or inaccessible depending on route context
 
-## POST `/api/objects/:object_id/curation/submit`
+## Object Change Submission
 
 ### Purpose
 
-Submit the current OCR curation state for archive-side apply.
+Submit the currently saved object revision — metadata, rights/access policy, and curated document OCR — to the archive as one immutable revision. Submission is asynchronous: the backend packages the revision, records an immutable submission, and enqueues the `object_revision_apply` worker action.
 
-### Roles
+### Feature Gate
+
+- `OBJECT_REVISION_APPLY_ENABLED` environment flag gates submission in the backend.
+- Default is disabled; while disabled the submit endpoint responds as unavailable.
+
+### Worker Contract
+
+- The archive worker consumes a versioned `object_revision_apply` contract. The request payload is staged as an immutable package (metadata, rights, access/embargo policy, curated document text) and downloaded by the worker through the existing archive request source endpoints.
+- UI and backend treat the worker as external: the UI only observes the recorded submission status; it never assumes synchronous archive apply.
+
+### POST `/api/objects/:object_id/changes/submit`
+
+#### Roles
 
 - `archiver`
 - `admin`
 
-### Request
+#### Request
 
 ```json
 {
-  "revision": 2,
-  "review_note": "Ready for archive apply."
+  "revision": 5,
+  "submission_note": "Ready for archive apply."
 }
 ```
 
-### Rules
+#### Rules
 
-- currently supported for document OCR curation only
-- submit is revision-guarded just like metadata and OCR page saves
-- `review_note` is a required nullable transport field; send `null` when no note is needed
-- the UI presents it as an optional publication note stored in edit history, not a message to a human reviewer
-- backend assembles the current curated document text and enqueues `curation_apply`
+- revision-guarded like all other object edit writes; the submitted revision must equal the current object revision
+- `submission_note` is a nullable transport field; send `null` when no note is needed
+- one active (`PENDING`/`PROCESSING`) submission is allowed per object; a second submit while one is active returns a conflict with the existing request id and status
+- a submission for the same revision already recorded is replayed idempotently
 
-### Success Response
+#### Success Response
+
+HTTP `202`
 
 ```json
 {
   "object_id": "OBJ-20260213-ABC123",
-  "revision": 3,
-  "curation_state": "review_in_progress",
-  "request": {
-    "id": "11111111-1111-4111-8111-111111111111",
-    "action_type": "curation_apply",
-    "status": "PENDING"
-  },
-  "submitted_at": "2026-04-14T11:15:00.000Z",
-  "submitted_by": "10000000-0000-0000-0000-000000000001"
+  "current_revision": 5,
+  "submitted_revision": 5,
+  "submission": {
+    "id": "22222222-2222-4222-8222-222222222222",
+    "request_id": "request-um98-changes-1",
+    "action_type": "object_revision_apply",
+    "status": "PENDING",
+    "submitted_at": "2026-04-14T11:15:00.000Z",
+    "submitted_by": "10000000-0000-0000-0000-000000000001"
+  }
 }
 ```
 
-### Revision Conflict Response
+#### Conflict Responses
 
-HTTP `409`
+- HTTP `409` with `code: CHANGES_ALREADY_ACTIVE` and `details.existing_request_id` / `details.existing_request_status` when another submission is active
+- HTTP `409 REVISION_CONFLICT` when the submitted revision is stale
 
-Same shape as other revision-guarded write endpoints.
+### GET `/api/objects/:object_id/changes/status`
+
+#### Purpose
+
+Poll the authoritative archive synchronization state for one object.
+
+#### Roles
+
+- `archiver`
+- `admin`
+
+#### Success Response
+
+HTTP `200`
+
+```json
+{
+  "object_id": "OBJ-20260213-ABC123",
+  "current_revision": 5,
+  "latest_submitted_revision": 5,
+  "latest_applied_revision": 5,
+  "archive_out_of_sync": false,
+  "active_submission": null,
+  "latest_submission": {
+    "id": "22222222-2222-4222-8222-222222222222",
+    "request_id": "request-um98-changes-1",
+    "submitted_revision": 5,
+    "status": "COMPLETED",
+    "submitted_at": "2026-04-14T11:15:00.000Z",
+    "submitted_by": "10000000-0000-0000-0000-000000000001",
+    "completed_at": "2026-04-14T11:16:00.000Z",
+    "failure_reason": null
+  }
+}
+```
+
+#### Field Notes
+
+- `status` is one of `PENDING|PROCESSING|COMPLETED|FAILED|CANCELED`
+- `archive_out_of_sync` is `true` while saved changes are not yet applied to the archive
+- `active_submission` is non-null while a submission is `PENDING` or `PROCESSING`
+
+### POST `/api/objects/:object_id/change-submissions/:request_id/retry`
+
+#### Purpose
+
+Requeue a `FAILED` or `CANCELED` submission for archive apply.
+
+#### Roles
+
+- `archiver`
+- `admin`
+
+#### Request
+
+```json
+{
+  "retry_reason": "Archive worker was unreachable."
+}
+```
+
+#### Rules
+
+- `retry_reason` is a nullable transport field
+- only terminal submissions can be retried
+- success returns the same submission shape as the submit endpoint with the requeued status
 
 ### UI Handling Requirements
 
-- On success, UI should treat the returned revision as the new current editor revision
-- UI should label this operation "Publish curated OCR"; no human review queue is implied
-- UI may surface initial status from the returned request and query the latest object-scoped `curation_apply` request for subsequent status
-- UI should not assume archive apply completed synchronously
-- On `409 REVISION_CONFLICT`
-  - UI should refetch `GET /edit`
-  - UI should prompt user to review the latest backend state before resubmitting with the new revision
-- On `409 CONFLICT` with `code: INVALID_MEDIA_TYPE_FOR_DOCUMENT_CURATION`
-  - Object is not a document type; UI should not allow submit for this object
-- On `409 CONFLICT` with `code: PROJECTION_UNAVAILABLE`
-  - Document has no page projection available for OCR submission
-  - UI should disable publication while continuing to allow metadata editing
+- Distinguish **Save draft** (local object edit writes) from **Submit changes** (asynchronous archive synchronization); submitting does not change the object revision.
+- On success, seed the queued state from the returned submission, close the submission dialog, and poll `GET /changes/status` while a submission is `PENDING`/`PROCESSING`.
+- If the action response is lost, reconcile from `GET /changes/status` before accepting the state as unknown.
+- On `409 CONFLICT` with `code: CHANGES_ALREADY_ACTIVE`, adopt the existing request id and status instead of resubmitting.
+- Surface `FAILED` submissions with the retry action; never allow a second active submit.
+- UI should not assume archive apply completed synchronously.
 
 ## PUT `/api/objects/:object_id/curation/document`
 

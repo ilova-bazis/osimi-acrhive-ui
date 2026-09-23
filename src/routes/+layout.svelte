@@ -1,6 +1,5 @@
 <script lang="ts">
 	import './layout.css';
-	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/stores';
 	import { afterNavigate, beforeNavigate } from '$app/navigation';
 	import AppMobileHeader from '$lib/components/AppMobileHeader.svelte';
@@ -77,7 +76,11 @@ let { children, data } = $props<{
 	});
 </script>
 
-<svelte:head><link rel="icon" href={favicon} /></svelte:head>
+<svelte:head>
+	<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+	<link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
+	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+</svelte:head>
 
 {#if showSidebar}
 	<div class="app-mobile-frame lg:grid lg:grid-cols-[232px_1fr]">

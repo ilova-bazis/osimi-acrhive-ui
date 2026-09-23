@@ -1,10 +1,17 @@
 import { page, userEvent } from 'vitest/browser';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
+import type { SubmitFunction } from '@sveltejs/kit';
 import { locale } from '$lib/i18n/locale';
+import type { ActionData } from './$types';
+
+const { enhanceMock } = vi.hoisted(() => ({ enhanceMock: vi.fn() }));
 
 vi.mock('$app/forms', () => ({
-	enhance: () => ({ destroy: () => {} })
+	enhance: (formElement: HTMLFormElement, submit: unknown) => {
+		enhanceMock(formElement, submit);
+		return { destroy: () => {} };
+	}
 }));
 
 vi.mock('$app/paths', () => ({
@@ -13,9 +20,46 @@ vi.mock('$app/paths', () => ({
 
 import NewIngestionPage from './+page.svelte';
 
-const renderPage = () => render(NewIngestionPage, { form: null });
+const attemptData = {
+	idempotencyKey: '123e4567-e89b-12d3-a456-426614174000',
+	attemptCreatedAt: '2026-09-21T08:15:00.000Z'
+};
+
+const renderPage = (form: ActionData | null = null) =>
+	render(NewIngestionPage, { data: attemptData as never, form });
+
+const capturedSubmit = (): { formElement: HTMLFormElement; submit: SubmitFunction } => {
+	const [formElement, submit] = enhanceMock.mock.calls[0] as [HTMLFormElement, SubmitFunction];
+	return { formElement, submit };
+};
+
+const submitInput = (formElement: HTMLFormElement) => ({
+	action: new URL('https://example.test/ingestion/new'),
+	cancel: vi.fn(),
+	controller: new AbortController(),
+	formData: new FormData(formElement),
+	formElement,
+	submitter: null
+});
+
+type SubmitResultCallback = (opts: {
+	formData: FormData;
+	formElement: HTMLFormElement;
+	action: URL;
+	result: {
+		type: 'success' | 'failure' | 'redirect' | 'error';
+		status?: number;
+		data?: Record<string, unknown>;
+		location?: string;
+	};
+	update: (options?: { reset?: boolean; invalidateAll?: boolean }) => Promise<void>;
+}) => Promise<void>;
 
 describe('/ingestion/new +page.svelte localization', () => {
+	beforeEach(() => {
+		enhanceMock.mockReset();
+	});
+
 	afterEach(() => {
 		locale.setLocale('en');
 	});
@@ -227,5 +271,180 @@ describe('/ingestion/new +page.svelte localization', () => {
 			'form#new-batch-form input[name="pipelinePreset"]'
 		) as HTMLInputElement;
 		expect(presetInput.value).toBe('auto');
+	});
+
+	describe('submission guard and attempt data', () => {
+		it('renders hidden attempt fields from page data', () => {
+			const screen = renderPage();
+			const form = screen.container.querySelector('form#new-batch-form') as HTMLFormElement;
+			const keyInput = form.querySelector('input[name="idempotencyKey"]') as HTMLInputElement;
+			const tsInput = form.querySelector('input[name="attemptCreatedAt"]') as HTMLInputElement;
+
+			expect(keyInput.value).toBe(attemptData.idempotencyKey);
+			expect(tsInput.value).toBe(attemptData.attemptCreatedAt);
+		});
+
+		it('prefers action data attempt values after a failed submission', () => {
+			const screen = renderPage({
+				error: 'Invalid item kind.',
+				code: 'INVALID_PIPELINE_CAPABILITY',
+				idempotencyKey: '99999999-9999-4999-8999-999999999999',
+				attemptCreatedAt: '2026-09-21T09:30:00.000Z',
+				values: { name: 'Batch 01' }
+			});
+			const form = screen.container.querySelector('form#new-batch-form') as HTMLFormElement;
+			const keyInput = form.querySelector('input[name="idempotencyKey"]') as HTMLInputElement;
+
+			expect(keyInput.value).toBe('99999999-9999-4999-8999-999999999999');
+		});
+
+		it('rehydrates form state from action data after a native failure', () => {
+			const screen = renderPage({
+				error: 'Request failed for ingestions.create',
+				code: 'UNKNOWN_ERROR',
+				idempotencyKey: attemptData.idempotencyKey,
+				attemptCreatedAt: attemptData.attemptCreatedAt,
+				values: {
+					name: 'Kept batch name',
+					classificationType: 'image',
+					itemKind: 'photo',
+					languageCode: 'ru',
+					pipelinePreset: 'auto',
+					accessLevel: 'family',
+					summaryTags: ['kept-tag'],
+					summary: 'Kept summary text'
+				}
+			});
+			const form = screen.container.querySelector('form#new-batch-form') as HTMLFormElement;
+
+			const nameInput = form.querySelector('input[name="name"]') as HTMLInputElement;
+			expect(nameInput.value).toBe('Kept batch name');
+
+			const kindInput = form.querySelector('input[name="itemKind"]') as HTMLInputElement;
+			expect(kindInput.value).toBe('photo');
+
+			const classificationInput = form.querySelector(
+				'input[name="classificationType"]'
+			) as HTMLInputElement;
+			expect(classificationInput.value).toBe('image');
+
+			const languageInput = form.querySelector('input[name="languageCode"]') as HTMLInputElement;
+			expect(languageInput.value).toBe('ru');
+
+			const presetInput = form.querySelector('input[name="pipelinePreset"]') as HTMLInputElement;
+			expect(presetInput.value).toBe('auto');
+
+			const accessInput = form.querySelector('input[name="accessLevel"]') as HTMLInputElement;
+			expect(accessInput.value).toBe('family');
+
+			const tagsInput = form.querySelector('input[name="summaryTags"]') as HTMLInputElement;
+			expect(tagsInput.value).toBe('kept-tag');
+
+			const summaryInput = form.querySelector('textarea[name="summary"]') as HTMLTextAreaElement;
+			expect(summaryInput.value).toBe('Kept summary text');
+
+			expect(screen.container.textContent).toContain('kept-tag');
+		});
+
+		it('enters the creating state on the first submission', async () => {
+			renderPage();
+			const { formElement, submit } = capturedSubmit();
+
+			const result = submit(submitInput(formElement));
+
+			await expect.element(page.getByRole('button', { name: 'Creating…' })).toBeInTheDocument();
+			expect(typeof result).toBe('function');
+		});
+
+		it('cancels a second synchronous submission', async () => {
+			renderPage();
+			const { formElement, submit } = capturedSubmit();
+
+			const first = submit(submitInput(formElement));
+			expect(first).toBeTypeOf('function');
+
+			const secondInput = submitInput(formElement);
+			const second = submit(secondInput);
+			expect(second).toBeUndefined();
+			expect(secondInput.cancel).toHaveBeenCalledTimes(1);
+
+			await expect.element(page.getByRole('button', { name: 'Creating…' })).toBeInTheDocument();
+		});
+
+		it('calls update and re-enables Continue for a failure result', async () => {
+			renderPage();
+			const { formElement, submit } = capturedSubmit();
+			const callback = submit(submitInput(formElement)) as SubmitResultCallback;
+			const update = vi.fn().mockResolvedValue(undefined);
+
+			await callback({
+				action: new URL('https://example.test/ingestion/new'),
+				formData: new FormData(formElement),
+				formElement,
+				result: {
+					type: 'failure',
+					status: 400,
+					data: { error: 'boom', code: 'BAD_REQUEST' }
+				},
+				update
+			});
+
+			expect(update).toHaveBeenCalledTimes(1);
+			await expect.element(page.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
+		});
+
+		it('re-enables Continue when applying the result rejects', async () => {
+			renderPage();
+			const { formElement, submit } = capturedSubmit();
+			const callback = submit(submitInput(formElement)) as SubmitResultCallback;
+			const update = vi.fn().mockRejectedValue(new Error('apply failed'));
+
+			await expect(
+				callback({
+					action: new URL('https://example.test/ingestion/new'),
+					formData: new FormData(formElement),
+					formElement,
+					result: { type: 'failure', status: 502, data: { error: 'boom' } },
+					update
+				})
+			).rejects.toThrow('apply failed');
+
+			await expect.element(page.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
+		});
+
+		it('passes redirect results to the standard update path', async () => {
+			renderPage();
+			const { formElement, submit } = capturedSubmit();
+			const callback = submit(submitInput(formElement)) as SubmitResultCallback;
+			const update = vi.fn().mockResolvedValue(undefined);
+
+			await callback({
+				action: new URL('https://example.test/ingestion/new'),
+				formData: new FormData(formElement),
+				formElement,
+				result: { type: 'redirect', status: 303, location: '/ingestion/batch-1/setup' },
+				update
+			});
+
+			expect(update).toHaveBeenCalledTimes(1);
+		});
+
+		it('shows a fresh attempt link when the backend reports a conflict', async () => {
+			renderPage({
+				error: 'Idempotency key was already used for a different request.',
+				code: 'CONFLICT',
+				idempotencyKey: attemptData.idempotencyKey,
+				attemptCreatedAt: attemptData.attemptCreatedAt,
+				values: { name: 'Batch 01' }
+			});
+
+			await expect
+				.element(page.getByRole('link', { name: 'Start a new batch' }))
+				.toBeInTheDocument();
+
+			const link = document.querySelector('a[data-sveltekit-reload]');
+			expect(link).not.toBeNull();
+			expect(link?.getAttribute('href')).toBe('/ingestion/new');
+		});
 	});
 });

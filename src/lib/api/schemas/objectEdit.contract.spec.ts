@@ -3,14 +3,15 @@ import { describe, expect, it } from 'vitest';
 import contract from '../objectEdit.contract.json';
 import { backendErrorSchema } from './errors';
 import {
+	objectArchiveSyncSchema,
 	objectEditPayloadSchema,
 	releaseLockResultSchema,
 	saveDocumentCurationRequestSchema,
 	saveDocumentCurationResultSchema,
 	saveMetadataRequestSchema,
 	saveMetadataResultSchema,
-	submitCurationRequestSchema,
-	submitCurationResultSchema,
+	submitObjectChangesRequestSchema,
+	submitObjectChangesResultSchema,
 } from './objectEdit';
 
 describe('backend-owned object-edit contract fixture', () => {
@@ -21,8 +22,9 @@ describe('backend-owned object-edit contract fixture', () => {
 		expect(saveMetadataResultSchema.safeParse(contract.save_metadata.response).success).toBe(true);
 		expect(saveDocumentCurationRequestSchema.safeParse(contract.save_document_curation.request).success).toBe(true);
 		expect(saveDocumentCurationResultSchema.safeParse(contract.save_document_curation.response).success).toBe(true);
-		expect(submitCurationRequestSchema.safeParse(contract.submit_curation.request).success).toBe(true);
-		expect(submitCurationResultSchema.safeParse(contract.submit_curation.response).success).toBe(true);
+		expect(submitObjectChangesRequestSchema.safeParse(contract.submit_changes.request).success).toBe(true);
+		expect(submitObjectChangesResultSchema.safeParse(contract.submit_changes.response).success).toBe(true);
+		expect(objectArchiveSyncSchema.safeParse(contract.archive_sync_status).success).toBe(true);
 		expect(releaseLockResultSchema.safeParse(contract.release_lock.response).success).toBe(true);
 	});
 

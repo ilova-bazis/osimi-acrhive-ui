@@ -18,7 +18,7 @@ import {
 	isPipelinePresetAllowedForItemKind,
 	type PipelinePreset
 } from '$lib/ingestion/pipelineCapabilities';
-import type { Actions } from './$types';
+import type { Actions, PageServerLoad } from './$types';
 
 const DEFAULTS = {
 	languageCode: 'en',
@@ -27,6 +27,42 @@ const DEFAULTS = {
 	classificationType: 'document' as const,
 	itemKind: 'document' as const
 };
+
+type AttemptValues = {
+	name: string;
+	classificationType?: ClassificationType;
+	itemKind?: ItemKind;
+	languageCode?: string;
+	pipelinePreset?: PipelinePreset;
+	accessLevel?: 'private' | 'family' | 'public';
+	summaryTags?: string[];
+	summary?: string;
+};
+
+const IDEMPOTENCY_KEY_PATTERN =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const RFC3339_PATTERN =
+	/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+const parseIdempotencyKey = (value: string | undefined): string | undefined => {
+	if (!value) return undefined;
+	const normalized = value.trim();
+	return IDEMPOTENCY_KEY_PATTERN.test(normalized) ? normalized : undefined;
+};
+
+const parseAttemptCreatedAt = (value: string | undefined): Date | undefined => {
+	if (!value) return undefined;
+	const normalized = value.trim();
+	if (!RFC3339_PATTERN.test(normalized)) return undefined;
+	const date = new Date(normalized);
+	return Number.isNaN(date.getTime()) ? undefined : date;
+};
+
+export const load: PageServerLoad = () => ({
+	idempotencyKey: crypto.randomUUID(),
+	attemptCreatedAt: new Date().toISOString()
+});
 
 const toOptionalString = (value: FormDataEntryValue | null): string | undefined => {
 	const normalized = String(value ?? '').trim();
@@ -50,13 +86,17 @@ const parseTags = (value: string): string[] =>
 		)
 	);
 
-const toBatchLabel = (value: string, localeKey: string): string => {
+const toBatchLabel = (
+	value: string,
+	localeKey: string,
+	attemptCreatedAt: Date
+): string => {
 	const normalized = value.trim();
 	if (normalized.length > 0) return normalized;
 
 	const locale = localeKey in translations ? (localeKey as LocaleKey) : 'en';
 	const dictionary = translations[locale];
-	const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+	const stamp = attemptCreatedAt.toISOString().slice(0, 16).replace(/[:T]/g, '-');
 	return formatTemplate(translate(dictionary, 'ingestionNew.untitledBatch'), {
 		stamp
 	});
@@ -90,10 +130,29 @@ export const actions: Actions = {
 		}
 
 		const data = await request.formData();
-		const name = toBatchLabel(
-			String(data.get('name') ?? ''),
-			String(data.get('locale') ?? '')
+		const idempotencyKey = parseIdempotencyKey(
+			toOptionalString(data.get('idempotencyKey'))
 		);
+		const attemptCreatedAt = parseAttemptCreatedAt(
+			toOptionalString(data.get('attemptCreatedAt'))
+		);
+		if (!idempotencyKey || !attemptCreatedAt) {
+			return fail(400, {
+				error: 'Invalid creation attempt.',
+				code: 'INVALID_ATTEMPT',
+				idempotencyKey: undefined,
+				attemptCreatedAt: undefined,
+				values: { name: '' }
+			});
+		}
+		const attemptData = {
+			idempotencyKey,
+			attemptCreatedAt: attemptCreatedAt.toISOString()
+		};
+
+		const localeKey = String(data.get('locale') ?? '');
+		const name = toBatchLabel(String(data.get('name') ?? ''), localeKey, attemptCreatedAt);
+		const values: AttemptValues = { name };
 
 		const rawItemKind = String(data.get('itemKind') ?? '').trim();
 		let itemKind: ItemKind;
@@ -102,13 +161,16 @@ export const actions: Actions = {
 			if (!parsedKind.success) {
 				return fail(400, {
 					error: 'Invalid item kind.',
-					code: 'INVALID_PIPELINE_CAPABILITY'
+					code: 'INVALID_PIPELINE_CAPABILITY',
+					...attemptData,
+					values
 				});
 			}
 			itemKind = parsedKind.data;
 		} else {
 			itemKind = DEFAULTS.itemKind;
 		}
+		values.itemKind = itemKind;
 
 		const rawClassificationType = String(
 			data.get('classificationType') ?? data.get('documentType') ?? ''
@@ -119,18 +181,23 @@ export const actions: Actions = {
 			if (!parsedClassification.success) {
 				return fail(400, {
 					error: 'Invalid classification type.',
-					code: 'INVALID_PIPELINE_CAPABILITY'
+					code: 'INVALID_PIPELINE_CAPABILITY',
+					...attemptData,
+					values
 				});
 			}
 			classificationType = parsedClassification.data;
 		} else {
 			classificationType = classificationFromItemKind(itemKind);
 		}
+		values.classificationType = classificationType;
 
 		if (!isItemKindAllowedForClassification(classificationType, itemKind)) {
 			return fail(400, {
 				error: 'Incompatible classification type and item kind.',
-				code: 'INVALID_PIPELINE_CAPABILITY'
+				code: 'INVALID_PIPELINE_CAPABILITY',
+				...attemptData,
+				values
 			});
 		}
 
@@ -140,18 +207,23 @@ export const actions: Actions = {
 			if (!isPipelinePreset(rawPipelinePreset)) {
 				return fail(400, {
 					error: 'Invalid pipeline preset.',
-					code: 'INVALID_PIPELINE_CAPABILITY'
+					code: 'INVALID_PIPELINE_CAPABILITY',
+					...attemptData,
+					values
 				});
 			}
 			pipelinePreset = rawPipelinePreset;
 		} else {
 			pipelinePreset = DEFAULTS.pipelinePreset;
 		}
+		values.pipelinePreset = pipelinePreset;
 
 		if (!isPipelinePresetAllowedForItemKind(pipelinePreset, itemKind)) {
 			return fail(400, {
 				error: 'Incompatible pipeline preset and item kind.',
-				code: 'INVALID_PIPELINE_CAPABILITY'
+				code: 'INVALID_PIPELINE_CAPABILITY',
+				...attemptData,
+				values
 			});
 		}
 
@@ -161,20 +233,26 @@ export const actions: Actions = {
 			if (rawAccessLevel !== 'private' && rawAccessLevel !== 'family' && rawAccessLevel !== 'public') {
 				return fail(400, {
 					error: 'Invalid access level.',
-					code: 'INVALID_PIPELINE_CAPABILITY'
+					code: 'INVALID_PIPELINE_CAPABILITY',
+					...attemptData,
+					values
 				});
 			}
 			accessLevel = rawAccessLevel;
 		} else {
 			accessLevel = DEFAULTS.accessLevel;
 		}
+		values.accessLevel = accessLevel;
 
 		const languageCode = String(data.get('languageCode') ?? '').trim() || DEFAULTS.languageCode;
+		values.languageCode = languageCode;
 		const embargoUntil = toRfc3339(toOptionalString(data.get('embargoUntil')));
 		const rightsNote = toOptionalString(data.get('rightsNote'));
 		const sensitivityNote = toOptionalString(data.get('sensitivityNote'));
 		const summaryText = String(data.get('summary') ?? '').trim();
 		const summaryTags = parseTags(String(data.get('summaryTags') ?? ''));
+		values.summary = summaryText.length > 0 ? summaryText : undefined;
+		values.summaryTags = summaryTags;
 		const summary = {
 			title: {
 				primary: name,
@@ -218,7 +296,8 @@ export const actions: Actions = {
 				},
 				context: {
 					fetchFn: fetch,
-					token
+					token,
+					idempotencyKey
 				}
 			});
 		} catch (cause) {
@@ -228,15 +307,24 @@ export const actions: Actions = {
 			}
 
 			if (isApiClientError(cause)) {
-				return fail(cause.code === 'BAD_REQUEST' ? 400 : 502, {
-					error: cause.message
+				const status =
+					cause.code === 'BAD_REQUEST'
+						? 400
+						: cause.code === 'CONFLICT'
+							? 409
+							: 502;
+				return fail(status, {
+					error: cause.message,
+					code: cause.code,
+					...attemptData,
+					values
 				});
 			}
 
 			throw cause;
 		}
 
-		cookies.set(`ingestion-item-kind:${result.batchId}`, itemKind, {
+		cookies.set(`ingestion-item-kind-${result.batchId}`, itemKind, {
 			path: `/ingestion/${result.batchId}`,
 			httpOnly: true,
 			sameSite: 'lax',

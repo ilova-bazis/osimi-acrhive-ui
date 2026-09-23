@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+	mapObjectArchiveSync,
 	mapObjectEditDocumentPage,
 	mapObjectEditPayload,
 	mapReleaseLockResult,
 	mapSaveDocumentCurationResult,
 	mapSaveMetadataResult,
-	mapSubmitCurationResult,
+	mapSubmitObjectChangesResult,
 } from './objectEditMapper';
 
 describe('objectEditMapper', () => {
@@ -55,6 +56,7 @@ describe('objectEditMapper', () => {
 					can_edit_metadata: true,
 					can_curate_text: true,
 					can_submit_review: false,
+					can_submit_changes: true,
 				},
 				curation_payload: {
 					kind: 'document',
@@ -80,7 +82,7 @@ describe('objectEditMapper', () => {
 			draft: { updatedAt: '2026-05-23T18:00:00.000Z', updatedBy: 'u1' },
 			metadata: { title: 'Object title', people: ['Ada'] },
 			rights: { accessLevel: 'family', rightsNote: 'Rights' },
-			capabilities: { canEditMetadata: true, canCurateText: true, canSubmitReview: false },
+			capabilities: { canEditMetadata: true, canCurateText: true, canSubmitChanges: true },
 			curation: { kind: 'document', machineOcrArtifactId: 'ocr-1', pages: [{ curatedText: 'Edited' }] },
 		});
 	});
@@ -115,22 +117,68 @@ describe('objectEditMapper', () => {
 		});
 
 		expect(
-			mapSubmitCurationResult({
+			mapSubmitObjectChangesResult({
 				object_id: 'OBJ-1',
-				revision: 7,
-				curation_state: 'review_in_progress',
-				request: { id: 'req-1', action_type: 'CURATION_REVIEW', status: 'PENDING' },
-				submitted_at: '2026-05-23T18:02:00.000Z',
-				submitted_by: 'u1',
+				current_revision: 6,
+				submitted_revision: 6,
+				submission: {
+					id: 'sub-1',
+					request_id: 'req-1',
+					action_type: 'object_revision_apply',
+					status: 'PENDING',
+					submitted_at: '2026-05-23T18:02:00.000Z',
+					submitted_by: 'u1',
+				},
 			}),
 		).toEqual({
 			objectId: 'OBJ-1',
-			revision: 7,
-			curationState: 'review_in_progress',
-			submittedAt: '2026-05-23T18:02:00.000Z',
-			submittedBy: 'u1',
-			requestId: 'req-1',
-			requestStatus: 'PENDING',
+			currentRevision: 6,
+			submittedRevision: 6,
+			submission: {
+				id: 'sub-1',
+				requestId: 'req-1',
+				status: 'PENDING',
+				submittedAt: '2026-05-23T18:02:00.000Z',
+				submittedBy: 'u1',
+			},
+		});
+
+		expect(
+			mapObjectArchiveSync({
+				object_id: 'OBJ-1',
+				current_revision: 6,
+				latest_submitted_revision: 6,
+				latest_applied_revision: 6,
+				archive_out_of_sync: false,
+				active_submission: null,
+				latest_submission: {
+					id: 'sub-1',
+					request_id: 'req-1',
+					submitted_revision: 6,
+					status: 'COMPLETED',
+					submitted_at: '2026-05-23T18:02:00.000Z',
+					submitted_by: 'u1',
+					completed_at: '2026-05-23T18:03:00.000Z',
+					failure_reason: null,
+				},
+			}),
+		).toEqual({
+			objectId: 'OBJ-1',
+			currentRevision: 6,
+			latestSubmittedRevision: 6,
+			latestAppliedRevision: 6,
+			archiveOutOfSync: false,
+			activeSubmission: null,
+			latestSubmission: {
+				id: 'sub-1',
+				requestId: 'req-1',
+				submittedRevision: 6,
+				status: 'COMPLETED',
+				submittedAt: '2026-05-23T18:02:00.000Z',
+				submittedBy: 'u1',
+				completedAt: '2026-05-23T18:03:00.000Z',
+				failureReason: null,
+			},
 		});
 
 		expect(mapReleaseLockResult({ object_id: 'OBJ-1', released: true })).toEqual({

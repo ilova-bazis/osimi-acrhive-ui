@@ -17,7 +17,7 @@ The UI locale controls interface text only. Archival content languages (Persian,
 - Locale store: `src/lib/i18n/locale.ts`. Holds the active locale, persists it, and synchronizes `<html lang>`.
 - Helpers: `src/lib/i18n/translate.ts` provides safe own-property dot-path lookup (`translate` for static keys, `translateDynamic` for open values) and `{placeholder}` template substitution. `src/lib/i18n/format.ts` provides locale-aware UTC timestamps, counts, and byte sizes.
 - Shared shell navigation: `src/lib/navigation/appShell.ts` defines the desktop/mobile destinations and route matching; `labelKey` is a typed `TranslationKey`.
-- Selection UI: `src/lib/components/LocaleSwitcher.svelte`, consumed by `AppSidebar` (desktop), `AppMobileHeader` (mobile), and the login page.
+- Selection UI: `src/lib/components/LocaleSwitcher.svelte`, consumed by the authenticated desktop shell utility row (`+layout.svelte`), `AppMobileHeader` (mobile), and the login page.
 
 ## Persistence and initialization
 

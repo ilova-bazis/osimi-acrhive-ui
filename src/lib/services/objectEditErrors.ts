@@ -29,7 +29,6 @@ export type ObjectEditErrorCode =
 	| 'partialFailedRefresh'
 	| 'validationFailed'
 	| 'saveFailed'
-	| 'ocrUnavailable'
-	| 'publishForbidden'
-	| 'changedBeforePublish'
-	| 'publishFailed';
+	| 'submitForbidden'
+	| 'changedBeforeSubmit'
+	| 'submitFailed';

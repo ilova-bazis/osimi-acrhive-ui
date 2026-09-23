@@ -140,6 +140,46 @@ describe('backendRequest', () => {
 		});
 	});
 
+	it('maps generic backend conflicts to CONFLICT', async () => {
+		const fetchFn = vi.fn().mockResolvedValue(
+			jsonResponse(
+				{
+					error: {
+						code: 'CONFLICT',
+						message: 'Idempotency key was already used for a different request.',
+					},
+				},
+				409,
+			),
+		);
+
+		await expect(backendRequest({
+			fetchFn,
+			path: '/api/test',
+			context: 'test.conflict',
+			responseSchema: z.object({ ok: z.boolean() }),
+		})).rejects.toMatchObject({
+			code: 'CONFLICT',
+			status: 409,
+			message: 'Idempotency key was already used for a different request.',
+		});
+	});
+
+	it('maps backend 409 responses without an error code to CONFLICT', async () => {
+		const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ message: 'Plain conflict' }, 409));
+
+		await expect(backendRequest({
+			fetchFn,
+			path: '/api/test',
+			context: 'test.plainConflict',
+			responseSchema: z.object({ ok: z.boolean() }),
+		})).rejects.toMatchObject({
+			code: 'CONFLICT',
+			status: 409,
+			message: 'Plain conflict',
+		});
+	});
+
 	it('preserves validation failures and field details', async () => {
 		const fetchFn = vi.fn().mockResolvedValue(
 			jsonResponse(

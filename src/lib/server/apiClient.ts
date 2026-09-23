@@ -8,6 +8,7 @@ export type ApiClientErrorCode =
     | "LOCKED"
     | "REVISION_CONFLICT"
     | "PUBLICATION_ALREADY_ACTIVE"
+    | "CONFLICT"
     | "VALIDATION_FAILED"
     | "NOT_FOUND"
     | "BAD_REQUEST"
@@ -96,6 +97,7 @@ const toAppCode = (
     if (backendCode === "LOCKED" || status === 423) return "LOCKED";
     if (backendCode === "REVISION_CONFLICT") return "REVISION_CONFLICT";
     if (backendCode === "PUBLICATION_ALREADY_ACTIVE") return "PUBLICATION_ALREADY_ACTIVE";
+    if (backendCode === "CONFLICT" || status === 409) return "CONFLICT";
     if (backendCode === "VALIDATION_FAILED" || status === 422) return "VALIDATION_FAILED";
     if (backendCode === "NOT_FOUND" || status === 404) return "NOT_FOUND";
     return "UNKNOWN_ERROR";

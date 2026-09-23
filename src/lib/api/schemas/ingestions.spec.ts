@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { ingestionDetailResponseSchema, ingestionDtoSchema, ingestionsListResponseSchema } from './ingestions';
+import {
+	createIngestionResponseSchema,
+	ingestionDetailResponseSchema,
+	ingestionDtoSchema,
+	ingestionsListResponseSchema
+} from './ingestions';
 
 const resourceFields = {
 	staging_purge: { state: 'NOT_SCHEDULED' as const, started_at: null, purged_at: null },
@@ -28,6 +33,30 @@ describe('ingestionDtoSchema', () => {
 		if (!parsed.success) {
 			expect(parsed.error.issues[0]?.message).toBe('Expected at least one ingestion identifier field');
 		}
+	});
+});
+
+describe('createIngestionResponseSchema', () => {
+	it('accepts a canonical ingestion id', () => {
+		expect(createIngestionResponseSchema.safeParse({ ingestion: { id: 'ing-1' } }).success).toBe(true);
+	});
+
+	it('accepts a canonical id alongside legacy aliases', () => {
+		expect(
+			createIngestionResponseSchema.safeParse({
+				ingestion: { id: 'ing-1', ingestion_id: 'ing-1', batch_label: 'Batch 1' }
+			}).success
+		).toBe(true);
+	});
+
+	it('rejects responses with alias-only identifiers', () => {
+		expect(createIngestionResponseSchema.safeParse({ ingestion: { ingestion_id: 'ing-1' } }).success).toBe(false);
+		expect(createIngestionResponseSchema.safeParse({ ingestion: { batch_id: 'batch-1' } }).success).toBe(false);
+		expect(createIngestionResponseSchema.safeParse({ ingestion: { batch_label: 'Batch 1' } }).success).toBe(false);
+	});
+
+	it('rejects responses without any identifier', () => {
+		expect(createIngestionResponseSchema.safeParse({ ingestion: { status: 'draft' } }).success).toBe(false);
 	});
 });
 

@@ -37,9 +37,11 @@ vi.mock('$env/dynamic/private', () => ({
 
 import { ApiClientError } from '$lib/server/apiClient';
 import {
+	objectArchiveSyncSchema,
+	retryObjectChangeSubmissionRequestSchema,
 	saveDocumentCurationRequestSchema,
 	saveMetadataRequestSchema,
-	submitCurationRequestSchema,
+	submitObjectChangesRequestSchema,
 } from '$lib/api/schemas/objectEdit';
 import { ObjectEditLockedError, ObjectEditRevisionConflictError } from './objectEdit';
 import { apiObjectEditService } from './apiObjectEditService';
@@ -58,7 +60,7 @@ describe('apiObjectEditService', () => {
 			curation_state: 'draft', draft: null,
 			metadata: { title: 'Object title', publication_date: '2026', date_precision: 'year', date_approximate: false, language: 'en', tags: ['archive'], people: ['Ada'], description: null },
 			rights: { access_level: 'family', rights_note: null, sensitivity_note: null },
-			capabilities: { can_edit_metadata: true, can_curate_text: true, can_submit_review: false },
+			capabilities: { can_edit_metadata: true, can_curate_text: true, can_submit_review: false, can_submit_changes: true },
 			curation_payload: { kind: 'document', machine_ocr_artifact_id: 'ocr-1', page_count: 1, pages: [{ page_number: 1, label: '1', machine_text: 'Raw', curated_text: null, status: 'machine' }] },
 		});
 
@@ -147,29 +149,104 @@ describe('apiObjectEditService', () => {
 		);
 	});
 
-	it('maps submit requests to backend transport shape', async () => {
+	it('maps submit changes requests to backend transport shape', async () => {
 		backendRequestMock.mockResolvedValue({
 			object_id: 'OBJ-1',
-			revision: 5,
-			curation_state: 'review_in_progress',
-			request: { id: 'req-1', action_type: 'CURATION_REVIEW', status: 'PENDING' },
-			submitted_at: '2026-05-23T18:00:00.000Z',
-			submitted_by: 'u1',
+			current_revision: 5,
+			submitted_revision: 5,
+			submission: {
+				id: 'sub-1',
+				request_id: 'req-1',
+				action_type: 'object_revision_apply',
+				status: 'PENDING',
+				submitted_at: '2026-05-23T18:00:00.000Z',
+				submitted_by: 'u1',
+			},
 		});
 
-		await apiObjectEditService.submitObjectCuration({
+		await apiObjectEditService.submitObjectChanges({
 			context,
 			objectId: 'OBJ-1',
 			revision: 4,
-			reviewNote: 'Ready',
+			submissionNote: 'Ready for archive.',
 		});
 
 		expect(backendRequestMock).toHaveBeenCalledWith(
-				expect.objectContaining({
-					path: '/api/objects/OBJ-1/curation/submit',
-					method: 'POST',
-					requestSchema: submitCurationRequestSchema,
-					body: { revision: 4, review_note: 'Ready' },
+			expect.objectContaining({
+				path: '/api/objects/OBJ-1/changes/submit',
+				method: 'POST',
+				requestSchema: submitObjectChangesRequestSchema,
+				body: { revision: 4, submission_note: 'Ready for archive.' },
+			}),
+		);
+	});
+
+	it('maps archive sync status requests to backend transport shape', async () => {
+		backendRequestMock.mockResolvedValue({
+			object_id: 'OBJ-1',
+			current_revision: 5,
+			latest_submitted_revision: 5,
+			latest_applied_revision: 5,
+			archive_out_of_sync: false,
+			active_submission: null,
+			latest_submission: {
+				id: 'sub-1',
+				request_id: 'req-1',
+				submitted_revision: 5,
+				status: 'COMPLETED',
+				submitted_at: '2026-05-23T18:00:00.000Z',
+				submitted_by: 'u1',
+				completed_at: '2026-05-23T18:01:00.000Z',
+				failure_reason: null,
+			},
+		});
+
+		await expect(
+			apiObjectEditService.getObjectArchiveSync({ context, objectId: 'OBJ-1' }),
+		).resolves.toMatchObject({
+			objectId: 'OBJ-1',
+			currentRevision: 5,
+			latestAppliedRevision: 5,
+			archiveOutOfSync: false,
+			latestSubmission: { status: 'COMPLETED', submittedRevision: 5 },
+		});
+		expect(backendRequestMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				path: '/api/objects/OBJ-1/changes/status',
+				method: 'GET',
+				responseSchema: objectArchiveSyncSchema,
+			}),
+		);
+	});
+
+	it('maps retry requests to backend transport shape', async () => {
+		backendRequestMock.mockResolvedValue({
+			object_id: 'OBJ-1',
+			current_revision: 5,
+			submitted_revision: 4,
+			submission: {
+				id: 'sub-1',
+				request_id: 'req-1',
+				action_type: 'object_revision_apply',
+				status: 'PENDING',
+				submitted_at: '2026-05-23T18:00:00.000Z',
+				submitted_by: 'u1',
+			},
+		});
+
+		await apiObjectEditService.retryObjectChangeSubmission({
+			context,
+			objectId: 'OBJ-1',
+			requestId: 'req-1',
+			retryReason: 'Manual retry.',
+		});
+
+		expect(backendRequestMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				path: '/api/objects/OBJ-1/change-submissions/req-1/retry',
+				method: 'POST',
+				requestSchema: retryObjectChangeSubmissionRequestSchema,
+				body: { retry_reason: 'Manual retry.' },
 			}),
 		);
 	});
@@ -185,14 +262,14 @@ describe('apiObjectEditService', () => {
 		);
 
 		await expect(
-			apiObjectEditService.submitObjectCuration({ context, objectId: 'OBJ-1', revision: 4, reviewNote: null }),
+			apiObjectEditService.submitObjectChanges({ context, objectId: 'OBJ-1', revision: 4, submissionNote: null }),
 		).rejects.toMatchObject({
 			name: 'ObjectEditLockedError',
 			lockedBy: 'u2',
 			lockedUntil: '2026-05-23T19:00:00.000Z',
 		});
 		await expect(
-			apiObjectEditService.submitObjectCuration({ context, objectId: 'OBJ-1', revision: 4, reviewNote: null }),
+			apiObjectEditService.retryObjectChangeSubmission({ context, objectId: 'OBJ-1', requestId: 'req-1', retryReason: null }),
 		).rejects.toBeInstanceOf(ObjectEditLockedError);
 	});
 

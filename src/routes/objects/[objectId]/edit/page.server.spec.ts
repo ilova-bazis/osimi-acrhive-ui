@@ -6,12 +6,14 @@ const {
 	getObjectEditPayloadMock,
 	saveObjectMetadataMock,
 	saveDocumentCurationMock,
-	submitObjectCurationMock,
+	submitObjectChangesMock,
+	retryObjectChangeSubmissionMock,
 } = vi.hoisted(() => ({
 	getObjectEditPayloadMock: vi.fn(),
 	saveObjectMetadataMock: vi.fn(),
 	saveDocumentCurationMock: vi.fn(),
-	submitObjectCurationMock: vi.fn(),
+	submitObjectChangesMock: vi.fn(),
+	retryObjectChangeSubmissionMock: vi.fn(),
 }));
 
 vi.mock('$lib/services', () => ({
@@ -19,7 +21,8 @@ vi.mock('$lib/services', () => ({
 		getObjectEditPayload: getObjectEditPayloadMock,
 		saveObjectMetadata: saveObjectMetadataMock,
 		saveDocumentCuration: saveDocumentCurationMock,
-		submitObjectCuration: submitObjectCurationMock,
+		submitObjectChanges: submitObjectChangesMock,
+		retryObjectChangeSubmission: retryObjectChangeSubmissionMock,
 	},
 }));
 
@@ -52,7 +55,7 @@ const baseEditPayload = {
 	capabilities: {
 		canEditMetadata: true,
 		canCurateText: true,
-		canSubmitReview: true,
+		canSubmitChanges: true,
 	},
 	curation: {
 		kind: 'document',
@@ -111,7 +114,8 @@ describe('/objects/[objectId]/edit +page.server', () => {
 		getObjectEditPayloadMock.mockReset();
 		saveObjectMetadataMock.mockReset();
 		saveDocumentCurationMock.mockReset();
-		submitObjectCurationMock.mockReset();
+		submitObjectChangesMock.mockReset();
+		retryObjectChangeSubmissionMock.mockReset();
 		getObjectEditPayloadMock.mockResolvedValue(baseEditPayload);
 		saveObjectMetadataMock.mockResolvedValue({
 			objectId: 'OBJ-1',
@@ -125,14 +129,17 @@ describe('/objects/[objectId]/edit +page.server', () => {
 			updatedCount: 1,
 			updatedAt: '2026-05-23T18:00:00.000Z',
 		});
-		submitObjectCurationMock.mockResolvedValue({
+		submitObjectChangesMock.mockResolvedValue({
 			objectId: 'OBJ-1',
-			revision: 5,
-			curationState: 'under_review',
-			submittedAt: '2026-05-23T18:00:00.000Z',
-			submittedBy: 'u1',
-			requestId: 'req-1',
-			requestStatus: 'PENDING',
+			currentRevision: 4,
+			submittedRevision: 4,
+			submission: {
+				id: 'sub-1',
+				requestId: 'req-1',
+				status: 'PENDING',
+				submittedAt: '2026-05-23T18:00:00.000Z',
+				submittedBy: 'u1',
+			},
 		});
 	});
 
@@ -358,116 +365,101 @@ describe('/objects/[objectId]/edit +page.server', () => {
 		);
 	});
 
-	it('submits curation when capability allows review submission', async () => {
+	it('submits changes when the capability allows it', async () => {
 		const form = new FormData();
-		form.set('reviewNote', 'Looks ready');
+		form.set('submissionNote', 'Looks ready');
 		form.set('revision', '4');
 
-		const result = await actions.submitCuration(makeEvent(form));
+		const result = await actions.submitChanges(makeEvent(form));
 
 		expect(result).toEqual({
 			success: true,
-			revision: 5,
-			curationState: 'under_review',
-			requestId: 'req-1',
-			requestStatus: 'PENDING',
+			currentRevision: 4,
+			submittedRevision: 4,
+			submission: {
+				id: 'sub-1',
+				requestId: 'req-1',
+				status: 'PENDING',
+				submittedAt: '2026-05-23T18:00:00.000Z',
+				submittedBy: 'u1',
+			},
 		});
-		expect(submitObjectCurationMock).toHaveBeenCalledWith(
-			expect.objectContaining({ objectId: 'OBJ-1', revision: 4, reviewNote: 'Looks ready' }),
+		expect(submitObjectChangesMock).toHaveBeenCalledWith(
+			expect.objectContaining({ objectId: 'OBJ-1', revision: 4, submissionNote: 'Looks ready' }),
 		);
 	});
 
-	it('lets the backend resolve an exact retry after the visible revision advances', async () => {
-		getObjectEditPayloadMock.mockResolvedValue({ ...baseEditPayload, revision: 5 });
-		submitObjectCurationMock.mockResolvedValue({
-			objectId: 'OBJ-1',
-			revision: 5,
-			curationState: 'under_review',
-			submittedAt: '2026-05-23T18:00:00.000Z',
-			submittedBy: 'u1',
-			requestId: 'req-existing',
-			requestStatus: 'PROCESSING',
+	it('submits metadata-only changes for documents without OCR pages', async () => {
+		getObjectEditPayloadMock.mockResolvedValue({
+			...baseEditPayload,
+			curation: { kind: 'document', machineOcrArtifactId: null, pageCount: null, pages: [] },
 		});
 		const form = new FormData();
 		form.set('revision', '4');
 
-		const result = await actions.submitCuration(makeEvent(form));
+		const result = await actions.submitChanges(makeEvent(form));
 
-		expect(result).toEqual({
-			success: true,
-			revision: 5,
-			curationState: 'under_review',
-			requestId: 'req-existing',
-			requestStatus: 'PROCESSING',
-		});
-		expect(submitObjectCurationMock).toHaveBeenCalledWith(
+		expect(result).toMatchObject({ success: true });
+		expect(submitObjectChangesMock).toHaveBeenCalledWith(
 			expect.objectContaining({ objectId: 'OBJ-1', revision: 4 }),
 		);
 	});
 
-	it('rejects publication when the document has no OCR page projection', async () => {
+	it('submits metadata-only changes for non-document objects', async () => {
 		getObjectEditPayloadMock.mockResolvedValue({
 			...baseEditPayload,
-			capabilities: { ...baseEditPayload.capabilities, canCurateText: false, canSubmitReview: false },
-			curation: { ...baseEditPayload.curation, pageCount: null, pages: [] },
+			mediaType: 'image',
+			curation: { kind: 'image' },
 		});
 		const form = new FormData();
 		form.set('revision', '4');
 
-		const result = await actions.submitCuration(makeEvent(form));
+		const result = await actions.submitChanges(makeEvent(form));
+
+		expect(result).toMatchObject({ success: true });
+		expect(submitObjectChangesMock).toHaveBeenCalled();
+	});
+
+	it('returns a recovery payload when the visible revision is stale', async () => {
+		getObjectEditPayloadMock.mockResolvedValue({ ...baseEditPayload, revision: 5 });
+		const form = new FormData();
+		form.set('revision', '4');
+
+		const result = await actions.submitChanges(makeEvent(form));
 
 		expect(result).toMatchObject({
 			status: 409,
-			data: { projectionUnavailable: true, errorCode: 'ocrUnavailable' },
+			data: { errorCode: 'changedBeforeSubmit' },
 		});
-		expect(submitObjectCurationMock).not.toHaveBeenCalled();
+		expect(submitObjectChangesMock).not.toHaveBeenCalled();
 	});
 
-	it('surfaces a projection race with the backend request id', async () => {
-		submitObjectCurationMock.mockRejectedValue(new ApiClientError({
+	it('trims blank submission notes to null before submitting', async () => {
+		const form = new FormData();
+		form.set('submissionNote', '   ');
+		form.set('revision', '4');
+
+		await actions.submitChanges(makeEvent(form));
+
+		expect(submitObjectChangesMock).toHaveBeenCalledWith(expect.objectContaining({ submissionNote: null }));
+	});
+
+	it('maps an existing active submission conflict for the UI to adopt', async () => {
+		submitObjectChangesMock.mockRejectedValue(new ApiClientError({
 			status: 409,
-			code: 'UNKNOWN_ERROR',
-			message: 'Projection unavailable',
-			requestId: 'req-projection',
-			details: { code: 'PROJECTION_UNAVAILABLE', object_id: 'OBJ-1' },
+			code: 'CONFLICT',
+			message: 'An object update is already active for this object.',
+			details: { code: 'CHANGES_ALREADY_ACTIVE', existing_request_id: 'req-existing', existing_request_status: 'PROCESSING' },
 		}));
 		const form = new FormData();
 		form.set('revision', '4');
 
-		const result = await actions.submitCuration(makeEvent(form));
-
-		expect(result).toMatchObject({
-			status: 409,
-			data: { projectionUnavailable: true, errorCode: 'ocrUnavailable', errorRequestId: 'req-projection' },
-		});
-	});
-
-	it('trims blank review notes to null before submitting', async () => {
-		const form = new FormData();
-		form.set('reviewNote', '   ');
-		form.set('revision', '4');
-
-		await actions.submitCuration(makeEvent(form));
-
-		expect(submitObjectCurationMock).toHaveBeenCalledWith(expect.objectContaining({ reviewNote: null }));
-	});
-
-	it('maps an existing active publication conflict for the UI to adopt', async () => {
-		submitObjectCurationMock.mockRejectedValue(new ApiClientError({
-			status: 409,
-			code: 'PUBLICATION_ALREADY_ACTIVE',
-			message: 'Publication already active',
-			details: { existing_request_id: 'req-existing', existing_request_status: 'PROCESSING' },
-		}));
-		const form = new FormData();
-		form.set('revision', '4');
-
-		const result = await actions.submitCuration(makeEvent(form));
+		const result = await actions.submitChanges(makeEvent(form));
 
 		expect(result).toMatchObject({
 			status: 409,
 			data: {
-				publicationAlreadyActive: true,
+				submissionAlreadyActive: true,
 				requestId: 'req-existing',
 				requestStatus: 'PROCESSING',
 			},
@@ -484,23 +476,73 @@ describe('/objects/[objectId]/edit +page.server', () => {
 		event.locals.session = null;
 		event.cookies.get = () => undefined;
 
-		const result = await actions.submitCuration(event as never);
+		const result = await actions.submitChanges(event as never);
 
 		expect(result).toMatchObject({ status: 401, data: { sessionRequired: true } });
-		expect(submitObjectCurationMock).not.toHaveBeenCalled();
+		expect(submitObjectChangesMock).not.toHaveBeenCalled();
 	});
 
-	it('rejects submitCuration when submit capability is missing', async () => {
+	it('rejects submitChanges when the submit capability is missing', async () => {
 		getObjectEditPayloadMock.mockResolvedValue({
 			...baseEditPayload,
-			capabilities: { canEditMetadata: true, canCurateText: true, canSubmitReview: false },
+			capabilities: { canEditMetadata: true, canCurateText: true, canSubmitChanges: false },
 		});
 
 		const form = new FormData();
 		form.set('revision', '4');
-		const result = await actions.submitCuration(makeEvent(form));
+		const result = await actions.submitChanges(makeEvent(form));
 
 		expect(result).toMatchObject({ status: 403 });
-		expect(submitObjectCurationMock).not.toHaveBeenCalled();
+		expect(submitObjectChangesMock).not.toHaveBeenCalled();
+	});
+
+	it('requeues a retryable submission through retrySync', async () => {
+		retryObjectChangeSubmissionMock.mockResolvedValue({
+			objectId: 'OBJ-1',
+			currentRevision: 4,
+			submittedRevision: 4,
+			submission: {
+				id: 'sub-1',
+				requestId: 'req-1',
+				status: 'PENDING',
+				submittedAt: '2026-05-23T18:00:00.000Z',
+				submittedBy: 'u1',
+			},
+		});
+		const form = new FormData();
+		form.set('requestId', 'req-1');
+		form.set('retryReason', 'Manual retry.');
+
+		const result = await actions.retrySync(makeEvent(form));
+
+		expect(result).toMatchObject({ success: true });
+		expect(retryObjectChangeSubmissionMock).toHaveBeenCalledWith(
+			expect.objectContaining({ objectId: 'OBJ-1', requestId: 'req-1', retryReason: 'Manual retry.' }),
+		);
+	});
+
+	it('maps a superseded retry conflict for the UI', async () => {
+		retryObjectChangeSubmissionMock.mockRejectedValue(new ApiClientError({
+			status: 409,
+			code: 'CONFLICT',
+			message: 'A newer object revision has already been applied to the archive.',
+			details: { code: 'RETRY_SUPERSEDED', latest_applied_revision: 5 },
+		}));
+		const form = new FormData();
+		form.set('requestId', 'req-1');
+
+		const result = await actions.retrySync(makeEvent(form));
+
+		expect(result).toMatchObject({
+			status: 409,
+			data: { retrySuperseded: true },
+		});
+	});
+
+	it('rejects retrySync without a request id', async () => {
+		const result = await actions.retrySync(makeEvent(new FormData()));
+
+		expect(result).toMatchObject({ status: 400, data: { errorCode: 'invalidPayload' } });
+		expect(retryObjectChangeSubmissionMock).not.toHaveBeenCalled();
 	});
 });

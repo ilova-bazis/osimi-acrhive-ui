@@ -1,0 +1,56 @@
+flowchart TD
+    A[Ingestion completes successfully] --> B[Object appears in Objects catalog]
+    B --> C[Open Objects at /objects]
+    C --> D[Select an object]
+    D --> E[Object detail at /objects/:objectId]
+
+    E --> F{User role?}
+    F -->|Viewer| G[View object only]
+    F -->|Archiver or Admin| H[Select Edit]
+
+    H --> I[Open editor at /objects/:objectId/edit]
+    I --> J{Locked by another user?}
+
+    J -->|Yes| K[Editor opens read-only]
+    J -->|No| L[Acquire 60-minute edit lock]
+
+    L --> M{What should be edited?}
+
+    M -->|Metadata| N[Edit title, description, date, language, tags, people, rights notes]
+    M -->|Document text| O[Open document pages]
+    M -->|Audio or video transcript| P[Transcript editing not supported]
+
+    O --> Q[View machine OCR]
+    Q --> R[Edit curated text page by page]
+
+    N --> S[Save draft]
+    R --> S
+
+    S --> T{Revision still current?}
+    T -->|No| U[409 revision conflict]
+    U --> V[Reload authoritative object and preserve local edits]
+    V --> S
+
+    T -->|Yes| W[Draft saved locally]
+    W --> X[Submit changes]
+
+    X --> Y[Backend packages saved revision:
+    metadata, rights and access policy, curated OCR]
+    Y --> Z[Immutable submission recorded;
+    object_revision_apply queued for archive worker]
+
+    Z --> AA{Submission status?}
+    AA -->|PENDING or PROCESSING| AB[UI polls /changes/status;
+    Submit button shows queued state]
+    AB --> AA
+
+    AA -->|COMPLETED| AC[Revision applied to archive]
+    AC --> AD[Editor shows synchronized state]
+
+    AA -->|FAILED or CANCELED| AE[UI surfaces failure reason]
+    AE --> AF[Retry synchronization via retry endpoint]
+    AF --> AA
+
+    W --> AG[Users may keep editing:
+    save revision N+1 while N synchronizes]
+    AG --> S

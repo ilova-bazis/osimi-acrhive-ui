@@ -29,7 +29,8 @@
     "capabilities": {
       "can_edit_metadata": true,
       "can_curate_text": true,
-      "can_submit_review": true
+      "can_submit_review": true,
+      "can_submit_changes": true
     },
     "curation_payload": {
       "kind": "document",
@@ -88,22 +89,41 @@
       "updated_at": "2026-08-04T12:02:00.000Z"
     }
   },
-  "submit_curation": {
+  "submit_changes": {
     "request": {
       "revision": 6,
-      "review_note": "Ready for archive apply."
+      "submission_note": "Ready for archive synchronization."
     },
     "response": {
       "object_id": "OBJ-20260804-CONTRACT",
-      "revision": 7,
-      "curation_state": "review_in_progress",
-      "request": {
-        "id": "70000000-0000-4000-8000-000000000001",
-        "action_type": "curation_apply",
-        "status": "PENDING"
-      },
+      "current_revision": 6,
+      "submitted_revision": 6,
+      "submission": {
+        "id": "70000000-0000-4000-8000-000000000002",
+        "request_id": "70000000-0000-4000-8000-000000000001",
+        "action_type": "object_revision_apply",
+        "status": "PENDING",
+        "submitted_at": "2026-08-04T12:03:00.000Z",
+        "submitted_by": "10000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  "archive_sync_status": {
+    "object_id": "OBJ-20260804-CONTRACT",
+    "current_revision": 6,
+    "latest_submitted_revision": 6,
+    "latest_applied_revision": 6,
+    "archive_out_of_sync": false,
+    "active_submission": null,
+    "latest_submission": {
+      "id": "70000000-0000-4000-8000-000000000002",
+      "request_id": "70000000-0000-4000-8000-000000000001",
+      "submitted_revision": 6,
+      "status": "COMPLETED",
       "submitted_at": "2026-08-04T12:03:00.000Z",
-      "submitted_by": "10000000-0000-4000-8000-000000000001"
+      "submitted_by": "10000000-0000-4000-8000-000000000001",
+      "completed_at": "2026-08-04T12:04:00.000Z",
+      "failure_reason": null
     }
   },
   "release_lock": {

@@ -15,10 +15,9 @@ export const objectEditErrorKeys: Record<ObjectEditErrorCode, TranslationKey> = 
 	partialFailedRefresh: 'objectEdit.errors.partialFailedRefresh',
 	validationFailed: 'objectEdit.errors.validationFailed',
 	saveFailed: 'objectEdit.errors.saveFailed',
-	ocrUnavailable: 'objectEdit.errors.ocrUnavailable',
-	publishForbidden: 'objectEdit.errors.publishForbidden',
-	changedBeforePublish: 'objectEdit.errors.changedBeforePublish',
-	publishFailed: 'objectEdit.errors.publishFailed'
+	submitForbidden: 'objectEdit.errors.submitForbidden',
+	changedBeforeSubmit: 'objectEdit.errors.changedBeforeSubmit',
+	submitFailed: 'objectEdit.errors.submitFailed'
 };
 
 export const objectEditFieldErrorKeys: Record<ObjectEditFieldErrorCode, TranslationKey> = {

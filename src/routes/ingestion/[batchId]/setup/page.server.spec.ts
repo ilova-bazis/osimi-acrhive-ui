@@ -97,7 +97,7 @@ describe('/ingestion/[batchId]/setup +page.server', () => {
 			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
 			cookies: {
 				get: (name: string) => {
-					if (name === 'ingestion-item-kind:batch-1') return 'scanned_document';
+					if (name === 'ingestion-item-kind-batch-1') return 'scanned_document';
 					return 'token-1';
 				},
 				delete: deleteCookie
@@ -107,7 +107,7 @@ describe('/ingestion/[batchId]/setup +page.server', () => {
 
 		const pageData = result as Exclude<typeof result, void>;
 		expect(pageData.metadata.itemKind).toBe('scanned_document');
-		expect(deleteCookie).toHaveBeenCalledWith('ingestion-item-kind:batch-1', {
+		expect(deleteCookie).toHaveBeenCalledWith('ingestion-item-kind-batch-1', {
 			path: '/ingestion/batch-1'
 		});
 	});
@@ -126,7 +126,7 @@ describe('/ingestion/[batchId]/setup +page.server', () => {
 			locals: { session: { id: 'u1', username: 'test', tenantId: null, role: 'operator' } },
 			cookies: {
 				get: (name: string) =>
-					name === 'ingestion-item-kind:batch-3' ? 'video' : 'token-1',
+					name === 'ingestion-item-kind-batch-3' ? 'video' : 'token-1',
 				delete: deleteCookie
 			},
 			fetch: vi.fn()
@@ -134,7 +134,7 @@ describe('/ingestion/[batchId]/setup +page.server', () => {
 
 		const pageData = result as Exclude<typeof result, void>;
 		expect(pageData.metadata.itemKind).toBe('photo');
-		expect(deleteCookie).toHaveBeenCalledWith('ingestion-item-kind:batch-3', {
+		expect(deleteCookie).toHaveBeenCalledWith('ingestion-item-kind-batch-3', {
 			path: '/ingestion/batch-3'
 		});
 	});

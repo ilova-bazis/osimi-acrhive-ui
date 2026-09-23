@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import { beforeNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -12,6 +13,7 @@
 	import { objectEditErrorKeys, objectEditFieldErrorKeys } from '$lib/i18n/objectEditErrors';
 	import { formatPlural, formatTemplate, translate } from '$lib/i18n/translate';
 	import type { ObjectEditDocumentPage, ObjectEditMediaType, ObjectEditMetadata, ObjectEditPayload } from '$lib/services/objectEdit';
+	import type { ArchiveSyncStatus } from '$lib/services/objectEdit';
 	import type { ObjectEditErrorCode, ObjectEditField, ObjectEditFieldErrorCode, ObjectEditFieldErrors } from '$lib/services/objectEditErrors';
 
 	let { data, form } = $props<{
@@ -22,13 +24,18 @@
 			errorCode?: ObjectEditErrorCode;
 			errorRequestId?: string;
 			fieldErrors?: ObjectEditFieldErrors;
-			curationState?: string;
-			projectionUnavailable?: boolean;
-			requestId?: string;
-			requestStatus?: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
-			revision?: number;
-			publicationAlreadyActive?: boolean;
 			sessionRequired?: boolean;
+			submissionAlreadyActive?: boolean;
+			retrySuperseded?: boolean;
+			currentRevision?: number;
+			submittedRevision?: number;
+			submission?: {
+				id: string;
+				requestId: string;
+				status: ArchiveSyncStatus;
+				submittedAt: string;
+				submittedBy: string | null;
+			};
 			recovery?: {
 				id: string;
 				kind: 'conflict' | 'partial';
@@ -54,17 +61,26 @@
 		);
 	const accessLevelLabel = (level: ObjectEditPayload['rights']['accessLevel']): string =>
 		t(`ingestionSetup.batchIntent.accessLevels.${level}`);
-	type PublicationPollingState = 'idle' | 'fresh' | 'stale-retrying' | 'unavailable' | 'recovered';
-	type PublicationUnavailableReason = 'retry-exhausted' | 'session-required';
-	type PublicationRequest = {
+	type SyncPollingState = 'idle' | 'fresh' | 'stale-retrying' | 'unavailable' | 'recovered';
+	type SyncUnavailableReason = 'retry-exhausted' | 'session-required';
+	type SyncSubmission = {
 		id: string;
-		status: string;
-		failureReason: string | null;
-		createdAt: string;
-		updatedAt: string;
+		requestId: string;
+		submittedRevision: number;
+		status: ArchiveSyncStatus;
+		submittedAt: string;
+		submittedBy: string | null;
 		completedAt: string | null;
-		publicationRevision?: number | null;
-		targetVersion?: string | null;
+		failureReason: string | null;
+	};
+	type SyncStatusPayload = {
+		objectId: string;
+		currentRevision: number;
+		latestSubmittedRevision: number | null;
+		latestAppliedRevision: number | null;
+		archiveOutOfSync: boolean;
+		activeSubmission: SyncSubmission | null;
+		latestSubmission: SyncSubmission | null;
 	};
 	let dismissedFieldErrors = $state<ObjectEditField[]>([]);
 	const effectiveFieldErrors = $derived.by(() => {
@@ -241,185 +257,251 @@
 	let rightsOpen = $state(false);
 	let saving = $state(false);
 	let submitting = $state(false);
-	let reviewNote = $state('');
-	let publishDialogOpen = $state(false);
-	let publicationRequest = $state<PublicationRequest | null>(null);
-	let publicationPollingState = $state<PublicationPollingState>('idle');
-	let publicationUnavailableReason = $state<PublicationUnavailableReason | null>(null);
-	let publicationLastSuccessfulAt = $state<string | null>(null);
-	let publicationPollTimer: ReturnType<typeof setTimeout> | undefined;
-	let publicationPollController: AbortController | undefined;
-	let publicationPollGeneration = 0;
-	let publicationActionController: AbortController | undefined;
-	let publicationActionGeneration = 0;
-	let ambiguousPublicationRevision = $state<number | null>(null);
-	const publicationRetryDelays = [2_000, 4_000, 8_000, 16_000, 30_000] as const;
+	let retryingSync = $state(false);
+	let syncRetryNotice = $state('');
+	let submissionNote = $state('');
+	let submitDialogOpen = $state(false);
+	let syncStatus = $state<SyncStatusPayload | null>(null);
+	let syncPollingState = $state<SyncPollingState>('idle');
+	let syncUnavailableReason = $state<SyncUnavailableReason | null>(null);
+	let syncLastSuccessfulAt = $state<string | null>(null);
+	let syncPollTimer: ReturnType<typeof setTimeout> | undefined;
+	let syncPollController: AbortController | undefined;
+	let syncPollGeneration = 0;
+	let syncActionController: AbortController | undefined;
+	let syncActionGeneration = 0;
+	let ambiguousSubmittedRevision = $state<number | null>(null);
+	const syncRetryDelays = [2_000, 4_000, 8_000, 16_000, 30_000] as const;
 	const hasDocumentPageProjection = $derived(
 		payload.curation.kind === 'document' && payload.curation.pages.length > 0
 	);
-	const publicationStatusAuthoritative = $derived(
-		publicationPollingState === 'fresh' || publicationPollingState === 'recovered'
+	const syncStatusAuthoritative = $derived(
+		syncPollingState === 'fresh' || syncPollingState === 'recovered'
 	);
-	const publicationActive = $derived(
-		publicationStatusAuthoritative &&
-		(publicationRequest?.status === 'PENDING' || publicationRequest?.status === 'PROCESSING')
+	const syncActiveSubmission = $derived(
+		syncStatusAuthoritative &&
+		(syncStatus?.activeSubmission?.status === 'PENDING' || syncStatus?.activeSubmission?.status === 'PROCESSING')
+			? syncStatus.activeSubmission
+			: null
 	);
-	const publicationSessionRequired = $derived(
-		publicationUnavailableReason === 'session-required'
+	const syncActive = $derived(syncActiveSubmission !== null);
+	const syncSessionRequired = $derived(
+		syncUnavailableReason === 'session-required'
 	);
-	const publicationStatusUrl = $derived(`/objects/${encodeURIComponent(payload.objectId)}/publication-status`);
+	const syncLatestSubmission = $derived(syncStatus?.latestSubmission ?? null);
+	const syncCompletedCurrent = $derived(
+		syncLatestSubmission?.status === 'COMPLETED' &&
+		syncLatestSubmission.submittedRevision >= payload.revision
+	);
+	const syncStatusUrl = $derived(`/objects/${encodeURIComponent(payload.objectId)}/sync-status`);
+	const objectIdKey = $derived(payload.objectId);
 
-	const stopPublicationStatusWork = (): number => {
-		const generation = ++publicationPollGeneration;
-		if (publicationPollTimer) clearTimeout(publicationPollTimer);
-		publicationPollTimer = undefined;
-		publicationPollController?.abort();
-		publicationPollController = undefined;
+	const stopSyncStatusWork = (): number => {
+		const generation = ++syncPollGeneration;
+		if (syncPollTimer) clearTimeout(syncPollTimer);
+		syncPollTimer = undefined;
+		syncPollController?.abort();
+		syncPollController = undefined;
 		return generation;
 	};
-	const schedulePublicationFetch = (
+	const scheduleSyncFetch = (
 		url: string,
 		generation: number,
 		delay: number,
 		retryAttempt: number,
 	): void => {
-		if (generation !== publicationPollGeneration) return;
-		if (publicationPollTimer) clearTimeout(publicationPollTimer);
-		publicationPollTimer = setTimeout(() => {
-			if (generation !== publicationPollGeneration) return;
-			void refreshPublicationStatus(url, generation, retryAttempt);
+		if (generation !== syncPollGeneration) return;
+		if (syncPollTimer) clearTimeout(syncPollTimer);
+		syncPollTimer = setTimeout(() => {
+			if (generation !== syncPollGeneration) return;
+			void refreshSyncStatus(url, generation, retryAttempt);
 		}, delay);
 	};
-	const handlePublicationFailure = (
+	const handleSyncFailure = (
 		url: string,
 		generation: number,
 		retryAttempt: number,
 	): void => {
-		if (generation !== publicationPollGeneration) return;
-		if (retryAttempt >= publicationRetryDelays.length) {
-			publicationPollingState = 'unavailable';
-			publicationUnavailableReason = 'retry-exhausted';
+		if (generation !== syncPollGeneration) return;
+		if (retryAttempt >= syncRetryDelays.length) {
+			syncPollingState = 'unavailable';
+			syncUnavailableReason = 'retry-exhausted';
 			return;
 		}
-		publicationPollingState = 'stale-retrying';
-		publicationUnavailableReason = null;
-		schedulePublicationFetch(
+		syncPollingState = 'stale-retrying';
+		syncUnavailableReason = null;
+		scheduleSyncFetch(
 			url,
 			generation,
-			publicationRetryDelays[retryAttempt],
+			syncRetryDelays[retryAttempt],
 			retryAttempt + 1,
 		);
 	};
-	const refreshPublicationStatus = async (
+	const refreshSyncStatus = async (
 		url: string,
 		generation: number,
 		retryAttempt: number,
 	): Promise<void> => {
-		if (generation !== publicationPollGeneration) return;
+		if (generation !== syncPollGeneration) return;
 		const controller = new AbortController();
-		publicationPollController?.abort();
-		publicationPollController = controller;
+		syncPollController?.abort();
+		syncPollController = controller;
 		try {
 			const response = await fetch(url, {
 				cache: 'no-store',
 				redirect: 'manual',
 				signal: controller.signal,
 			});
-			if (generation !== publicationPollGeneration) return;
+			if (generation !== syncPollGeneration) return;
 			if (
 				response.status === 401 ||
 				response.type === 'opaqueredirect' ||
 				(response.status >= 300 && response.status < 400) ||
 				response.redirected
 			) {
-				publicationPollingState = 'unavailable';
-				publicationUnavailableReason = 'session-required';
+				syncPollingState = 'unavailable';
+				syncUnavailableReason = 'session-required';
 				return;
 			}
-			if (!response.ok) throw new Error('Publication status unavailable');
-			const body = await response.json() as { request?: PublicationRequest | null };
-			if (generation !== publicationPollGeneration) return;
-			publicationRequest = body.request ?? null;
+			if (!response.ok) throw new Error('Archive synchronization status unavailable');
+			const body = (await response.json()) as SyncStatusPayload;
+			if (generation !== syncPollGeneration) return;
+			syncStatus = body;
 			if (
-				ambiguousPublicationRevision !== null &&
-				publicationRequest?.publicationRevision === ambiguousPublicationRevision + 1
+				ambiguousSubmittedRevision !== null &&
+				body.latestSubmittedRevision === ambiguousSubmittedRevision
 			) {
-				ambiguousPublicationRevision = null;
+				ambiguousSubmittedRevision = null;
 			}
-			publicationLastSuccessfulAt = new Date().toISOString();
-			publicationPollingState = retryAttempt > 0 || publicationPollingState === 'stale-retrying' || publicationPollingState === 'unavailable'
+			syncLastSuccessfulAt = new Date().toISOString();
+			syncPollingState = retryAttempt > 0 || syncPollingState === 'stale-retrying' || syncPollingState === 'unavailable'
 				? 'recovered'
 				: 'fresh';
-			publicationUnavailableReason = null;
-			if (publicationRequest?.status === 'PENDING' || publicationRequest?.status === 'PROCESSING') {
-				schedulePublicationFetch(url, generation, 12_000, 0);
+			syncUnavailableReason = null;
+			if (body.activeSubmission?.status === 'PENDING' || body.activeSubmission?.status === 'PROCESSING') {
+				scheduleSyncFetch(url, generation, 12_000, 0);
 			}
 		} catch {
-			if (generation !== publicationPollGeneration || controller.signal.aborted) return;
-			handlePublicationFailure(url, generation, retryAttempt);
+			if (generation !== syncPollGeneration || controller.signal.aborted) return;
+			handleSyncFailure(url, generation, retryAttempt);
 		}
 	};
-	const startPublicationStatusWork = (url = publicationStatusUrl, clearCachedRequest = false): void => {
+	const startSyncStatusWork = (url = syncStatusUrl, clearCachedStatus = false): void => {
 		// The route effect clears the cache and must only depend on the object URL.
-		const recovering = !clearCachedRequest &&
-			(publicationPollingState === 'stale-retrying' || publicationPollingState === 'unavailable');
-		const generation = stopPublicationStatusWork();
-		if (clearCachedRequest) {
-			publicationRequest = null;
-			publicationLastSuccessfulAt = null;
+		const recovering = !clearCachedStatus &&
+			(syncPollingState === 'stale-retrying' || syncPollingState === 'unavailable');
+		const generation = stopSyncStatusWork();
+		if (clearCachedStatus) {
+			syncStatus = null;
+			syncLastSuccessfulAt = null;
+			syncRetryNotice = '';
 		}
-		publicationPollingState = recovering && !clearCachedRequest ? 'unavailable' : 'idle';
-		publicationUnavailableReason = null;
-		void refreshPublicationStatus(url, generation, 0);
+		syncPollingState = recovering && !clearCachedStatus ? 'unavailable' : 'idle';
+		syncUnavailableReason = null;
+		void refreshSyncStatus(url, generation, 0);
 	};
-	const seedPublication = (
-		requestId: string,
-		requestStatus: string,
+	const seedSync = (
+		submission: {
+			id: string;
+			requestId: string;
+			status: ArchiveSyncStatus;
+			submittedAt: string;
+			submittedBy: string | null;
+		},
+		submittedRevision: number,
 		statusUrl: string,
-		publicationRevision: number | null,
 	): void => {
-		const generation = stopPublicationStatusWork();
+		const generation = stopSyncStatusWork();
 		const now = new Date().toISOString();
-		publicationRequest = {
-			id: requestId,
-			status: requestStatus,
-			failureReason: null,
-			createdAt: now,
-			updatedAt: now,
+		const seeded: SyncSubmission = {
+			id: submission.id,
+			requestId: submission.requestId,
+			submittedRevision,
+			status: submission.status,
+			submittedAt: submission.submittedAt,
+			submittedBy: submission.submittedBy,
 			completedAt: null,
-			publicationRevision,
-			targetVersion: null,
+			failureReason: null,
 		};
-		publicationLastSuccessfulAt = now;
-		publicationPollingState = 'fresh';
-		publicationUnavailableReason = null;
-		if (requestStatus === 'PENDING' || requestStatus === 'PROCESSING') {
-			schedulePublicationFetch(statusUrl, generation, 12_000, 0);
+		syncStatus = {
+			objectId: payload.objectId,
+			currentRevision: payload.revision,
+			latestSubmittedRevision: submittedRevision,
+			latestAppliedRevision: null,
+			archiveOutOfSync: true,
+			activeSubmission: submission.status === 'PENDING' || submission.status === 'PROCESSING' ? seeded : null,
+			latestSubmission: seeded,
+		};
+		syncLastSuccessfulAt = now;
+		syncPollingState = 'fresh';
+		syncUnavailableReason = null;
+		if (submission.status === 'PENDING' || submission.status === 'PROCESSING') {
+			scheduleSyncFetch(statusUrl, generation, 12_000, 0);
 		}
 	};
-	const stopPublicationActionWork = (clearAmbiguous = false): void => {
-		publicationActionGeneration += 1;
-		publicationActionController?.abort();
-		publicationActionController = undefined;
+	const stopSyncActionWork = (clearAmbiguous = false): void => {
+		syncActionGeneration += 1;
+		syncActionController?.abort();
+		syncActionController = undefined;
 		submitting = false;
-		if (clearAmbiguous) ambiguousPublicationRevision = null;
+		if (clearAmbiguous) ambiguousSubmittedRevision = null;
 	};
-	const publicationActionIsCurrent = (generation: number, objectId: string): boolean =>
-		generation === publicationActionGeneration && payload.objectId === objectId;
+	const syncActionIsCurrent = (generation: number, objectId: string): boolean =>
+		generation === syncActionGeneration && payload.objectId === objectId;
+
+	const reconcileSubmitFromStatus = async (
+		url: string,
+		actionGeneration: number,
+		objectId: string,
+		submittedRevision: number,
+	): Promise<boolean> => {
+		try {
+			const response = await fetch(url, { cache: 'no-store', redirect: 'manual' });
+			if (!syncActionIsCurrent(actionGeneration, objectId)) return true;
+			if (!response.ok) return false;
+			const body = (await response.json()) as SyncStatusPayload;
+			if (!syncActionIsCurrent(actionGeneration, objectId)) return true;
+			const match =
+				(body.activeSubmission && body.activeSubmission.submittedRevision >= submittedRevision)
+					? body.activeSubmission
+					: body.latestSubmission && body.latestSubmission.submittedRevision >= submittedRevision
+						? body.latestSubmission
+						: null;
+			if (!match) return false;
+			submitting = false;
+			submitDialogOpen = false;
+			submissionNote = '';
+			ambiguousSubmittedRevision = null;
+			seedSync(
+				{
+					id: match.id,
+					requestId: match.requestId,
+					status: match.status,
+					submittedAt: match.submittedAt,
+					submittedBy: match.submittedBy,
+				},
+				match.submittedRevision,
+				url,
+			);
+			return true;
+		} catch {
+			return false;
+		}
+	};
 
 	$effect(() => {
-		const url = publicationStatusUrl;
-		startPublicationStatusWork(url, true);
+		const url = syncStatusUrl;
+		untrack(() => startSyncStatusWork(url, true));
 		return () => {
-			stopPublicationStatusWork();
+			untrack(() => stopSyncStatusWork());
 		};
 	});
 
 	$effect(() => {
-		const objectId = payload.objectId;
-		stopPublicationActionWork(true);
+		const objectId = objectIdKey;
+		untrack(() => stopSyncActionWork(true));
 		return () => {
-			if (payload.objectId === objectId) stopPublicationActionWork(true);
+			if (objectIdKey === objectId) untrack(() => stopSyncActionWork(true));
 		};
 	});
 
@@ -517,18 +599,28 @@
 	// Lock release helpers
 	const releaseLockUrl = $derived(`/objects/${payload.objectId}/edit-lock`);
 
-	// Release lock when navigating away within the app
-	beforeNavigate(() => {
-		if (!data.isLockedByOtherUser) {
+	// Warn before leaving with unsaved changes; release the lock only after navigation is accepted.
+	beforeNavigate((navigation) => {
+		if (data.isLockedByOtherUser) {
 			fetch(releaseLockUrl, { method: 'DELETE' });
+			return;
 		}
+		if (isDirty && !window.confirm(t('objectEdit.unsavedNavigationWarning'))) {
+			navigation.cancel();
+			return;
+		}
+		fetch(releaseLockUrl, { method: 'DELETE' });
 	});
 
-	// Release lock when tab/browser closes
+	// Warn on tab close while dirty; do not release the lock for a canceled unload.
 	$effect(() => {
 		if (data.isLockedByOtherUser) return;
-		const handler = () => {
-			fetch(releaseLockUrl, { method: 'DELETE', keepalive: true });
+		const handler = (event: BeforeUnloadEvent) => {
+			if (!isDirty) {
+				fetch(releaseLockUrl, { method: 'DELETE', keepalive: true });
+				return;
+			}
+			event.preventDefault();
 		};
 		window.addEventListener('beforeunload', handler);
 		return () => window.removeEventListener('beforeunload', handler);
@@ -580,7 +672,7 @@
 			</span>
 		{/if}
 
-		{#if payload.capabilities.canEditMetadata || payload.capabilities.canCurateText}
+		{#if payload.capabilities.canEditMetadata || payload.capabilities.canCurateText || payload.capabilities.canSubmitChanges}
 			<div class="ml-1 flex shrink-0 items-center gap-2">
 				<form
 					id="form-save"
@@ -604,29 +696,31 @@
 					</button>
 				</form>
 
-				{#if payload.curation.kind === 'document'}
+				{#if payload.capabilities.canSubmitChanges}
 					<button
 						type="button"
-						disabled={!hasDocumentPageProjection || !payload.capabilities.canSubmitReview || isDirty || publicationActive || publicationSessionRequired}
-						onclick={() => (publishDialogOpen = true)}
+						disabled={isDirty || saving || submitting || syncActive || syncSessionRequired || !syncStatusAuthoritative || data.isLockedByOtherUser || Boolean(form?.locked)}
+						onclick={() => (submitDialogOpen = true)}
 						class="rounded-full bg-blue-slate px-3.5 py-1.5 text-[10px] uppercase tracking-[0.2em] text-surface-white transition hover:bg-blue-slate-mid-dark disabled:pointer-events-none disabled:opacity-40"
-						title={!hasDocumentPageProjection
-							? t('objectEdit.publish.disabledNoPages')
-							: isDirty
-								? t('objectEdit.publish.disabledDirty')
-								: publicationActive
-									? t('objectEdit.publish.disabledActive')
-									: publicationSessionRequired
-										? t('objectEdit.publish.disabledSession')
-									: undefined}
+						title={isDirty
+							? t('objectEdit.submit.disabledDirty')
+							: data.isLockedByOtherUser || form?.locked
+								? t('objectEdit.submit.disabledLocked')
+								: syncActive
+									? t('objectEdit.submit.disabledActive')
+									: syncSessionRequired
+										? t('objectEdit.submit.disabledSession')
+										: !syncStatusAuthoritative
+											? syncPollingState === 'unavailable'
+												? t('objectEdit.submit.disabledUnavailable')
+												: t('objectEdit.submit.disabledChecking')
+											: undefined}
 					>
-						{publicationStatusAuthoritative && publicationRequest?.status === 'PROCESSING'
-							? t('objectEdit.publish.processing')
-							: publicationStatusAuthoritative && publicationRequest?.status === 'PENDING'
-								? t('objectEdit.publish.queued')
-								: hasDocumentPageProjection
-									? t('objectEdit.publish.submit')
-									: t('objectEdit.publish.unavailable')}
+						{syncActiveSubmission?.status === 'PROCESSING'
+							? t('objectEdit.submit.processing')
+							: syncActiveSubmission?.status === 'PENDING'
+								? t('objectEdit.submit.queued')
+								: t('objectEdit.submit.submit')}
 					</button>
 				{/if}
 			</div>
@@ -652,50 +746,114 @@
 		</div>
 	{/if}
 
-	{#if publicationRequest}
+	{#if syncStatus && syncLatestSubmission}
 		<div class="shrink-0 border-b border-blue-slate/10 bg-pale-sky/15 px-4 py-2.5 sm:px-6">
-			<p class="text-[10px] text-blue-slate">
-				{#if !publicationStatusAuthoritative}
-					<span class="mr-2 font-medium uppercase tracking-[0.12em] text-text-muted">{t('objectEdit.publication.lastKnown')}</span>
+			<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+				<p class="text-[10px] text-blue-slate">
+					{#if !syncStatusAuthoritative}
+						<span class="mr-2 font-medium uppercase tracking-[0.12em] text-text-muted">{t('objectEdit.sync.lastKnown')}</span>
+					{/if}
+					{#if syncActiveSubmission}
+						{syncActiveSubmission.status === 'PENDING'
+							? formatTemplate(t('objectEdit.sync.statusPENDING'), { revision: syncActiveSubmission.submittedRevision })
+							: formatTemplate(t('objectEdit.sync.statusPROCESSING'), { revision: syncActiveSubmission.submittedRevision })}
+					{:else if syncLatestSubmission.status === 'COMPLETED'}
+						{syncCompletedCurrent
+							? formatTemplate(t('objectEdit.sync.statusCOMPLETED'), { revision: syncLatestSubmission.submittedRevision })
+							: formatTemplate(t('objectEdit.sync.statusCOMPLETED_BEHIND'), { revision: syncLatestSubmission.submittedRevision })}
+					{:else if syncLatestSubmission.status === 'FAILED'}
+						{formatTemplate(t('objectEdit.sync.statusFAILED'), {
+							suffix: syncLatestSubmission.failureReason ? `: ${syncLatestSubmission.failureReason}` : '.'
+						})}
+					{:else if syncLatestSubmission.status === 'CANCELED'}
+						{t('objectEdit.sync.statusCANCELED')}
+					{:else}
+						{formatTemplate(t('objectEdit.sync.statusUNKNOWN'), { status: syncLatestSubmission.status })}
+					{/if}
+					<span class="ml-2 text-text-muted">{formatTemplate(t('objectEdit.sync.requestId'), { id: syncLatestSubmission.requestId })}</span>
+				</p>
+				{#if syncStatusAuthoritative && !syncActiveSubmission && (syncLatestSubmission.status === 'FAILED' || syncLatestSubmission.status === 'CANCELED')}
+					<form
+						id="form-retry-sync"
+						method="POST"
+						action="?/retrySync"
+						class="inline-flex items-center"
+						use:enhance={() => {
+							retryingSync = true;
+							syncRetryNotice = '';
+							return async ({ update, result }) => {
+								const actionData = result.type === 'success' || result.type === 'failure'
+									? result.data as {
+											retrySuperseded?: boolean;
+											sessionRequired?: boolean;
+											submittedRevision?: number;
+											submission?: {
+												id: string;
+												requestId: string;
+												status: ArchiveSyncStatus;
+												submittedAt: string;
+												submittedBy: string | null;
+											};
+										}
+									: null;
+								retryingSync = false;
+								if (actionData?.retrySuperseded) {
+									syncRetryNotice = t('objectEdit.sync.retrySuperseded');
+									return;
+								}
+								if (actionData?.sessionRequired || result.type === 'redirect') {
+									syncPollingState = 'unavailable';
+									syncUnavailableReason = 'session-required';
+									return;
+								}
+								if (actionData?.submission && typeof actionData.submittedRevision === 'number') {
+									seedSync(actionData.submission, actionData.submittedRevision, syncStatusUrl);
+									return;
+								}
+								await update({ reset: false });
+								startSyncStatusWork();
+							};
+						}}
+					>
+						<input type="hidden" name="requestId" value={syncLatestSubmission.requestId} />
+						<button
+							type="submit"
+							disabled={retryingSync}
+							class="rounded-full border border-blue-slate/25 px-2.5 py-1 text-[9px] uppercase tracking-[0.12em] text-blue-slate transition hover:bg-pale-sky/30 disabled:pointer-events-none disabled:opacity-40"
+						>
+							{retryingSync ? t('objectEdit.submit.processing') : t('objectEdit.sync.retryButton')}
+						</button>
+					</form>
 				{/if}
-				{#if publicationRequest.status === 'PENDING'}
-					{t('objectEdit.publication.statusPENDING')}
-				{:else if publicationRequest.status === 'PROCESSING'}
-					{t('objectEdit.publication.statusPROCESSING')}
-				{:else if publicationRequest.status === 'COMPLETED'}
-					{t('objectEdit.publication.statusCOMPLETED')}
-				{:else if publicationRequest.status === 'FAILED'}
-					{formatTemplate(t('objectEdit.publication.statusFAILED'), {
-						suffix: publicationRequest.failureReason ? `: ${publicationRequest.failureReason}` : '.'
-					})}
-				{:else if publicationRequest.status === 'CANCELED'}
-					{t('objectEdit.publication.statusCANCELED')}
-				{:else}
-					{formatTemplate(t('objectEdit.publication.statusUNKNOWN'), { status: publicationRequest.status })}
+				{#if syncRetryNotice}
+					<p class="text-[10px] font-medium text-burnt-peach">{syncRetryNotice}</p>
 				{/if}
-				<span class="ml-2 text-text-muted">{formatTemplate(t('objectEdit.publication.requestId'), { id: publicationRequest.id })}</span>
-			</p>
+			</div>
+		</div>
+	{:else if syncStatusAuthoritative && syncStatus?.archiveOutOfSync}
+		<div class="shrink-0 border-b border-pearl-beige bg-pearl-beige/35 px-4 py-2.5 sm:px-6">
+			<p class="text-[10px] text-text-ink">{t('objectEdit.sync.outOfSyncSaved')}</p>
 		</div>
 	{/if}
-	{#if publicationPollingState === 'stale-retrying' || publicationPollingState === 'unavailable' || publicationPollingState === 'recovered'}
+	{#if syncPollingState === 'stale-retrying' || syncPollingState === 'unavailable' || syncPollingState === 'recovered'}
 		<div class="shrink-0 border-b border-border-soft px-4 py-2 sm:px-6" role="status">
 			<p class="text-[10px] text-text-muted">
-				{publicationPollingState === 'stale-retrying'
-					? t('objectEdit.publication.retrying')
-					: publicationPollingState === 'recovered'
-						? t('objectEdit.publication.recovered')
-						: publicationSessionRequired
-							? t('objectEdit.publication.sessionRequired')
-							: t('objectEdit.publication.statusUnavailable')}
-				{#if publicationLastSuccessfulAt}
-					<span class="ml-1">{formatTemplate(t('objectEdit.publication.lastSuccessful'), { time: formatDateTime(publicationLastSuccessfulAt, $locale) })}</span>
+				{syncPollingState === 'stale-retrying'
+					? t('objectEdit.sync.retrying')
+					: syncPollingState === 'recovered'
+						? t('objectEdit.sync.recovered')
+						: syncSessionRequired
+							? t('objectEdit.sync.sessionRequired')
+							: t('objectEdit.sync.statusUnavailable')}
+				{#if syncLastSuccessfulAt}
+					<span class="ml-1">{formatTemplate(t('objectEdit.sync.lastSuccessful'), { time: formatDateTime(syncLastSuccessfulAt, $locale) })}</span>
 				{/if}
-				{#if publicationPollingState === 'unavailable'}
-					{#if publicationSessionRequired}
-						<a href={resolve('/login')} target="_blank" rel="noopener" class="ml-2 font-medium text-blue-slate underline underline-offset-2">{t('objectEdit.publication.loginAction')}</a>
-						<button type="button" onclick={() => startPublicationStatusWork()} class="ml-2 font-medium text-blue-slate underline underline-offset-2">{t('objectEdit.publication.retryAction')}</button>
+				{#if syncPollingState === 'unavailable'}
+					{#if syncSessionRequired}
+						<a href={resolve('/login')} target="_blank" rel="noopener" class="ml-2 font-medium text-blue-slate underline underline-offset-2">{t('objectEdit.sync.loginAction')}</a>
+						<button type="button" onclick={() => startSyncStatusWork()} class="ml-2 font-medium text-blue-slate underline underline-offset-2">{t('objectEdit.sync.retryAction')}</button>
 					{:else}
-						<button type="button" onclick={() => startPublicationStatusWork()} class="ml-2 font-medium text-blue-slate underline underline-offset-2">{t('objectEdit.publication.retryAction')}</button>
+						<button type="button" onclick={() => startSyncStatusWork()} class="ml-2 font-medium text-blue-slate underline underline-offset-2">{t('objectEdit.sync.retryAction')}</button>
 					{/if}
 				{/if}
 			</p>
@@ -887,115 +1045,134 @@
 </div>
 
 <BaseDialog
-	open={publishDialogOpen}
-	labelledBy="publish-dialog-title"
+	open={submitDialogOpen}
+	labelledBy="submit-dialog-title"
 	onClose={() => {
-		if (!submitting) publishDialogOpen = false;
+		if (!submitting) submitDialogOpen = false;
 	}}
 >
-	<h2 id="publish-dialog-title" class="font-display text-xl text-text-ink">{t('objectEdit.publishDialog.title')}</h2>
+	<h2 id="submit-dialog-title" class="font-display text-xl text-text-ink">{t('objectEdit.submitDialog.title')}</h2>
 	<p class="mt-2 text-sm leading-relaxed text-text-muted">
-		{t('objectEdit.publishDialog.body')}
+		{t('objectEdit.submitDialog.body')}
 	</p>
 	<form
 		id="form-submit"
 		method="POST"
-		action="?/submitCuration"
+		action="?/submitChanges"
 		class="mt-5"
 		use:enhance={({ controller, formData }) => {
-			publicationActionController?.abort();
-			publicationActionController = controller;
-			const actionGeneration = ++publicationActionGeneration;
+			syncActionController?.abort();
+			syncActionController = controller;
+			const actionGeneration = ++syncActionGeneration;
 			const actionObjectId = payload.objectId;
-			const actionStatusUrl = publicationStatusUrl;
-			const submittedRevision = ambiguousPublicationRevision ?? Number(formData.get('revision'));
+			const actionStatusUrl = syncStatusUrl;
+			const submittedRevision = ambiguousSubmittedRevision ?? Number(formData.get('revision'));
 			formData.set('revision', String(submittedRevision));
-			stopPublicationStatusWork();
-			publicationPollingState = 'idle';
-			publicationUnavailableReason = null;
+			stopSyncStatusWork();
+			syncPollingState = 'idle';
+			syncUnavailableReason = null;
 			submitting = true;
+			let reconcileTimer: ReturnType<typeof setTimeout> | undefined;
+			const reconcile = (): void => {
+				if (!syncActionIsCurrent(actionGeneration, actionObjectId)) return;
+				void reconcileSubmitFromStatus(actionStatusUrl, actionGeneration, actionObjectId, submittedRevision).then((done) => {
+					if (!done && syncActionIsCurrent(actionGeneration, actionObjectId)) {
+						reconcileTimer = setTimeout(reconcile, 4_000);
+					}
+				});
+			};
+			reconcileTimer = setTimeout(reconcile, 4_000);
 			return async ({ update, result }) => {
+				clearTimeout(reconcileTimer);
 				const actionData = result.type === 'success' || result.type === 'failure'
 					? result.data as {
-						requestId?: string;
-						requestStatus?: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
-						revision?: number;
-						publicationAlreadyActive?: boolean;
-						sessionRequired?: boolean;
-					}
+							submissionAlreadyActive?: boolean;
+							requestId?: string;
+							requestStatus?: 'PENDING' | 'PROCESSING';
+							sessionRequired?: boolean;
+							submittedRevision?: number;
+							submission?: {
+								id: string;
+								requestId: string;
+								status: ArchiveSyncStatus;
+								submittedAt: string;
+								submittedBy: string | null;
+							};
+						}
 					: null;
-				if (!publicationActionIsCurrent(actionGeneration, actionObjectId)) return;
-				publicationActionController = undefined;
+				if (!syncActionIsCurrent(actionGeneration, actionObjectId)) return;
+				syncActionController = undefined;
 				if (result.type === 'error') {
 					submitting = false;
-					ambiguousPublicationRevision = submittedRevision;
-					startPublicationStatusWork(actionStatusUrl);
+					ambiguousSubmittedRevision = submittedRevision;
+					startSyncStatusWork(actionStatusUrl);
 					return;
 				}
 				if (
-					actionData?.publicationAlreadyActive &&
+					actionData?.submissionAlreadyActive &&
 					actionData.requestId &&
 					actionData.requestStatus
 				) {
 					submitting = false;
-					publishDialogOpen = false;
-					reviewNote = '';
-					ambiguousPublicationRevision = null;
-					seedPublication(
-						actionData.requestId,
-						actionData.requestStatus,
+					submitDialogOpen = false;
+					submissionNote = '';
+					ambiguousSubmittedRevision = null;
+					seedSync(
+						{
+							id: '',
+							requestId: actionData.requestId,
+							status: actionData.requestStatus,
+							submittedAt: new Date().toISOString(),
+							submittedBy: null,
+						},
+						actionData.submittedRevision ?? submittedRevision,
 						actionStatusUrl,
-						actionData.revision ?? submittedRevision + 1,
 					);
 					return;
 				}
 				if (result.type === 'redirect' || actionData?.sessionRequired) {
 					submitting = false;
-					publicationPollingState = 'unavailable';
-					publicationUnavailableReason = 'session-required';
+					syncPollingState = 'unavailable';
+					syncUnavailableReason = 'session-required';
 					return;
 				}
-				await update({ reset: false, invalidateAll: result.type === 'success' });
-				if (!publicationActionIsCurrent(actionGeneration, actionObjectId)) return;
-				submitting = false;
 				if (
-					actionData?.requestId &&
-					actionData.requestStatus &&
+					actionData?.submission &&
+					typeof actionData.submittedRevision === 'number' &&
 					result.type === 'success'
 				) {
-					publishDialogOpen = false;
-					reviewNote = '';
-					ambiguousPublicationRevision = null;
-					seedPublication(
-						actionData.requestId,
-						actionData.requestStatus,
-						actionStatusUrl,
-						actionData.revision ?? submittedRevision + 1,
-					);
+					submitting = false;
+					submitDialogOpen = false;
+					submissionNote = '';
+					ambiguousSubmittedRevision = null;
+					seedSync(actionData.submission, actionData.submittedRevision, actionStatusUrl);
 					return;
 				}
-				startPublicationStatusWork();
+				await update({ reset: false, invalidateAll: false });
+				if (!syncActionIsCurrent(actionGeneration, actionObjectId)) return;
+				submitting = false;
+				startSyncStatusWork();
 			};
 		}}
 	>
-		<label class="block text-[10px] uppercase tracking-[0.2em] text-blue-slate" for="publication-note">{t('objectEdit.publishDialog.noteLabel')} <span class="normal-case tracking-normal text-text-muted">{t('objectEdit.publishDialog.optional')}</span></label>
+		<label class="block text-[10px] uppercase tracking-[0.2em] text-blue-slate" for="submission-note">{t('objectEdit.submitDialog.noteLabel')} <span class="normal-case tracking-normal text-text-muted">{t('objectEdit.submitDialog.optional')}</span></label>
 		<textarea
-			id="publication-note"
-			name="reviewNote"
+			id="submission-note"
+			name="submissionNote"
 			rows="4"
-			placeholder={t('objectEdit.publishDialog.notePlaceholder')}
-			bind:value={reviewNote}
+			placeholder={t('objectEdit.submitDialog.notePlaceholder')}
+			bind:value={submissionNote}
 			class="mt-2 w-full resize-y rounded-xl border border-border-soft bg-surface-white px-3 py-2 text-sm text-text-ink placeholder:text-text-muted/60 focus:border-blue-slate/40 focus:outline-none focus:ring-1 focus:ring-blue-slate/20"
 		></textarea>
-		<p class="mt-1 text-[10px] text-text-muted">{t('objectEdit.publishDialog.noteHint')}</p>
+		<p class="mt-1 text-[10px] text-text-muted">{t('objectEdit.submitDialog.noteHint')}</p>
 		{#if formError}
 			<p class="mt-3 rounded-xl bg-burnt-peach/10 px-3 py-2 text-xs text-burnt-peach" role="alert">{formError}</p>
 		{/if}
 		<input type="hidden" name="revision" value={payload.revision} />
 		<div class="mt-5 flex flex-wrap justify-end gap-2">
-			<button type="button" disabled={submitting} onclick={() => (publishDialogOpen = false)} class="rounded-full border border-border-soft px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20 disabled:opacity-40">{t('common.cancel')}</button>
-			<button type="submit" disabled={submitting || publicationSessionRequired} class="rounded-full bg-blue-slate px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-surface-white transition hover:bg-blue-slate-mid-dark disabled:opacity-40">
-				{submitting ? t('objectEdit.publishDialog.queueing') : t('objectEdit.publishDialog.queue')}
+			<button type="button" disabled={submitting} onclick={() => (submitDialogOpen = false)} class="rounded-full border border-border-soft px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-blue-slate transition hover:bg-pale-sky/20 disabled:opacity-40">{t('common.cancel')}</button>
+			<button type="submit" disabled={submitting || syncSessionRequired} class="rounded-full bg-blue-slate px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-surface-white transition hover:bg-blue-slate-mid-dark disabled:opacity-40">
+				{submitting ? t('objectEdit.submitDialog.submitting') : t('objectEdit.submitDialog.submit')}
 			</button>
 		</div>
 	</form>

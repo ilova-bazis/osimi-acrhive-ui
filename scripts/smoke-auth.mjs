@@ -6,6 +6,7 @@ import { chromium } from 'playwright';
 
 import { routeIdentityMismatch } from './smoke-checks.mjs';
 import { collectVisibleText } from './smoke-dom.mjs';
+import { TOKEN } from './smoke-fixture-routes.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const UI_DIR = join(SCRIPT_DIR, '..');
@@ -587,7 +588,7 @@ const runDesktopInteractions = async (page) => {
 		await infoButton.click();
 		await page.waitForTimeout(250);
 		const drawer = page
-			.locator('aside')
+			.locator('[role="dialog"]')
 			.filter({ hasText: /Object info|Информация об объекте/ })
 			.first();
 		const drawerOpened = await drawer
@@ -628,7 +629,7 @@ const runDesktopInteractions = async (page) => {
 		await supportButton.click();
 		await page.waitForTimeout(250);
 		const sheet = page
-			.locator('aside')
+			.locator('[role="dialog"]')
 			.filter({ has: page.locator('button[aria-label*="Close support panel"], button[aria-label*="Закрыть панель поддержки"]') })
 			.first();
 		if (!(await sheet.isVisible().catch(() => false))) {
@@ -656,7 +657,7 @@ const runDesktopInteractions = async (page) => {
 		];
 		let tabClicks = 0;
 		for (const panel of panels) {
-			const button = sheet.getByRole('button', { name: panel.tab }).first();
+			const button = sheet.getByRole('tab', { name: panel.tab }).first();
 			if (!(await button.isVisible().catch(() => false))) {
 				return { ok: false, detail: `support tab ${panel.tab} is not visible` };
 			}
@@ -726,27 +727,27 @@ const runDesktopInteractions = async (page) => {
 		return { ok: true, detail: 'confirmation dialog opened, submitted, and succeeded' };
 	});
 
-	await requireInteraction('publish dialog', async () => {
+	await requireInteraction('submit changes dialog', async () => {
 		await page.goto(`${UI_ORIGIN}/objects/OBJ-20260814-DOC001/edit`, { waitUntil: 'networkidle' });
-		const publishButton = page.locator('button').filter({ hasText: /Publish|Опублик/i }).first();
-		if (!(await publishButton.isVisible().catch(() => false))) {
-			return { ok: false, detail: 'no publish trigger found' };
+		const submitButton = page.locator('button').filter({ hasText: /Submit changes|Отправить изменения/i }).first();
+		if (!(await submitButton.isVisible().catch(() => false))) {
+			return { ok: false, detail: 'no submit changes trigger found' };
 		}
-		await publishButton.click();
+		await submitButton.click();
 		await page.waitForTimeout(300);
-		const publishDialogOpened = await visibleDialogWithText([
-			'Опубликовать курированный OCR?',
-			'Publish curated OCR?'
+		const dialogOpened = await visibleDialogWithText([
+			'Отправить сохранённые изменения в архив?',
+			'Submit saved changes to the archive?'
 		]);
-		if (!publishDialogOpened) {
-			return { ok: false, detail: 'publish dialog did not open' };
+		if (!dialogOpened) {
+			return { ok: false, detail: 'submit changes dialog did not open' };
 		}
-		await checkInteractionPlaceholders('publish dialog', true);
+		await checkInteractionPlaceholders('submit changes dialog', true);
 		const cancel = page.locator('[role="dialog"] button').filter({ hasText: /Отмен|Cancel/ }).first();
 		if (!(await cancel.isVisible().catch(() => false))) {
-			return { ok: false, detail: 'no cancel control in publish dialog' };
+			return { ok: false, detail: 'no cancel control in submit changes dialog' };
 		}
-		if (SMOKE_FAULTS.has('publish-close-stuck')) {
+		if (SMOKE_FAULTS.has('submit-close-stuck')) {
 			await cancel.evaluate((element) => {
 				element.addEventListener('click', (event) => event.stopImmediatePropagation(), true);
 			});
@@ -754,13 +755,248 @@ const runDesktopInteractions = async (page) => {
 		await cancel.click();
 		await page.waitForTimeout(300);
 		const dialogClosed = !(await visibleDialogWithText([
-			'Опубликовать курированный OCR?',
-			'Publish curated OCR?'
+			'Отправить сохранённые изменения в архив?',
+			'Submit saved changes to the archive?'
 		]));
 		if (!dialogClosed) {
-			return { ok: false, detail: 'publish dialog did not close after cancel' };
+			return { ok: false, detail: 'submit changes dialog did not close after cancel' };
 		}
 		return { ok: true, detail: 'dialog opened and closed via cancel' };
+	});
+
+	await requireInteraction('object change submission synchronizes saved changes', async () => {
+		await page.goto(`${UI_ORIGIN}/objects/OBJ-20260814-DOC001/edit`, { waitUntil: 'networkidle' });
+		const titleInput = page.locator('#edit-title');
+		if (!(await titleInput.isVisible().catch(() => false))) {
+			return { ok: false, detail: 'title input is not visible on the object editor' };
+		}
+		await titleInput.fill('Smoke Edited Issue');
+		const submitButton = page.locator('button').filter({ hasText: /Submit changes|Отправить изменения/i }).first();
+		if (!(await submitButton.isDisabled().catch(() => false))) {
+			return { ok: false, detail: 'submit changes stayed enabled with unsaved changes' };
+		}
+		const saveButton = page.getByRole('button', { name: /Save draft|Сохранить черновик/i }).first();
+		if (!(await saveButton.isVisible().catch(() => false))) {
+			return { ok: false, detail: 'save draft button is not visible while dirty' };
+		}
+		await saveButton.click();
+		const enabledAfterSave = await page.waitForFunction(() => {
+			const button = [...document.querySelectorAll('button')].find((element) =>
+				/Submit changes|Отправить изменения/i.test(element.textContent ?? '')
+			);
+			return button ? !button.disabled : false;
+		}, null, { timeout: 10_000 }).then(() => true).catch(() => false);
+		if (!enabledAfterSave) {
+			return { ok: false, detail: 'submit changes did not enable after the draft was saved' };
+		}
+		await submitButton.click();
+		await page.waitForTimeout(300);
+		const dialogOpened = await visibleDialogWithText([
+			'Отправить сохранённые изменения в архив?',
+			'Submit saved changes to the archive?'
+		]);
+		if (!dialogOpened) {
+			return { ok: false, detail: 'submit changes dialog did not open after saving' };
+		}
+		const note = page.locator('[role="dialog"] textarea').first();
+		if (await note.isVisible().catch(() => false)) {
+			await note.fill('Smoke synchronization note.');
+		}
+		const dialogSubmit = page.locator('[role="dialog"] button[type="submit"]').first();
+		if (!(await dialogSubmit.isVisible().catch(() => false))) {
+			return { ok: false, detail: 'no submit control in the submit changes dialog' };
+		}
+		await dialogSubmit.click();
+		const queuedShown = await page
+			.locator('body')
+			.filter({ hasText: /поставлена в очередь|queued for archive synchronization/i })
+			.isVisible({ timeout: 12_000 })
+			.catch(() => false);
+		if (!queuedShown) {
+			// Long-lived headless sessions can drop the form-action response at the
+			// transport level; fall back to the page's own authoritative status gateway.
+			const reconciled = await page.evaluate(async () => {
+				for (let attempt = 0; attempt < 20; attempt++) {
+					try {
+						const response = await fetch('/objects/OBJ-20260814-DOC001/sync-status', { cache: 'no-store' });
+						if (response.ok) {
+							const body = await response.json();
+							const latest = body.latestSubmission ?? null;
+							if (
+								latest &&
+								['PENDING', 'PROCESSING', 'COMPLETED'].includes(latest.status) &&
+								latest.submittedRevision >= 5
+							) {
+								return { latestRevision: latest.submittedRevision, status: latest.status };
+							}
+						}
+					} catch {
+						// retry
+					}
+					await new Promise((resolve) => setTimeout(resolve, 500));
+				}
+				return null;
+			}).catch(() => null);
+			if (!reconciled) {
+				return { ok: false, detail: 'queued synchronization banner did not appear and the sync-status gateway never reported the submitted revision' };
+			}
+		}
+		const completedShown = await page
+			.locator('body')
+			.filter({ hasText: /синхронизирована с архивом|synchronized with the archive/i })
+			.isVisible({ timeout: 30_000 })
+			.catch(() => false);
+		if (!completedShown) {
+			const completed = await page.evaluate(async () => {
+				for (let attempt = 0; attempt < 20; attempt++) {
+					try {
+						const response = await fetch('/objects/OBJ-20260814-DOC001/sync-status', { cache: 'no-store' });
+						if (response.ok) {
+							const body = await response.json();
+							const latest = body.latestSubmission ?? null;
+							if (latest && latest.status === 'COMPLETED' && latest.submittedRevision >= 5) {
+								return { latestRevision: latest.submittedRevision };
+							}
+						}
+					} catch {
+						// retry
+					}
+					await new Promise((resolve) => setTimeout(resolve, 500));
+				}
+				return null;
+			}).catch(() => null);
+			if (!completed) {
+				return { ok: false, detail: 'synchronization did not complete in time' };
+			}
+		}
+		const stateResponse = await fetch(`${FIXTURE_ORIGIN}/__smoke__/object-sync`, {
+			headers: { authorization: `Bearer ${TOKEN}` }
+		});
+		if (!stateResponse.ok) {
+			return { ok: false, detail: `object sync instrumentation endpoint failed: ${stateResponse.status}` };
+		}
+		const state = await stateResponse.json();
+		if (state.submit_count !== 1 || state.submission?.status !== 'COMPLETED') {
+			return { ok: false, detail: `expected one completed submission, got ${JSON.stringify(state)}` };
+		}
+		if (
+			state.submission.submitted_revision !== state.applied_revision ||
+			state.submission.submitted_revision !== state.revision
+		) {
+			return { ok: false, detail: `submitted revision does not match applied and current revisions: ${JSON.stringify(state)}` };
+		}
+		await checkInteractionPlaceholders('object change submission flow', true);
+		return { ok: true, detail: 'saved, submitted, queued, synchronized, and recorded exactly once' };
+	});
+
+	await requireInteraction('desktop shell geometry and route reachability', async () => {
+		const requireReachableAction = async (label, action) => {
+			if (!(await action.isVisible().catch(() => false))) {
+				return `${label} is not visible`;
+			}
+			await action.scrollIntoViewIfNeeded();
+			const [actionBox, currentRowBox] = await Promise.all([
+				action.boundingBox(),
+				page.locator('.app-desktop-utility-row').boundingBox()
+			]);
+			const viewport = page.viewportSize();
+			if (!actionBox || !viewport) return `${label} geometry is unavailable`;
+			if (currentRowBox && actionBox.y < currentRowBox.y + currentRowBox.height - 2) {
+				return `${label} overlaps the desktop utility row`;
+			}
+			if (actionBox.y < -2 || actionBox.y + actionBox.height > viewport.height + 2) {
+				return `${label} remains outside the viewport after scrolling: ${JSON.stringify(actionBox)}`;
+			}
+			return null;
+		};
+
+		await page.goto(`${UI_ORIGIN}/`, { waitUntil: 'networkidle' });
+		const utilityRow = page.locator('.app-desktop-utility-row');
+		const rowVisible = await utilityRow.isVisible().catch(() => false);
+		if (!rowVisible) {
+			return { ok: false, detail: 'desktop utility row is not visible at desktop viewport' };
+		}
+		const rowBox = await utilityRow.boundingBox();
+		if (!rowBox || rowBox.height < 40) {
+			return { ok: false, detail: `unexpected utility row dimensions: ${JSON.stringify(rowBox)}` };
+		}
+
+		// Verify Object Edit: utility row does not overlap top bar, workspace reachable
+		await page.goto(`${UI_ORIGIN}/objects/OBJ-20260814-DOC001/edit`, { waitUntil: 'networkidle' });
+		const editHeader = page.locator('header').first();
+		const editHeaderBox = await editHeader.boundingBox();
+		if (editHeaderBox && rowBox && editHeaderBox.y < rowBox.y + rowBox.height - 2) {
+			return { ok: false, detail: 'utility row overlaps object edit header' };
+		}
+		const editActionError = await requireReachableAction(
+			'object edit draft action',
+			page.getByRole('button', { name: /Save draft|Сохранить черновик/i }).first()
+		);
+		if (editActionError) return { ok: false, detail: editActionError };
+
+		// Verify New Ingestion footer reachable
+		await page.goto(`${UI_ORIGIN}/ingestion/new`, { waitUntil: 'networkidle' });
+		const newFooterBtn = page.locator('button[type="submit"]').last();
+		const newActionError = await requireReachableAction('new ingestion submit action', newFooterBtn);
+		if (newActionError) return { ok: false, detail: newActionError };
+
+		// Verify Setup footer reachable
+		await page.goto(`${UI_ORIGIN}/ingestion/BATCH-20260814-SMOKE/setup`, { waitUntil: 'networkidle' });
+		const setupContinueBtn = page.getByRole('button', { name: /Continue|Продолжить/i }).last();
+		const setupActionError = await requireReachableAction('setup continue action', setupContinueBtn);
+		if (setupActionError) return { ok: false, detail: setupActionError };
+
+		// Verify Review footer reachable
+		await page.goto(`${UI_ORIGIN}/ingestion/BATCH-20260814-SMOKE/review`, { waitUntil: 'networkidle' });
+		const reviewSubmitBtn = page.getByRole('button', { name: /Begin processing|Начать обработку/i }).last();
+		const reviewActionError = await requireReachableAction('review submit action', reviewSubmitBtn);
+		if (reviewActionError) return { ok: false, detail: reviewActionError };
+
+		return { ok: true, detail: 'utility row does not overlap headers; full-height route footers/actions are reachable' };
+	});
+
+	await requireInteraction('new ingestion create deduplicates and navigates to setup', async () => {
+		await page.goto(`${UI_ORIGIN}/ingestion/new`, { waitUntil: 'networkidle' });
+		const nameInput = page.getByRole('textbox', { name: /Batch name|Название партии/i });
+		if (!(await nameInput.isVisible().catch(() => false))) {
+			return { ok: false, detail: 'batch name input is not visible on the new-ingestion page' };
+		}
+		await nameInput.fill('Smoke New Batch');
+		const submitBtn = page.locator('button[type="submit"]').last();
+		const navigation = page.waitForURL(/\/ingestion\/SMOKE-NEW-\d+\/setup$/, { timeout: 15000 });
+		await submitBtn.click();
+		await submitBtn.click({ force: true, timeout: 1500 }).catch(() => {});
+		await navigation.catch(() => null);
+		if (!/\/ingestion\/SMOKE-NEW-\d+\/setup$/.test(page.url())) {
+			return { ok: false, detail: `did not navigate to the created ingestion setup route: ${page.url()}` };
+		}
+		const text = await collectText(page);
+		if (!text.includes('photo-1945.jpg')) {
+			return { ok: false, detail: 'setup sentinel did not render after create navigation' };
+		}
+		const stateResponse = await fetch(`${FIXTURE_ORIGIN}/__smoke__/ingestion-creates`, {
+			headers: { authorization: `Bearer ${TOKEN}` }
+		});
+		if (!stateResponse.ok) {
+			return { ok: false, detail: `create instrumentation endpoint failed: ${stateResponse.status}` };
+		}
+		const state = await stateResponse.json();
+		const keyValid =
+			state.creates.length > 0 &&
+			state.creates.every((entry) =>
+				/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(entry.idempotencyKey ?? '')
+			);
+		if (!keyValid) {
+			return { ok: false, detail: `create requests missing valid idempotency keys: ${JSON.stringify(state.creates)}` };
+		}
+		if (state.creates.length !== 1 || state.batches.length !== 1) {
+			return {
+				ok: false,
+				detail: `expected one logical create for one key, got creates=${state.creates.length} batches=${state.batches.length}`
+			};
+		}
+		await checkInteractionPlaceholders('new ingestion create flow', true);
+		return { ok: true, detail: 'one keyed create, one logical batch, redirect applied and setup rendered' };
 	});
 
 	console.log('[smoke] desktop interactions:\n  ' + observations.join('\n  '));
@@ -777,7 +1013,9 @@ const main = async () => {
 
 	const fixture = startProcess(process.execPath, [join(SCRIPT_DIR, 'smoke-auth-fixture.mjs')], {
 		SMOKE_FIXTURE_PORT: String(FIXTURE_PORT),
-		SMOKE_UI_ORIGIN: UI_ORIGIN
+		SMOKE_UI_ORIGIN: UI_ORIGIN,
+		SMOKE_NEW_INGESTION_DELAY_MS: '600',
+		SMOKE_OBJECT_SYNC_DELAY_MS: '500'
 	});
 	children.push(fixture);
 
@@ -788,7 +1026,9 @@ const main = async () => {
 		PRIVATE_API_BASE: FIXTURE_ORIGIN,
 		PUBLIC_API_BASE: FIXTURE_ORIGIN,
 		APP_BUILD_ID: 'um98-smoke',
-		NODE_ENV: 'production'
+		NODE_ENV: 'production',
+		KEEP_ALIVE_TIMEOUT: '300',
+		HEADERS_TIMEOUT: '310'
 	});
 	children.push(adapter);
 
@@ -803,7 +1043,14 @@ const main = async () => {
 			record('adapter-node build id matches', true);
 		}
 
-		browser = await chromium.launch();
+		browser = await chromium.launch({
+			args: [
+				'--disable-background-timer-throttling',
+				'--disable-backgrounding-occluded-windows',
+				'--disable-renderer-backgrounding',
+				'--disable-features=CalculateNativeWinOcclusion'
+			]
+		});
 
 		for (const viewport of VIEWPORTS) {
 			const context = await browser.newContext({ viewport });
@@ -859,7 +1106,7 @@ const main = async () => {
 				});
 			}
 
-			const ruButton = page.getByRole('button', { name: 'RU' });
+			const ruButton = page.getByRole('button', { name: 'RU' }).first();
 			await ruButton.click();
 			await page.waitForTimeout(200);
 

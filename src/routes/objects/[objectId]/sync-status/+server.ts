@@ -15,24 +15,18 @@ export const GET: RequestHandler = async ({ params, locals, cookies, fetch }) =>
 	if (!params.objectId) return statusJson({ error: 'Object not found.' }, 404);
 
 	try {
-		const result = await objectEditService.getCurationPublication({
+		const result = await objectEditService.getObjectArchiveSync({
 			context: { fetchFn: fetch, token },
 			objectId: params.objectId,
 		});
-		const request = result.request;
 		return statusJson({
-			request: request
-				? {
-						id: request.id,
-						status: request.status,
-						failureReason: request.failureReason,
-						createdAt: request.createdAt,
-						updatedAt: request.updatedAt,
-						completedAt: request.completedAt,
-						publicationRevision: request.publicationRevision,
-						targetVersion: request.targetVersion,
-					}
-				: null,
+			objectId: result.objectId,
+			currentRevision: result.currentRevision,
+			latestSubmittedRevision: result.latestSubmittedRevision,
+			latestAppliedRevision: result.latestAppliedRevision,
+			archiveOutOfSync: result.archiveOutOfSync,
+			activeSubmission: result.activeSubmission,
+			latestSubmission: result.latestSubmission,
 		});
 	} catch (cause) {
 		if (isUnauthorizedError(cause)) {
@@ -41,10 +35,10 @@ export const GET: RequestHandler = async ({ params, locals, cookies, fetch }) =>
 		}
 		if (isApiClientError(cause)) {
 			return statusJson(
-				{ error: 'Failed to load publication status.', requestId: cause.requestId },
+				{ error: 'Failed to load archive synchronization status.', requestId: cause.requestId },
 				cause.status >= 400 && cause.status < 500 ? cause.status : 502,
 			);
 		}
-		return statusJson({ error: 'Failed to load publication status.' }, 502);
+		return statusJson({ error: 'Failed to load archive synchronization status.' }, 502);
 	}
 };

@@ -322,6 +322,7 @@ export const translations = {
 			statusDraft: 'Draft · not yet submitted',
 			discard: 'Discard',
 			continueShort: 'Continue',
+			conflictNewAttempt: 'Start a new batch',
 			stepCounter: 'Step {current} of {total}',
 			pipelineSuggested: '— {preset} suggested',
 			sections: {
@@ -509,10 +510,9 @@ export const translations = {
 				partialFailedRefresh: 'Metadata saved, but document curation failed. Refresh before retrying.',
 				validationFailed: 'Check the highlighted fields and try again.',
 				saveFailed: 'Failed to save draft.',
-				ocrUnavailable: 'OCR pages are unavailable. Synchronize this object before publishing curated OCR.',
-				publishForbidden: 'You do not have permission to publish curated OCR.',
-				changedBeforePublish: 'This object changed while you were editing. Review the refreshed values before submitting.',
-				publishFailed: 'Failed to publish curated OCR.',
+				submitForbidden: 'You do not have permission to submit changes.',
+				changedBeforeSubmit: 'This object changed while you were editing. Review the refreshed values before submitting.',
+				submitFailed: 'Failed to submit changes to the archive.',
 				withRequest: '{message} (request: {id})'
 			},
 			fieldErrors: {
@@ -537,36 +537,42 @@ export const translations = {
 			},
 			saveDraft: 'Save draft',
 			saving: 'Saving…',
-			publish: {
-				disabledNoPages: 'OCR pages are unavailable',
-				disabledDirty: 'Save changes before publishing',
-				disabledActive: 'A publication is already in progress',
-				disabledSession: 'Sign in again to publish',
-				processing: 'Publishing…',
-				queued: 'Publication queued',
-				submit: 'Publish curated OCR',
-				unavailable: 'OCR unavailable'
+			unsavedNavigationWarning: 'You have unsaved changes. Leave this page?',
+			submit: {
+				disabledDirty: 'Save changes before submitting',
+				disabledActive: 'An archive update is already in progress',
+				disabledSession: 'Sign in again to submit changes',
+				disabledChecking: 'Checking archive status…',
+				disabledUnavailable: 'Archive status is unavailable',
+				disabledLocked: 'Resolve the editing lock before submitting',
+				processing: 'Synchronizing…',
+				queued: 'Changes queued',
+				submit: 'Submit changes'
 			},
 			lockedBanner:
 				'This object is currently being edited by another user. It will be available after they finish.',
 			noProjection: {
-				title: 'Curated OCR cannot be published yet.',
-				body: 'This document has no synchronized OCR pages. You can still save metadata changes.',
+				title: 'Curated OCR pages are not available.',
+				body: 'This document has no synchronized OCR pages. You can still save and submit metadata changes.',
 				resyncLink: 'Return to the object to request a resync.'
 			},
-			publication: {
-				statusPENDING: 'Curated OCR publication is queued.',
-				statusPROCESSING: 'Curated OCR is being published to the archive.',
-				statusCOMPLETED: 'Curated OCR was published successfully.',
-				statusFAILED: 'Curated OCR publication failed{suffix}',
-				statusCANCELED: 'Curated OCR publication was canceled.',
-				statusUNKNOWN: 'Publication has an unknown status: {status}.',
+			sync: {
+				statusPENDING: 'Revision {revision} is queued for archive synchronization.',
+				statusPROCESSING: 'Revision {revision} is being synchronized with the archive.',
+				statusCOMPLETED: 'Revision {revision} is synchronized with the archive.',
+				statusCOMPLETED_BEHIND: 'Revision {revision} is synchronized; newer saved changes are not yet included.',
+				statusFAILED: 'Archive synchronization failed{suffix}',
+				statusCANCELED: 'Archive synchronization was canceled.',
+				statusUNKNOWN: 'Archive synchronization has an unknown status: {status}.',
+				retryButton: 'Retry synchronization',
+				retrySuperseded: 'A newer revision was already synchronized. Submit the latest saved changes instead.',
+				outOfSyncSaved: 'Saved changes have not been synchronized with the archive.',
 				requestId: 'Request {id}',
 				lastKnown: 'Last known',
-				statusUnavailable: 'Publication status is temporarily unavailable.',
-				retrying: 'Publication status is stale. Retrying automatically.',
-				recovered: 'Publication status connection recovered.',
-				sessionRequired: 'Your session expired. Sign in again to check or publish.',
+				statusUnavailable: 'Archive synchronization status is temporarily unavailable.',
+				retrying: 'Archive synchronization status is stale. Retrying automatically.',
+				recovered: 'Archive synchronization status connection recovered.',
+				sessionRequired: 'Your session expired. Sign in again to check or submit changes.',
 				lastSuccessful: 'Last successful check: {time}.',
 				retryAction: 'Retry',
 				loginAction: 'Sign in'
@@ -635,15 +641,15 @@ export const translations = {
 					'Transcript curation for {kind} objects is not yet available. You can edit metadata below.',
 				default: 'Edit metadata and access settings for this object.'
 			},
-			publishDialog: {
-				title: 'Publish curated OCR?',
-				body: 'This publishes the currently saved OCR as an asynchronous archive update. Metadata changes are saved separately and unsaved changes cannot be included.',
-				noteLabel: 'Publication note',
+			submitDialog: {
+				title: 'Submit saved changes to the archive?',
+				body: 'This queues an asynchronous archive update containing metadata, access policy, rights, and curated text from the currently saved revision. Unsaved changes are not included.',
+				noteLabel: 'Change note',
 				optional: '(optional)',
 				notePlaceholder: 'Record context for the edit history',
 				noteHint: 'This note is recorded in edit history; it is not sent to a human reviewer.',
-				queueing: 'Queueing…',
-				queue: 'Queue publication'
+				submitting: 'Submitting…',
+				submit: 'Submit changes'
 			},
 			rights: {
 				accessLevel: 'Access level',
@@ -1847,6 +1853,7 @@ export const translations = {
 			statusDraft: 'Черновик · ещё не отправлен',
 			discard: 'Отменить',
 			continueShort: 'Продолжить',
+			conflictNewAttempt: 'Начать новую партию',
 			stepCounter: 'Шаг {current} из {total}',
 			pipelineSuggested: '— рекомендовано: {preset}',
 			sections: {
@@ -2034,10 +2041,9 @@ export const translations = {
 				partialFailedRefresh: 'Метаданные сохранены, но курирование документа не удалось. Обновите страницу.',
 				validationFailed: 'Проверьте выделенные поля и повторите попытку.',
 				saveFailed: 'Не удалось сохранить черновик.',
-				ocrUnavailable: 'Страницы OCR недоступны. Синхронизируйте объект перед публикацией курированного OCR.',
-				publishForbidden: 'У вас нет разрешения публиковать курированный OCR.',
-				changedBeforePublish: 'Объект изменился во время редактирования. Проверьте обновлённые значения перед публикацией.',
-				publishFailed: 'Не удалось опубликовать курированный OCR.',
+				submitForbidden: 'У вас нет разрешения отправлять изменения.',
+				changedBeforeSubmit: 'Объект изменился во время редактирования. Проверьте обновлённые значения перед отправкой.',
+				submitFailed: 'Не удалось отправить изменения в архив.',
 				withRequest: '{message} (запрос: {id})'
 			},
 			fieldErrors: {
@@ -2063,36 +2069,42 @@ export const translations = {
 			},
 			saveDraft: 'Сохранить черновик',
 			saving: 'Сохранение…',
-			publish: {
-				disabledNoPages: 'Страницы OCR недоступны',
-				disabledDirty: 'Сохраните изменения перед публикацией',
-				disabledActive: 'Публикация уже выполняется',
-				disabledSession: 'Войдите снова, чтобы опубликовать',
-				processing: 'Публикация…',
-				queued: 'Публикация в очереди',
-				submit: 'Опубликовать курированный OCR',
-				unavailable: 'OCR недоступен'
+			unsavedNavigationWarning: 'У вас есть несохранённые изменения. Покинуть страницу?',
+			submit: {
+				disabledDirty: 'Сохраните изменения перед отправкой',
+				disabledActive: 'Обновление архива уже выполняется',
+				disabledSession: 'Войдите снова, чтобы отправить изменения',
+				disabledChecking: 'Проверка статуса архива…',
+				disabledUnavailable: 'Статус архива недоступен',
+				disabledLocked: 'Разрешите конфликт редактирования перед отправкой',
+				processing: 'Синхронизация…',
+				queued: 'Изменения в очереди',
+				submit: 'Отправить изменения'
 			},
 			lockedBanner:
 				'Этот объект сейчас редактирует другой пользователь. Он станет доступен после завершения.',
 			noProjection: {
-				title: 'Курированный OCR пока нельзя опубликовать.',
-				body: 'У этого документа нет синхронизированных OCR-страниц. Вы по-прежнему можете сохранять изменения метаданных.',
+				title: 'Курированные OCR-страницы недоступны.',
+				body: 'У этого документа нет синхронизированных OCR-страниц. Вы по-прежнему можете сохранять и отправлять изменения метаданных.',
 				resyncLink: 'Вернитесь к объекту, чтобы запросить синхронизацию.'
 			},
-			publication: {
-				statusPENDING: 'Публикация курированного OCR поставлена в очередь.',
-				statusPROCESSING: 'Курированный OCR публикуется в архив.',
-				statusCOMPLETED: 'Курированный OCR успешно опубликован.',
-				statusFAILED: 'Публикация курированного OCR не удалась{suffix}',
-				statusCANCELED: 'Публикация курированного OCR отменена.',
-				statusUNKNOWN: 'Неизвестный статус публикации: {status}.',
+			sync: {
+				statusPENDING: 'Ревизия {revision} поставлена в очередь на синхронизацию с архивом.',
+				statusPROCESSING: 'Ревизия {revision} синхронизируется с архивом.',
+				statusCOMPLETED: 'Ревизия {revision} синхронизирована с архивом.',
+				statusCOMPLETED_BEHIND: 'Ревизия {revision} синхронизирована; более новые сохранённые изменения ещё не включены.',
+				statusFAILED: 'Синхронизация с архивом не удалась{suffix}',
+				statusCANCELED: 'Синхронизация с архивом отменена.',
+				statusUNKNOWN: 'Неизвестный статус синхронизации: {status}.',
+				retryButton: 'Повторить синхронизацию',
+				retrySuperseded: 'Более новая ревизия уже синхронизирована. Отправьте вместо этого последние сохранённые изменения.',
+				outOfSyncSaved: 'Сохранённые изменения ещё не синхронизированы с архивом.',
 				requestId: 'Запрос {id}',
 				lastKnown: 'Последние известные данные',
-				statusUnavailable: 'Статус публикации временно недоступен.',
-				retrying: 'Статус публикации устарел. Выполняется повторная попытка.',
-				recovered: 'Соединение для проверки статуса публикации восстановлено.',
-				sessionRequired: 'Сеанс истёк. Войдите снова, чтобы проверить статус или опубликовать.',
+				statusUnavailable: 'Статус синхронизации с архивом временно недоступен.',
+				retrying: 'Статус синхронизации устарел. Выполняется повторная попытка.',
+				recovered: 'Соединение для проверки статуса синхронизации восстановлено.',
+				sessionRequired: 'Сеанс истёк. Войдите снова, чтобы проверить статус или отправить изменения.',
 				lastSuccessful: 'Последняя успешная проверка: {time}.',
 				retryAction: 'Повторить',
 				loginAction: 'Войти'
@@ -2163,15 +2175,15 @@ export const translations = {
 					'Курирование транскриптов для объектов типа {kind} пока недоступно. Метаданные можно редактировать ниже.',
 				default: 'Редактируйте метаданные и настройки доступа этого объекта.'
 			},
-			publishDialog: {
-				title: 'Опубликовать курированный OCR?',
-				body: 'Будет опубликован текущий сохранённый OCR как асинхронное обновление архива. Изменения метаданных сохраняются отдельно, несохранённые изменения не войдут в публикацию.',
-				noteLabel: 'Примечание к публикации',
+			submitDialog: {
+				title: 'Отправить сохранённые изменения в архив?',
+				body: 'Будет поставлено в очередь асинхронное обновление архива с метаданными, политикой доступа, правами и курированным текстом из текущей сохранённой ревизии. Несохранённые изменения не включаются.',
+				noteLabel: 'Примечание к изменениям',
 				optional: '(необязательно)',
 				notePlaceholder: 'Опишите контекст для истории правок',
 				noteHint: 'Это примечание записывается в историю правок и не отправляется рецензенту.',
-				queueing: 'Постановка в очередь…',
-				queue: 'Поставить в очередь'
+				submitting: 'Отправка…',
+				submit: 'Отправить изменения'
 			},
 			rights: {
 				accessLevel: 'Уровень доступа',

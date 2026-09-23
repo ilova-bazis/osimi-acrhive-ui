@@ -11,7 +11,7 @@ import type {
 	ObjectEditFieldErrors
 } from '$lib/services/objectEditErrors';
 import { AUTH_COOKIE_NAME, clearSessionCookie } from '$lib/server/auth';
-import { ApiClientError, isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
+import { isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
 
 const fieldErrorCode = (field: ObjectEditField): ObjectEditFieldErrorCode => {
 	if (field === 'title') return 'titleRequired';
@@ -181,13 +181,7 @@ const refreshEditPayload = async (
 	}
 };
 
-const isProjectionUnavailableError = (cause: unknown): cause is ApiClientError => {
-	if (!isApiClientError(cause) || cause.status !== 409) return false;
-	if (!cause.details || typeof cause.details !== 'object' || Array.isArray(cause.details)) return false;
-	return 'code' in cause.details && cause.details.code === 'PROJECTION_UNAVAILABLE';
-};
-
-const activePublicationFromError = (
+const activeSyncFromError = (
 	cause: unknown,
 ): { requestId: string; requestStatus: 'PENDING' | 'PROCESSING' } | null => {
 	if (!isApiClientError(cause) || cause.status !== 409) return null;
@@ -197,12 +191,34 @@ const activePublicationFromError = (
 	const requestId = record.existing_request_id;
 	const requestStatus = record.existing_request_status;
 	if (
-		cause.code !== 'PUBLICATION_ALREADY_ACTIVE' ||
+		record.code !== 'CHANGES_ALREADY_ACTIVE' ||
 		typeof requestId !== 'string' ||
 		(requestStatus !== 'PENDING' && requestStatus !== 'PROCESSING')
 	) return null;
 	return { requestId, requestStatus };
 };
+
+const serializeSubmission = (result: {
+	currentRevision: number;
+	submittedRevision: number;
+	submission: {
+		id: string;
+		requestId: string;
+		status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
+		submittedAt: string;
+		submittedBy: string | null;
+	};
+}) => ({
+	currentRevision: result.currentRevision,
+	submittedRevision: result.submittedRevision,
+	submission: {
+		id: result.submission.id,
+		requestId: result.submission.requestId,
+		status: result.submission.status,
+		submittedAt: result.submission.submittedAt,
+		submittedBy: result.submission.submittedBy,
+	},
+});
 
 export const load = async ({ params, locals, cookies, fetch }: RequestEvent) => {
 	const token = cookies.get(AUTH_COOKIE_NAME);
@@ -312,7 +328,7 @@ export const actions: Actions = {
 		} catch (cause) {
 			if (isUnauthorizedError(cause)) {
 				clearSessionCookie(cookies);
-				throw redirect(303, '/login');
+				return fail(401, { sessionRequired: true });
 			}
 
 			if (cause instanceof ObjectEditLockedError && !metadataSaved) {
@@ -369,7 +385,7 @@ export const actions: Actions = {
 		}
 	},
 
-	submitCuration: async ({ params, locals, cookies, fetch, request }) => {
+	submitChanges: async ({ params, locals, cookies, fetch, request }) => {
 		const token = cookies.get(AUTH_COOKIE_NAME);
 		if (!locals.session || !token) {
 			return fail(401, { sessionRequired: true });
@@ -381,7 +397,7 @@ export const actions: Actions = {
 		}
 
 		const formData = await request.formData();
-		const reviewNote = String(formData.get('reviewNote') ?? '').trim() || null;
+		const submissionNote = String(formData.get('submissionNote') ?? '').trim() || null;
 		const revision = z.coerce.number().int().min(0).safeParse(formData.get('revision'));
 		if (!revision.success) {
 			return fail(400, { errorCode: 'invalidPayload' satisfies ObjectEditErrorCode });
@@ -390,28 +406,25 @@ export const actions: Actions = {
 
 		try {
 			const editPayload = await objectEditService.getObjectEditPayload({ context, objectId });
-			if (editPayload.curation.kind !== 'document' || editPayload.curation.pages.length === 0) {
+			if (!editPayload.capabilities.canSubmitChanges) {
+				return fail(403, { errorCode: 'submitForbidden' satisfies ObjectEditErrorCode });
+			}
+			if (revision.data !== editPayload.revision) {
 				return fail(409, {
-					errorCode: 'ocrUnavailable' satisfies ObjectEditErrorCode,
-					projectionUnavailable: true,
+					errorCode: 'changedBeforeSubmit' satisfies ObjectEditErrorCode,
+					recovery: toRecovery('conflict', editPayload),
 				});
 			}
-			if (!editPayload.capabilities.canSubmitReview) {
-				return fail(403, { errorCode: 'publishForbidden' satisfies ObjectEditErrorCode });
-			}
-			const result = await objectEditService.submitObjectCuration({
+			const result = await objectEditService.submitObjectChanges({
 				context,
 				objectId,
 				revision: revision.data,
-				reviewNote,
+				submissionNote,
 			});
 
 			return {
 				success: true,
-				revision: result.revision,
-				curationState: result.curationState,
-				requestId: result.requestId,
-				requestStatus: result.requestStatus,
+				...serializeSubmission(result),
 			};
 		} catch (cause) {
 			if (isUnauthorizedError(cause)) {
@@ -419,11 +432,11 @@ export const actions: Actions = {
 				return fail(401, { sessionRequired: true });
 			}
 
-			const activePublication = activePublicationFromError(cause);
-			if (activePublication) {
+			const activeSync = activeSyncFromError(cause);
+			if (activeSync) {
 				return fail(409, {
-					publicationAlreadyActive: true,
-					...activePublication,
+					submissionAlreadyActive: true,
+					...activeSync,
 				});
 			}
 
@@ -435,28 +448,80 @@ export const actions: Actions = {
 				const editPayload = await refreshEditPayload(context, objectId);
 				if (editPayload) {
 					return fail(409, {
-						errorCode: 'changedBeforePublish' satisfies ObjectEditErrorCode,
+						errorCode: 'changedBeforeSubmit' satisfies ObjectEditErrorCode,
 						recovery: toRecovery('conflict', editPayload),
 					});
 				}
 			}
 
-			if (isProjectionUnavailableError(cause)) {
-				return fail(409, {
-					errorCode: 'ocrUnavailable' satisfies ObjectEditErrorCode,
+			if (isApiClientError(cause)) {
+				return fail(cause.status || 502, {
+					errorCode: 'submitFailed' satisfies ObjectEditErrorCode,
 					...(cause.requestId ? { errorRequestId: cause.requestId } : {}),
-					projectionUnavailable: true,
 				});
+			}
+
+			return fail(502, { errorCode: 'submitFailed' satisfies ObjectEditErrorCode });
+		}
+	},
+
+	retrySync: async ({ params, locals, cookies, fetch, request }) => {
+		const token = cookies.get(AUTH_COOKIE_NAME);
+		if (!locals.session || !token) {
+			return fail(401, { sessionRequired: true });
+		}
+
+		const objectId = params.objectId;
+		if (!objectId) {
+			return fail(404, { errorCode: 'objectNotFound' satisfies ObjectEditErrorCode });
+		}
+
+		const formData = await request.formData();
+		const requestId = String(formData.get('requestId') ?? '').trim();
+		if (!requestId) {
+			return fail(400, { errorCode: 'invalidPayload' satisfies ObjectEditErrorCode });
+		}
+		const retryReason = String(formData.get('retryReason') ?? '').trim() || null;
+		const context = { fetchFn: fetch, token };
+
+		try {
+			const result = await objectEditService.retryObjectChangeSubmission({
+				context,
+				objectId,
+				requestId,
+				retryReason,
+			});
+
+			return {
+				success: true,
+				...serializeSubmission(result),
+			};
+		} catch (cause) {
+			if (isUnauthorizedError(cause)) {
+				clearSessionCookie(cookies);
+				return fail(401, { sessionRequired: true });
+			}
+
+			if (cause instanceof ObjectEditLockedError) {
+				return fail(423, { locked: true });
 			}
 
 			if (isApiClientError(cause)) {
+				const details = cause.details;
+				const detailCode =
+					details && typeof details === 'object' && !Array.isArray(details) && 'code' in details
+						? (details as Record<string, unknown>).code
+						: null;
+				if (cause.status === 409 && detailCode === 'RETRY_SUPERSEDED') {
+					return fail(409, { retrySuperseded: true });
+				}
 				return fail(cause.status || 502, {
-					errorCode: 'publishFailed' satisfies ObjectEditErrorCode,
+					errorCode: 'submitFailed' satisfies ObjectEditErrorCode,
 					...(cause.requestId ? { errorRequestId: cause.requestId } : {}),
 				});
 			}
 
-			return fail(502, { errorCode: 'publishFailed' satisfies ObjectEditErrorCode });
+			return fail(502, { errorCode: 'submitFailed' satisfies ObjectEditErrorCode });
 		}
 	},
 };

@@ -4,7 +4,7 @@ import { render } from 'vitest-browser-svelte';
 import { parse, stringify } from 'devalue';
 import type { ActionResult, SubmitFunction } from '@sveltejs/kit';
 import { locale } from '$lib/i18n/locale';
-import type { ObjectEditPayload } from '$lib/services/objectEdit';
+import type { ArchiveSyncStatus, ObjectEditPayload } from '$lib/services/objectEdit';
 
 const { beforeNavigateMock, invalidateAllMock, actionUpdateMock } = vi.hoisted(() => ({
 	beforeNavigateMock: vi.fn(),
@@ -65,6 +65,27 @@ vi.mock('$app/forms', () => ({
 
 import EditPage from './+page.svelte';
 
+type SyncSubmission = {
+	id: string;
+	requestId: string;
+	submittedRevision: number;
+	status: ArchiveSyncStatus;
+	submittedAt: string;
+	submittedBy: string | null;
+	completedAt: string | null;
+	failureReason: string | null;
+};
+
+type SyncStatusPayload = {
+	objectId: string;
+	currentRevision: number;
+	latestSubmittedRevision: number | null;
+	latestAppliedRevision: number | null;
+	archiveOutOfSync: boolean;
+	activeSubmission: SyncSubmission | null;
+	latestSubmission: SyncSubmission | null;
+};
+
 const editPayload: ObjectEditPayload = {
 	objectId: 'OBJ-1',
 	revision: 4,
@@ -77,7 +98,7 @@ const editPayload: ObjectEditPayload = {
 		dateApproximate: false, language: 'en', tags: [], people: [], description: null,
 	},
 	rights: { accessLevel: 'family' as const, rightsNote: null, sensitivityNote: null },
-	capabilities: { canEditMetadata: true, canCurateText: true, canSubmitReview: true },
+	capabilities: { canEditMetadata: true, canCurateText: true, canSubmitChanges: true },
 	curation: {
 		kind: 'document' as const,
 		machineOcrArtifactId: 'ocr-1',
@@ -89,19 +110,34 @@ const editPayload: ObjectEditPayload = {
 const renderPage = (payload = editPayload) =>
 	render(EditPage, { data: { editPayload: payload, isLockedByOtherUser: false }, form: null });
 
-const publicationRequest = (status: string, id = 'req-1') => ({
-	id,
+const submission = (
+	status: ArchiveSyncStatus,
+	overrides: Partial<SyncSubmission> = {},
+): SyncSubmission => ({
+	id: 'sub-1',
+	requestId: 'req-1',
+	submittedRevision: 4,
 	status,
-	failureReason: null,
-	createdAt: '2026-08-04T12:00:00.000Z',
-	updatedAt: '2026-08-04T12:01:00.000Z',
+	submittedAt: '2026-08-04T12:00:00.000Z',
+	submittedBy: 'u1',
 	completedAt: status === 'PENDING' || status === 'PROCESSING' ? null : '2026-08-04T12:01:00.000Z',
-	publicationRevision: null as number | null,
-	targetVersion: null as string | null,
+	failureReason: null,
+	...overrides,
 });
 
-const statusResponse = (request: ReturnType<typeof publicationRequest> | null, status = 200): Response =>
-	new Response(JSON.stringify({ request }), {
+const syncStatusPayload = (overrides: Partial<SyncStatusPayload> = {}): SyncStatusPayload => ({
+	objectId: 'OBJ-1',
+	currentRevision: 4,
+	latestSubmittedRevision: null,
+	latestAppliedRevision: null,
+	archiveOutOfSync: false,
+	activeSubmission: null,
+	latestSubmission: null,
+	...overrides,
+});
+
+const statusResponse = (payload: SyncStatusPayload, status = 200): Response =>
+	new Response(JSON.stringify(payload), {
 		status,
 		headers: { 'content-type': 'application/json' },
 	});
@@ -113,14 +149,19 @@ const actionResponse = (type: 'success' | 'failure', data: Record<string, unknow
 		headers: { 'content-type': 'application/json' },
 	});
 
+const actionSubmission = (status: ArchiveSyncStatus, requestId = 'req-1') => ({
+	id: 'sub-1',
+	requestId,
+	status,
+	submittedAt: '2026-08-04T12:00:00.000Z',
+	submittedBy: 'u1',
+});
+
 describe('/objects/[objectId]/edit +page.svelte', () => {
 	beforeEach(() => {
 		beforeNavigateMock.mockReset();
 		actionUpdateMock.mockReset();
-		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ request: null }), {
-			status: 200,
-			headers: { 'content-type': 'application/json' },
-		})));
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(statusResponse(syncStatusPayload())));
 	});
 
 	afterEach(() => {
@@ -129,34 +170,34 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 		locale.setLocale('en');
 	});
 
-	it('confirms that publication queues an archive update', async () => {
+	it('confirms that submission queues an archive synchronization', async () => {
 		renderPage();
 
-		await page.getByRole('button', { name: 'Publish curated OCR' }).click();
+		await page.getByRole('button', { name: 'Submit changes' }).click();
 
-		await expect.element(page.getByRole('dialog')).toBeInTheDocument();
-		await expect.element(page.getByText(/asynchronous archive update/)).toBeInTheDocument();
-		await expect.element(page.getByRole('textbox', { name: /Publication note/ })).toBeInTheDocument();
-		await expect.element(page.getByRole('button', { name: 'Queue publication' })).toBeInTheDocument();
+		const dialog = page.getByRole('dialog');
+		await expect.element(dialog).toBeInTheDocument();
+		await expect.element(dialog.getByText(/asynchronous archive update/)).toBeInTheDocument();
+		await expect.element(dialog.getByRole('textbox', { name: /Change note/ })).toBeInTheDocument();
+		await expect.element(dialog.getByRole('button', { name: 'Submit changes' })).toBeInTheDocument();
 	});
 
-	it('explains unavailable OCR pages while leaving metadata editable', async () => {
+	it('explains unavailable OCR pages while keeping metadata and submission available', async () => {
 		renderPage({
 			...editPayload,
-			capabilities: { canEditMetadata: true, canCurateText: false, canSubmitReview: false },
 			curation: { kind: 'document', machineOcrArtifactId: null, pageCount: null, pages: [] },
 		});
 
-		await expect.element(page.getByText('Curated OCR cannot be published yet.')).toBeInTheDocument();
-		await expect.element(page.getByRole('button', { name: 'OCR unavailable' })).toBeDisabled();
+		await expect.element(page.getByText('Curated OCR pages are not available.')).toBeInTheDocument();
 		await expect.element(page.getByRole('textbox', { name: 'Title' })).toBeEnabled();
+		await expect.element(page.getByRole('button', { name: 'Submit changes' })).toBeEnabled();
 	});
 
-	it('requires draft changes to be saved before publication', async () => {
+	it('requires draft changes to be saved before submission', async () => {
 		renderPage();
 		await page.getByRole('textbox', { name: 'Title' }).fill('Changed title');
 
-		await expect.element(page.getByRole('button', { name: 'Publish curated OCR' })).toBeDisabled();
+		await expect.element(page.getByRole('button', { name: 'Submit changes' })).toBeDisabled();
 		await expect.element(page.getByText('Unsaved changes')).toBeInTheDocument();
 	});
 
@@ -165,10 +206,7 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 			if (init?.method === 'POST') {
 				return new Promise<Response>(() => undefined);
 			}
-			return Promise.resolve(new Response(JSON.stringify({ request: null }), {
-				status: 200,
-				headers: { 'content-type': 'application/json' },
-			}));
+			return Promise.resolve(statusResponse(syncStatusPayload()));
 		});
 		vi.stubGlobal('fetch', fetchMock);
 		renderPage();
@@ -187,39 +225,46 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 		expect(postBodies[0]?.has('pages')).toBe(false);
 	});
 
-	it('renders the latest failed publication reason', async () => {
-		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
-			request: {
-				id: 'req-1', status: 'FAILED', failureReason: 'Archive unavailable',
-				createdAt: '2026-08-04T12:00:00.000Z', updatedAt: '2026-08-04T12:01:00.000Z',
-				completedAt: '2026-08-04T12:01:00.000Z',
-			},
-		}), { status: 200, headers: { 'content-type': 'application/json' } })));
+	it('renders the latest failed synchronization reason with a retry action', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(statusResponse(syncStatusPayload({
+			latestSubmittedRevision: 4,
+			latestSubmission: submission('FAILED', { failureReason: 'Archive unavailable' }),
+		}))));
 
 		renderPage();
 
-		await expect.element(page.getByText(/publication failed: Archive unavailable/)).toBeInTheDocument();
+		await expect.element(page.getByText(/synchronization failed: Archive unavailable/)).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'Retry synchronization' })).toBeInTheDocument();
 	});
 
 	it('marks an active cache stale, recovers, and stops polling at a terminal status', async () => {
 		vi.useFakeTimers();
 		const fetchMock = vi.fn()
-			.mockResolvedValueOnce(statusResponse(publicationRequest('PENDING')))
+			.mockResolvedValueOnce(statusResponse(syncStatusPayload({
+				latestSubmittedRevision: 4,
+				activeSubmission: submission('PENDING'),
+				latestSubmission: submission('PENDING'),
+				archiveOutOfSync: true,
+			})))
 			.mockRejectedValueOnce(new Error('offline'))
-			.mockResolvedValueOnce(statusResponse(publicationRequest('COMPLETED')));
+			.mockResolvedValueOnce(statusResponse(syncStatusPayload({
+				latestSubmittedRevision: 4,
+				latestAppliedRevision: 4,
+				latestSubmission: submission('COMPLETED'),
+			})));
 		vi.stubGlobal('fetch', fetchMock);
 		renderPage();
 		await vi.advanceTimersByTimeAsync(0);
 
-		await expect.element(page.getByRole('button', { name: 'Publication queued' })).toBeDisabled();
+		await expect.element(page.getByRole('button', { name: 'Changes queued' })).toBeDisabled();
 		await vi.advanceTimersByTimeAsync(12_000);
 		await expect.element(page.getByText('Last known')).toBeInTheDocument();
 		await expect.element(page.getByText(/Last successful check:/)).toBeInTheDocument();
-		await expect.element(page.getByRole('button', { name: 'Publish curated OCR' })).toBeEnabled();
+		await expect.element(page.getByRole('button', { name: 'Submit changes' })).toBeDisabled();
 
 		await vi.advanceTimersByTimeAsync(2_000);
-		await expect.element(page.getByText('Curated OCR was published successfully.')).toBeInTheDocument();
-		await expect.element(page.getByText('Publication status connection recovered.')).toBeInTheDocument();
+		await expect.element(page.getByText('Revision 4 is synchronized with the archive.')).toBeInTheDocument();
+		await expect.element(page.getByText('Archive synchronization status connection recovered.')).toBeInTheDocument();
 		await vi.advanceTimersByTimeAsync(60_000);
 		expect(fetchMock).toHaveBeenCalledTimes(3);
 	});
@@ -238,13 +283,13 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 			await vi.advanceTimersByTimeAsync(1);
 			expect(fetchMock).toHaveBeenCalledTimes(index + 2);
 		}
-		await expect.element(page.getByText('Publication status is temporarily unavailable.')).toBeInTheDocument();
+		await expect.element(page.getByText('Archive synchronization status is temporarily unavailable.')).toBeInTheDocument();
 
-		fetchMock.mockResolvedValueOnce(statusResponse(null));
+		fetchMock.mockResolvedValueOnce(statusResponse(syncStatusPayload()));
 		await page.getByRole('button', { name: 'Retry' }).click();
 		await vi.advanceTimersByTimeAsync(0);
 		expect(fetchMock).toHaveBeenCalledTimes(7);
-		await expect.element(page.getByText('Publication status connection recovered.')).toBeInTheDocument();
+		await expect.element(page.getByText('Archive synchronization status connection recovered.')).toBeInTheDocument();
 	});
 
 	it('requires a session after a 401 without losing unsaved edits', async () => {
@@ -255,27 +300,35 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 		renderPage();
 		const title = page.getByRole('textbox', { name: 'Title' });
 		await title.fill('Unsaved title');
-		resolveStatus(statusResponse(null, 401));
+		resolveStatus(statusResponse(syncStatusPayload(), 401));
 
 		await expect.element(page.getByText(/Your session expired/)).toBeInTheDocument();
 		await expect.element(page.getByRole('link', { name: 'Sign in' })).toHaveAttribute('target', '_blank');
-		await expect.element(page.getByRole('button', { name: 'Publish curated OCR' })).toBeDisabled();
+		await expect.element(page.getByRole('button', { name: 'Submit changes' })).toBeDisabled();
 		await expect.element(title).toHaveValue('Unsaved title');
 	});
 
-	it('disables submission when the session expires while the publication dialog is open', async () => {
+	it('disables submission in the dialog when the submit action reports session expiry', async () => {
 		let resolveStatus!: (response: Response) => void;
-		vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise<Response>((resolve) => {
-			resolveStatus = resolve;
-		})));
+		const fetchMock = vi.fn().mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
+			if (init?.method === 'POST') {
+				return Promise.resolve(actionResponse('failure', { sessionRequired: true }, 401));
+			}
+			return new Promise<Response>((resolve) => {
+				resolveStatus = resolve;
+			});
+		});
+		vi.stubGlobal('fetch', fetchMock);
 		renderPage();
-		await page.getByRole('button', { name: 'Publish curated OCR' }).click();
-		await expect.element(page.getByRole('button', { name: 'Queue publication' })).toBeEnabled();
+		resolveStatus(statusResponse(syncStatusPayload()));
+		await expect.element(page.getByRole('button', { name: 'Submit changes' })).toBeEnabled();
+		await page.getByRole('button', { name: 'Submit changes' }).click();
+		await expect.element(page.getByRole('dialog').getByRole('button', { name: 'Submit changes' })).toBeEnabled();
 
-		resolveStatus(statusResponse(null, 401));
+		await page.getByRole('dialog').getByRole('button', { name: 'Submit changes' }).click();
 
 		await expect.element(page.getByText(/Your session expired/)).toBeInTheDocument();
-		await expect.element(page.getByRole('button', { name: 'Queue publication' })).toBeDisabled();
+		await expect.element(page.getByRole('dialog').getByRole('button', { name: 'Submit changes' })).toBeDisabled();
 	});
 
 	it('treats an opaque login redirect as session expiry and localizes the action', async () => {
@@ -308,7 +361,10 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 
 		await view.unmount();
 		expect(signal.aborted).toBe(true);
-		resolveStatus(statusResponse(publicationRequest('PENDING')));
+		resolveStatus(statusResponse(syncStatusPayload({
+			activeSubmission: submission('PENDING'),
+			latestSubmission: submission('PENDING'),
+		})));
 		await vi.advanceTimersByTimeAsync(60_000);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
@@ -319,7 +375,12 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 			if (String(input).includes('OBJ-1')) {
 				return new Promise<Response>((resolve) => { resolveFirst = resolve; });
 			}
-			return Promise.resolve(statusResponse(publicationRequest('COMPLETED', 'req-object-2')));
+			return Promise.resolve(statusResponse({
+				...syncStatusPayload(),
+				objectId: 'OBJ-2',
+				latestSubmittedRevision: 4,
+				latestSubmission: submission('COMPLETED', { requestId: 'req-object-2' }),
+			}));
 		});
 		vi.stubGlobal('fetch', fetchMock);
 		const view = renderPage();
@@ -329,45 +390,61 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 		});
 		await expect.element(page.getByText(/Request req-object-2/)).toBeInTheDocument();
 
-		resolveFirst(statusResponse(publicationRequest('PENDING', 'req-object-1')));
+		resolveFirst(statusResponse(syncStatusPayload({
+			activeSubmission: submission('PENDING', { requestId: 'req-object-1' }),
+			latestSubmission: submission('PENDING', { requestId: 'req-object-1' }),
+		})));
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		await expect.element(page.getByText(/Request req-object-2/)).toBeInTheDocument();
 		await expect.element(page.getByText(/Request req-object-1/)).not.toBeInTheDocument();
 	});
 
-	it('seeds a successful action result and ignores the canceled status race', async () => {
+	it('seeds a successful action result and continues polling the seeded request', async () => {
 		vi.useFakeTimers();
 		let resolveInitial!: (response: Response) => void;
+		let statusCalls = 0;
 		const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
 			if (init?.method === 'POST') {
 				return Promise.resolve(actionResponse('success', {
 					success: true,
-					requestId: 'req-seeded',
-					requestStatus: 'PENDING',
+					currentRevision: 4,
+					submittedRevision: 4,
+					submission: actionSubmission('PENDING', 'req-seeded'),
 				}));
 			}
-			if (String(input).includes('publication-status') && fetchMock.mock.calls.length === 1) {
+			statusCalls += 1;
+			if (statusCalls === 1) {
 				return new Promise<Response>((resolve) => { resolveInitial = resolve; });
 			}
-			return Promise.resolve(statusResponse(publicationRequest('PROCESSING', 'req-seeded')));
+			return Promise.resolve(statusResponse(syncStatusPayload({
+				activeSubmission: submission('PROCESSING', { requestId: 'req-seeded' }),
+				latestSubmission: submission('PROCESSING', { requestId: 'req-seeded' }),
+				archiveOutOfSync: true,
+			})));
 		});
 		vi.stubGlobal('fetch', fetchMock);
 		renderPage();
-		await page.getByRole('button', { name: 'Publish curated OCR' }).click();
-		await page.getByRole('button', { name: 'Queue publication' }).click();
+		await vi.advanceTimersByTimeAsync(0);
+
+		// Submit stays disabled while the initial status check is unresolved.
+		await expect.element(page.getByRole('button', { name: 'Submit changes' })).toBeDisabled();
+		resolveInitial(statusResponse(syncStatusPayload()));
+		await vi.advanceTimersByTimeAsync(0);
+		await expect.element(page.getByRole('button', { name: 'Submit changes' })).toBeEnabled();
+
+		await page.getByRole('button', { name: 'Submit changes' }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Submit changes' }).click();
 		await vi.advanceTimersByTimeAsync(0);
 
 		await expect.element(page.getByText(/Request req-seeded/)).toBeInTheDocument();
-		expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('publication-status'))).toHaveLength(1);
-		resolveInitial(statusResponse(publicationRequest('COMPLETED', 'req-old')));
-		await vi.advanceTimersByTimeAsync(0);
-		await expect.element(page.getByText(/Request req-seeded/)).toBeInTheDocument();
+		expect(actionUpdateMock).not.toHaveBeenCalled();
 
 		await vi.advanceTimersByTimeAsync(12_000);
-		expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('publication-status'))).toHaveLength(2);
+		expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('sync-status'))).toHaveLength(2);
+		await expect.element(page.getByText(/Request req-seeded/)).toBeInTheDocument();
 	});
 
-	it('reconciles an ambiguous publication result without applying the action response', async () => {
+	it('reconciles an ambiguous submission result without applying the action response', async () => {
 		let statusCalls = 0;
 		const fetchMock = vi.fn().mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
 			if (init?.method === 'POST') {
@@ -378,37 +455,65 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 				}), { status: 200, headers: { 'content-type': 'application/json' } }));
 			}
 			statusCalls += 1;
-			if (statusCalls === 1) return Promise.resolve(statusResponse(null));
-			return Promise.resolve(statusResponse({
-				...publicationRequest('PENDING', 'req-reconciled'),
-				publicationRevision: 5,
-				targetVersion: '2026-08-21',
-			}));
+			if (statusCalls === 1) return Promise.resolve(statusResponse(syncStatusPayload()));
+			return Promise.resolve(statusResponse(syncStatusPayload({
+				latestSubmittedRevision: 4,
+				activeSubmission: submission('PENDING', { requestId: 'req-reconciled' }),
+				latestSubmission: submission('PENDING', { requestId: 'req-reconciled' }),
+				archiveOutOfSync: true,
+			})));
 		});
 		vi.stubGlobal('fetch', fetchMock);
 		renderPage();
-		await page.getByRole('button', { name: 'Publish curated OCR' }).click();
-		await page.getByRole('button', { name: 'Queue publication' }).click();
+		await page.getByRole('button', { name: 'Submit changes' }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Submit changes' }).click();
 
 		await expect.element(page.getByText(/Request req-reconciled/)).toBeInTheDocument();
 		expect(actionUpdateMock).not.toHaveBeenCalled();
 		const postBody = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')?.[1]?.body as URLSearchParams;
 		expect(postBody.get('revision')).toBe('4');
-		await expect.element(page.getByRole('button', { name: 'Publication queued' })).toBeDisabled();
+		await expect.element(page.getByRole('button', { name: 'Changes queued' })).toBeDisabled();
 	});
 
-	it('aborts a publication action on object change and ignores its late result', async () => {
+	it('does not abort an in-flight submission from its own state updates', async () => {
 		let resolveAction!: (response: Response) => void;
 		const fetchMock = vi.fn().mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
 			if (init?.method === 'POST') {
 				return new Promise<Response>((resolve) => { resolveAction = resolve; });
 			}
-			return Promise.resolve(statusResponse(null));
+			return Promise.resolve(statusResponse(syncStatusPayload()));
+		});
+		vi.stubGlobal('fetch', fetchMock);
+		renderPage();
+		await page.getByRole('button', { name: 'Submit changes' }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Submit changes' }).click();
+
+		const postCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
+		const signal = postCall?.[1]?.signal as AbortSignal;
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(signal.aborted).toBe(false);
+
+		resolveAction(actionResponse('success', {
+			success: true,
+			currentRevision: 4,
+			submittedRevision: 4,
+			submission: actionSubmission('PENDING', 'req-in-flight'),
+		}));
+		await expect.element(page.getByText(/Request req-in-flight/)).toBeInTheDocument();
+	});
+
+	it('aborts a submission action on object change and ignores its late result', async () => {
+		let resolveAction!: (response: Response) => void;
+		const fetchMock = vi.fn().mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
+			if (init?.method === 'POST') {
+				return new Promise<Response>((resolve) => { resolveAction = resolve; });
+			}
+			return Promise.resolve(statusResponse(syncStatusPayload()));
 		});
 		vi.stubGlobal('fetch', fetchMock);
 		const view = renderPage();
-		await page.getByRole('button', { name: 'Publish curated OCR' }).click();
-		await page.getByRole('button', { name: 'Queue publication' }).click();
+		await page.getByRole('button', { name: 'Submit changes' }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Submit changes' }).click();
 		const postCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
 		const signal = postCall?.[1]?.signal as AbortSignal;
 
@@ -419,8 +524,9 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 		expect(signal.aborted).toBe(true);
 		resolveAction(actionResponse('success', {
 			success: true,
-			requestId: 'req-old-object',
-			requestStatus: 'PENDING',
+			currentRevision: 4,
+			submittedRevision: 4,
+			submission: actionSubmission('PENDING', 'req-old-object'),
 		}));
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -428,37 +534,128 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 		expect(actionUpdateMock).not.toHaveBeenCalled();
 	});
 
-	it('adopts an active-publication conflict action result', async () => {
+	it('adopts an active-submission conflict action result', async () => {
 		const fetchMock = vi.fn().mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
 			if (init?.method === 'POST') {
 				return Promise.resolve(actionResponse('failure', {
-					publicationAlreadyActive: true,
+					submissionAlreadyActive: true,
 					requestId: 'req-existing',
 					requestStatus: 'PROCESSING',
 				}, 409));
 			}
-			return Promise.resolve(statusResponse(null));
+			return Promise.resolve(statusResponse(syncStatusPayload()));
 		});
 		vi.stubGlobal('fetch', fetchMock);
 		renderPage();
-		await page.getByRole('button', { name: 'Publish curated OCR' }).click();
-		await page.getByRole('button', { name: 'Queue publication' }).click();
+		await page.getByRole('button', { name: 'Submit changes' }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Submit changes' }).click();
 
 		await expect.element(page.getByText(/Request req-existing/)).toBeInTheDocument();
-		await expect.element(page.getByRole('button', { name: 'Publishing…' })).toBeDisabled();
+		await expect.element(page.getByRole('button', { name: 'Synchronizing…' })).toBeDisabled();
 	});
 
-	it('renders unknown status without disabling publication or polling', async () => {
+	it('renders unknown status without disabling submission or polling', async () => {
 		vi.useFakeTimers();
-		const fetchMock = vi.fn().mockResolvedValue(statusResponse(publicationRequest('PAUSED')));
+		const fetchMock = vi.fn().mockResolvedValue(statusResponse(syncStatusPayload({
+			latestSubmittedRevision: 4,
+			latestSubmission: submission('PAUSED' as ArchiveSyncStatus),
+		})));
 		vi.stubGlobal('fetch', fetchMock);
 		renderPage();
 		await vi.advanceTimersByTimeAsync(0);
 
-		await expect.element(page.getByText('Publication has an unknown status: PAUSED.')).toBeInTheDocument();
-		await expect.element(page.getByRole('button', { name: 'Publish curated OCR' })).toBeEnabled();
+		await expect.element(page.getByText('Archive synchronization has an unknown status: PAUSED.')).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'Submit changes' })).toBeEnabled();
 		await vi.advanceTimersByTimeAsync(60_000);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it('allows editing and saving while an earlier revision is synchronizing', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(statusResponse(syncStatusPayload({
+			latestSubmittedRevision: 4,
+			activeSubmission: submission('PROCESSING'),
+			latestSubmission: submission('PROCESSING'),
+			archiveOutOfSync: true,
+		}))));
+		renderPage();
+		await expect.element(page.getByText(/Revision 4 is being synchronized with the archive/)).toBeInTheDocument();
+
+		await page.getByRole('textbox', { name: 'Title' }).fill('Edited while synchronizing');
+
+		await expect.element(page.getByRole('button', { name: 'Save draft' })).toBeEnabled();
+		await expect.element(page.getByRole('button', { name: 'Synchronizing…' })).toBeDisabled();
+	});
+
+	it('shows newer saved changes as not included after a completed older revision', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(statusResponse(syncStatusPayload({
+			currentRevision: 5,
+			latestSubmittedRevision: 4,
+			latestAppliedRevision: 4,
+			latestSubmission: submission('COMPLETED'),
+			archiveOutOfSync: true,
+		}))));
+		renderPage({
+			...editPayload,
+			revision: 5,
+		});
+
+		await expect.element(
+			page.getByText('Revision 4 is synchronized; newer saved changes are not yet included.'),
+		).toBeInTheDocument();
+	});
+
+	it('shows the out-of-sync notice for saved changes that were never submitted', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(statusResponse(syncStatusPayload({
+			archiveOutOfSync: true,
+		}))));
+		renderPage();
+
+		await expect.element(
+			page.getByText('Saved changes have not been synchronized with the archive.'),
+		).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'Submit changes' })).toBeEnabled();
+	});
+
+	it('requeues a failed submission through the retry action', async () => {
+		const fetchMock = vi.fn().mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
+			if (init?.method === 'POST') {
+				return Promise.resolve(actionResponse('success', {
+					success: true,
+					currentRevision: 4,
+					submittedRevision: 4,
+					submission: actionSubmission('PENDING', 'req-1'),
+				}));
+			}
+			return Promise.resolve(statusResponse(syncStatusPayload({
+				latestSubmittedRevision: 4,
+				latestSubmission: submission('FAILED'),
+			})));
+		});
+		vi.stubGlobal('fetch', fetchMock);
+		renderPage();
+
+		await expect.element(page.getByRole('button', { name: 'Retry synchronization' })).toBeInTheDocument();
+		await page.getByRole('button', { name: 'Retry synchronization' }).click();
+
+		await expect.element(page.getByText(/Revision 4 is queued for archive synchronization/)).toBeInTheDocument();
+	});
+
+	it('warns before navigating away with unsaved changes', async () => {
+		const confirmMock = vi.fn().mockReturnValue(false);
+		vi.stubGlobal('confirm', confirmMock);
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(statusResponse(syncStatusPayload())));
+		renderPage();
+		await page.getByRole('textbox', { name: 'Title' }).fill('Unsaved title');
+
+		const handler = beforeNavigateMock.mock.calls[0]?.[0] as (navigation: {
+			cancel: () => void;
+			to: { url: URL };
+		}) => void;
+		const navigation = { cancel: vi.fn(), to: { url: new URL('http://localhost/objects') } };
+		handler(navigation);
+
+		expect(confirmMock).toHaveBeenCalled();
+		expect(navigation.cancel).toHaveBeenCalled();
 	});
 
 	it('renders editor chrome in English', async () => {
@@ -469,7 +666,7 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 			.element(page.getByRole('button', { name: 'Save draft' }))
 			.toBeInTheDocument();
 		await expect
-			.element(page.getByRole('button', { name: 'Publish curated OCR' }))
+			.element(page.getByRole('button', { name: 'Submit changes' }))
 			.toBeInTheDocument();
 		await expect
 			.element(page.getByRole('textbox', { name: 'Title' }))
@@ -487,7 +684,7 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 			.element(page.getByRole('button', { name: 'Сохранить черновик' }))
 			.toBeInTheDocument();
 		await expect
-			.element(page.getByRole('button', { name: 'Опубликовать курированный OCR' }))
+			.element(page.getByRole('button', { name: 'Отправить изменения' }))
 			.toBeInTheDocument();
 		await expect
 			.element(page.getByRole('textbox', { name: 'Название' }))
@@ -591,10 +788,10 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 			.toBeInTheDocument();
 	});
 
-	it('moves focus into the publish dialog when opened', async () => {
+	it('moves focus into the submit dialog when opened', async () => {
 		renderPage();
 
-		await page.getByRole('button', { name: 'Publish curated OCR' }).click();
+		await page.getByRole('button', { name: 'Submit changes' }).click();
 		await expect.element(page.getByRole('dialog')).toBeInTheDocument();
 
 		await vi.waitFor(() => {
@@ -602,10 +799,10 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 		});
 	});
 
-	it('restores focus to the publish trigger when the dialog closes', async () => {
+	it('restores focus to the submit trigger when the dialog closes', async () => {
 		renderPage();
 
-		const trigger = page.getByRole('button', { name: 'Publish curated OCR' });
+		const trigger = page.getByRole('button', { name: 'Submit changes' });
 		await trigger.click();
 		await page.getByRole('button', { name: 'Cancel' }).click();
 
@@ -614,10 +811,10 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 		});
 	});
 
-	it('closes the publish dialog on Escape', async () => {
+	it('closes the submit dialog on Escape', async () => {
 		renderPage();
 
-		await page.getByRole('button', { name: 'Publish curated OCR' }).click();
+		await page.getByRole('button', { name: 'Submit changes' }).click();
 		await expect.element(page.getByRole('dialog')).toBeInTheDocument();
 
 		await userEvent.keyboard('{Escape}');
@@ -752,12 +949,7 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 			if (init?.method === 'POST') {
 				return Promise.resolve(actionResponse('success', { editPayload }));
 			}
-			return Promise.resolve(
-				new Response(JSON.stringify({ request: null }), {
-					status: 200,
-					headers: { 'content-type': 'application/json' }
-				})
-			);
+			return Promise.resolve(statusResponse(syncStatusPayload()));
 		});
 		vi.stubGlobal('fetch', fetchMock);
 		renderPage({
@@ -824,6 +1016,7 @@ describe('/objects/[objectId]/edit +page.svelte', () => {
 
 describe('object edit page-count pluralization', () => {
 	it('renders English singular and plural page counts', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(statusResponse(syncStatusPayload())));
 		renderPage();
 
 		await expect.element(page.getByText('1 page')).toBeInTheDocument();
@@ -847,6 +1040,7 @@ describe('object edit page-count pluralization', () => {
 	});
 
 	it('renders Russian page-count plural forms', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(statusResponse(syncStatusPayload())));
 		locale.setLocale('ru');
 		renderPage();
 

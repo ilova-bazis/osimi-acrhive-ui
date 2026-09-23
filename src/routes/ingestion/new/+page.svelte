@@ -2,7 +2,7 @@
     import { enhance } from "$app/forms";
     import { resolve } from "$app/paths";
     import { untrack } from "svelte";
-    import type { ActionData } from "./$types";
+    import type { ActionData, PageData } from "./$types";
     import Icon from "$lib/components/Icon.svelte";
     import ChoiceCard from "$lib/components/ChoiceCard.svelte";
     import Stepper from "$lib/components/Stepper.svelte";
@@ -25,23 +25,39 @@
         type PipelinePreset,
     } from "$lib/ingestion/pipelineCapabilities";
 
-    let { form } = $props<{ form: ActionData }>();
+    let { data, form } = $props<{ data: PageData; form: ActionData }>();
 
     const dictionary = $derived(translations[$locale]);
     const t = (key: TranslationKey) => translate(dictionary, key);
 
+    const idempotencyKey = $derived(form?.idempotencyKey ?? data.idempotencyKey);
+    const attemptCreatedAt = $derived(form?.attemptCreatedAt ?? data.attemptCreatedAt);
+    const isConflict = $derived(form?.code === "CONFLICT");
+
     // --- form state ---
-    let name = $state("");
-    let selectedClassificationType = $state<ClassificationType>("document");
-    let selectedItemKind = $state<ItemKind>(
-        defaultItemKindForClassification("document"),
+    let name = $state(untrack(() => form?.values?.name ?? ""));
+    let selectedClassificationType = $state<ClassificationType>(
+        untrack(() => form?.values?.classificationType ?? "document"),
     );
-    let selectedLang = $state("fa");
-    let selectedPreset = $state<PipelinePreset>("auto");
-    let selectedVisibility = $state("private");
+    let selectedItemKind = $state<ItemKind>(
+        untrack(
+            () =>
+                form?.values?.itemKind ??
+                defaultItemKindForClassification(
+                    form?.values?.classificationType ?? "document",
+                ),
+        ),
+    );
+    let selectedLang = $state(untrack(() => form?.values?.languageCode ?? "fa"));
+    let selectedPreset = $state<PipelinePreset>(
+        untrack(() => form?.values?.pipelinePreset ?? "auto"),
+    );
+    let selectedVisibility = $state(
+        untrack(() => form?.values?.accessLevel ?? "private"),
+    );
     let tagsInput = $state("");
-    let summaryTags = $state<string[]>([]);
-    let notes = $state("");
+    let summaryTags = $state<string[]>(untrack(() => form?.values?.summaryTags ?? []));
+    let notes = $state(untrack(() => form?.values?.summary ?? ""));
     let submitting = $state(false);
 
     type KindOption = {
@@ -276,12 +292,20 @@
         id="new-batch-form"
         method="POST"
         class="flex-1 px-4 py-8 sm:px-6"
-        use:enhance={() => {
+        use:enhance={({ cancel }) => {
+            if (submitting) {
+                cancel();
+                return;
+            }
+
             submitting = true;
-            console.log(selectedItemKind, selectedClassificationType);
+
             return async ({ update }) => {
-                await update();
-                submitting = false;
+                try {
+                    await update();
+                } finally {
+                    submitting = false;
+                }
             };
         }}
     >
@@ -297,6 +321,8 @@
         <input type="hidden" name="accessLevel" value={selectedVisibility} />
         <input type="hidden" name="summaryTags" value={summaryTags.join(",")} />
         <input type="hidden" name="locale" value={$locale} />
+        <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
+        <input type="hidden" name="attemptCreatedAt" value={attemptCreatedAt} />
 
         <div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
             <!-- Batch name -->
@@ -356,8 +382,6 @@
                             selected={selectedItemKind === kind.id}
                             onclick={() => {
                                 selectedItemKind = kind.id;
-
-                                console.log(kind.id, selectedItemKind);
                             }}
                         />
                     {/each}
@@ -495,11 +519,21 @@
             </div>
 
             {#if errorMessage}
-                <p
-                    class="rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-4 py-3 text-xs text-burnt-peach"
+                <div
+                    class="flex flex-col gap-2 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-4 py-3 text-xs text-burnt-peach"
                 >
-                    {errorMessage}
-                </p>
+                    <p>{errorMessage}</p>
+                    {#if isConflict}
+                        <a
+                            href={resolve("/ingestion/new")}
+                            data-sveltekit-reload
+                            class="inline-flex items-center gap-2 self-start rounded-full border border-burnt-peach/45 px-3 py-1 uppercase tracking-[0.2em] text-burnt-peach hover:bg-burnt-peach/10 transition-all"
+                        >
+                            {t("ingestionNew.conflictNewAttempt")}
+                            <Icon name="arrow-r" size={11} />
+                        </a>
+                    {/if}
+                </div>
             {/if}
         </div>
     </form>

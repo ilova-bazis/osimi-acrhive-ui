@@ -29,6 +29,7 @@ export type CreateIngestionResponse = {
 export type IngestionNewRequestContext = {
 	fetchFn: typeof fetch;
 	token: string;
+	idempotencyKey: string;
 };
 
 export type CreateIngestionDraftRequest = {

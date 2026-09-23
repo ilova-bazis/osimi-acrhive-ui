@@ -1,28 +1,31 @@
 import {
+	mapObjectArchiveSync,
 	mapObjectEditPayload,
 	mapReleaseLockResult,
 	mapSaveDocumentCurationResult,
 	mapSaveMetadataResult,
-	mapSubmitCurationResult,
+	mapSubmitObjectChangesResult,
 } from '$lib/api/mappers/objectEditMapper';
 import {
 	objectEditPayloadSchema,
-	objectCurationPublicationSchema,
+	objectArchiveSyncSchema,
 	releaseLockResultSchema,
+	retryObjectChangeSubmissionRequestSchema,
 	saveDocumentCurationRequestSchema,
 	saveDocumentCurationResultSchema,
 	saveMetadataRequestSchema,
 	saveMetadataResultSchema,
-	submitCurationRequestSchema,
-	submitCurationResultSchema,
+	submitObjectChangesRequestSchema,
+	submitObjectChangesResultSchema,
 } from '$lib/api/schemas/objectEdit';
 import { ApiClientError, backendRequest } from '$lib/server/apiClient';
 import type {
 	ObjectEditService,
 	ReleaseLockRequest,
+	RetryObjectChangeSubmissionRequest,
 	SaveDocumentCurationRequest,
 	SaveMetadataRequest,
-	SubmitCurationRequest,
+	SubmitObjectChangesRequest,
 } from './objectEdit';
 import { ObjectEditLockedError, ObjectEditRevisionConflictError } from './objectEdit';
 
@@ -35,11 +38,14 @@ const toObjectMetadataPath = (objectId: string) =>
 const toDocumentCurationPath = (objectId: string) =>
 	`/api/objects/${encodeURIComponent(objectId)}/curation/document`;
 
-const toCurationSubmitPath = (objectId: string) =>
-	`/api/objects/${encodeURIComponent(objectId)}/curation/submit`;
+const toObjectChangesSubmitPath = (objectId: string) =>
+	`/api/objects/${encodeURIComponent(objectId)}/changes/submit`;
 
-const toCurationPublicationPath = (objectId: string) =>
-	`/api/objects/${encodeURIComponent(objectId)}/curation-publication`;
+const toObjectChangesStatusPath = (objectId: string) =>
+	`/api/objects/${encodeURIComponent(objectId)}/changes/status`;
+
+const toObjectChangeSubmissionRetryPath = (objectId: string, requestId: string) =>
+	`/api/objects/${encodeURIComponent(objectId)}/change-submissions/${encodeURIComponent(requestId)}/retry`;
 
 const toEditLockPath = (objectId: string) =>
 	`/api/objects/${encodeURIComponent(objectId)}/edit-lock`;
@@ -80,30 +86,16 @@ export const apiObjectEditService: ObjectEditService = {
 		return mapObjectEditPayload(response);
 	},
 
-	getCurationPublication: async ({ context, objectId }) => {
+	getObjectArchiveSync: async ({ context, objectId }) => {
 		const response = await backendRequest({
 			fetchFn: context.fetchFn,
-			path: toCurationPublicationPath(objectId),
-			context: 'objectEdit.publication',
+			path: toObjectChangesStatusPath(objectId),
+			context: 'objectEdit.syncStatus',
 			method: 'GET',
 			token: context.token,
-			responseSchema: objectCurationPublicationSchema,
+			responseSchema: objectArchiveSyncSchema,
 		});
-		return {
-			objectId: response.object_id,
-			request: response.request
-				? {
-					id: response.request.id,
-					status: response.request.status,
-					failureReason: response.request.failure_reason,
-					publicationRevision: response.request.publication_revision,
-					targetVersion: response.request.target_version,
-					createdAt: response.request.created_at,
-					updatedAt: response.request.updated_at,
-					completedAt: response.request.completed_at,
-				}
-				: null,
-		};
+		return mapObjectArchiveSync(response);
 	},
 
 	saveObjectMetadata: async ({ context, objectId, revision, metadata, rights }: SaveMetadataRequest) => {
@@ -166,23 +158,44 @@ export const apiObjectEditService: ObjectEditService = {
 		}
 	},
 
-	submitObjectCuration: async ({ context, objectId, revision, reviewNote }: SubmitCurationRequest) => {
+	submitObjectChanges: async ({ context, objectId, revision, submissionNote }: SubmitObjectChangesRequest) => {
 		try {
 			const response = await backendRequest({
 				fetchFn: context.fetchFn,
-				path: toCurationSubmitPath(objectId),
-				context: 'objectEdit.submit',
+				path: toObjectChangesSubmitPath(objectId),
+				context: 'objectEdit.submitChanges',
 				method: 'POST',
 				token: context.token,
 				body: {
 					revision,
-					review_note: reviewNote,
+					submission_note: submissionNote,
 				},
-				requestSchema: submitCurationRequestSchema,
-				responseSchema: submitCurationResultSchema,
+				requestSchema: submitObjectChangesRequestSchema,
+				responseSchema: submitObjectChangesResultSchema,
 			});
 
-			return mapSubmitCurationResult(response);
+			return mapSubmitObjectChangesResult(response);
+		} catch (e) {
+			return rethrowEditConflict(e);
+		}
+	},
+
+	retryObjectChangeSubmission: async ({ context, objectId, requestId, retryReason }: RetryObjectChangeSubmissionRequest) => {
+		try {
+			const response = await backendRequest({
+				fetchFn: context.fetchFn,
+				path: toObjectChangeSubmissionRetryPath(objectId, requestId),
+				context: 'objectEdit.retrySync',
+				method: 'POST',
+				token: context.token,
+				body: {
+					retry_reason: retryReason,
+				},
+				requestSchema: retryObjectChangeSubmissionRequestSchema,
+				responseSchema: submitObjectChangesResultSchema,
+			});
+
+			return mapSubmitObjectChangesResult(response);
 		} catch (e) {
 			return rethrowEditConflict(e);
 		}

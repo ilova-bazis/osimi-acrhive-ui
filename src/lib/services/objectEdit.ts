@@ -50,7 +50,7 @@ export type ObjectEditRights = {
 export type ObjectEditCapabilities = {
 	canEditMetadata: boolean;
 	canCurateText: boolean;
-	canSubmitReview: boolean;
+	canSubmitChanges: boolean;
 };
 
 export type ObjectEditDraft = { updatedAt: string; updatedBy: string } | null;
@@ -88,28 +88,40 @@ export type SaveDocumentCurationResult = {
 	updatedAt: string;
 };
 
-export type SubmitCurationResult = {
+export type ArchiveSyncStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
+
+export type SubmitObjectChangesResult = {
 	objectId: string;
-	revision: number;
-	curationState: CurationState;
-	submittedAt: string;
-	submittedBy: string;
-	requestId: string;
-	requestStatus: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
+	currentRevision: number;
+	submittedRevision: number;
+	submission: {
+		id: string;
+		requestId: string;
+		status: ArchiveSyncStatus;
+		submittedAt: string;
+		submittedBy: string | null;
+	};
 };
 
-export type ObjectCurationPublication = {
+export type ObjectArchiveSyncSubmission = {
+	id: string;
+	requestId: string;
+	submittedRevision: number;
+	status: ArchiveSyncStatus;
+	submittedAt: string;
+	submittedBy: string | null;
+	completedAt: string | null;
+	failureReason: string | null;
+};
+
+export type ObjectArchiveSync = {
 	objectId: string;
-	request: {
-		id: string;
-		status: string;
-		failureReason: string | null;
-		publicationRevision: number | null;
-		targetVersion: string | null;
-		createdAt: string;
-		updatedAt: string;
-		completedAt: string | null;
-	} | null;
+	currentRevision: number;
+	latestSubmittedRevision: number | null;
+	latestAppliedRevision: number | null;
+	archiveOutOfSync: boolean;
+	activeSubmission: ObjectArchiveSyncSubmission | null;
+	latestSubmission: ObjectArchiveSyncSubmission | null;
 };
 
 export type ReleaseLockResult = {
@@ -137,11 +149,18 @@ export type SaveDocumentCurationRequest = {
 	pages: Array<{ pageNumber: number; curatedText: string }>;
 };
 
-export type SubmitCurationRequest = {
+export type SubmitObjectChangesRequest = {
 	context: ObjectsRequestContext;
 	objectId: string;
 	revision: number;
-	reviewNote: string | null;
+	submissionNote: string | null;
+};
+
+export type RetryObjectChangeSubmissionRequest = {
+	context: ObjectsRequestContext;
+	objectId: string;
+	requestId: string;
+	retryReason: string | null;
 };
 
 export type ReleaseLockRequest = {
@@ -153,8 +172,9 @@ export type ObjectEditService = {
 	getObjectEditPayload: (req: ObjectEditRequest) => Promise<ObjectEditPayload>;
 	saveObjectMetadata: (req: SaveMetadataRequest) => Promise<SaveMetadataResult>;
 	saveDocumentCuration: (req: SaveDocumentCurationRequest) => Promise<SaveDocumentCurationResult>;
-	submitObjectCuration: (req: SubmitCurationRequest) => Promise<SubmitCurationResult>;
-	getCurationPublication: (req: ObjectEditRequest) => Promise<ObjectCurationPublication>;
+	submitObjectChanges: (req: SubmitObjectChangesRequest) => Promise<SubmitObjectChangesResult>;
+	getObjectArchiveSync: (req: ObjectEditRequest) => Promise<ObjectArchiveSync>;
+	retryObjectChangeSubmission: (req: RetryObjectChangeSubmissionRequest) => Promise<SubmitObjectChangesResult>;
 	releaseEditLock: (req: ReleaseLockRequest) => Promise<ReleaseLockResult>;
 };
 

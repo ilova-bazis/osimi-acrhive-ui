@@ -66,7 +66,7 @@ export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) =
 
 	existingFiles = detail.files;
 
-	const cookieItemKind = cookies.get(`ingestion-item-kind:${params.batchId}`);
+	const cookieItemKind = cookies.get(`ingestion-item-kind-${params.batchId}`);
 	const fallbackItemKind =
 		cookieItemKind === 'photo' ||
 		cookieItemKind === 'audio' ||
@@ -89,7 +89,7 @@ export const load: PageServerLoad = async ({ params, locals, cookies, fetch }) =
 		summary: detail.summary
 	};
 	if (fallbackItemKind) {
-		cookies.delete(`ingestion-item-kind:${params.batchId}`, {
+		cookies.delete(`ingestion-item-kind-${params.batchId}`, {
 			path: `/ingestion/${params.batchId}`
 		});
 	}

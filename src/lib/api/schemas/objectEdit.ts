@@ -61,6 +61,7 @@ export const objectEditPayloadSchema = z.object({
 		can_edit_metadata: z.boolean(),
 		can_curate_text: z.boolean(),
 		can_submit_review: z.boolean(),
+		can_submit_changes: z.boolean(),
 	}),
 	curation_payload: objectEditCurationPayloadSchema,
 }).strict();
@@ -117,37 +118,53 @@ export const saveDocumentCurationRequestSchema = z
 	})
 	.strict();
 
-export const submitCurationResultSchema = z.object({
+export const archiveSyncStatusSchema = z.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELED']);
+
+export const submitObjectChangesResultSchema = z.object({
 	object_id: z.string(),
-	revision: z.number().int().min(0),
-	curation_state: curationStateSchema,
-	request: z.object({
+	current_revision: z.number().int().min(0),
+	submitted_revision: z.number().int().min(0),
+	submission: z.object({
 		id: z.string(),
-		action_type: z.string(),
-		status: z.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELED']),
+		request_id: z.string(),
+		action_type: z.literal('object_revision_apply'),
+		status: archiveSyncStatusSchema,
+		submitted_at: z.string(),
+		submitted_by: z.string().nullable(),
 	}),
+}).strict();
+
+export const objectArchiveSyncSubmissionSchema = z.object({
+	id: z.string(),
+	request_id: z.string(),
+	submitted_revision: z.number().int().min(0),
+	status: archiveSyncStatusSchema,
 	submitted_at: z.string(),
-	submitted_by: z.string(),
-}).strict();
+	submitted_by: z.string().nullable(),
+	completed_at: z.string().nullable(),
+	failure_reason: z.string().nullable(),
+});
 
-export const objectCurationPublicationSchema = z.object({
+export const objectArchiveSyncSchema = z.object({
 	object_id: z.string().min(1),
-	request: z.object({
-		id: z.string().min(1),
-		status: z.string().min(1),
-		failure_reason: z.string().nullable(),
-		publication_revision: z.number().int().positive().nullable(),
-		target_version: z.string().nullable(),
-		created_at: z.string(),
-		updated_at: z.string(),
-		completed_at: z.string().nullable(),
-	}).nullable(),
+	current_revision: z.number().int().min(0),
+	latest_submitted_revision: z.number().int().min(0).nullable(),
+	latest_applied_revision: z.number().int().min(0).nullable(),
+	archive_out_of_sync: z.boolean(),
+	active_submission: objectArchiveSyncSubmissionSchema.nullable(),
+	latest_submission: objectArchiveSyncSubmissionSchema.nullable(),
 }).strict();
 
-export const submitCurationRequestSchema = z
+export const submitObjectChangesRequestSchema = z
 	.object({
 		revision: z.number().int().min(0),
-		review_note: z.string().nullable(),
+		submission_note: z.string().nullable(),
+	})
+	.strict();
+
+export const retryObjectChangeSubmissionRequestSchema = z
+	.object({
+		retry_reason: z.string().nullable(),
 	})
 	.strict();
 
@@ -160,6 +177,6 @@ export type ObjectEditDocumentPageDto = z.infer<typeof objectEditDocumentPageSch
 export type ObjectEditPayloadDto = z.infer<typeof objectEditPayloadSchema>;
 export type SaveMetadataResultDto = z.infer<typeof saveMetadataResultSchema>;
 export type SaveDocumentCurationResultDto = z.infer<typeof saveDocumentCurationResultSchema>;
-export type SubmitCurationResultDto = z.infer<typeof submitCurationResultSchema>;
-export type ObjectCurationPublicationDto = z.infer<typeof objectCurationPublicationSchema>;
+export type SubmitObjectChangesResultDto = z.infer<typeof submitObjectChangesResultSchema>;
+export type ObjectArchiveSyncDto = z.infer<typeof objectArchiveSyncSchema>;
 export type ReleaseLockResultDto = z.infer<typeof releaseLockResultSchema>;

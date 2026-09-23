@@ -211,7 +211,11 @@ export const updateIngestionRequestSchema = z
 	.strict();
 
 export const createIngestionResponseSchema = z.object({
-	ingestion: ingestionDtoSchema
+	ingestion: ingestionDtoSchema.and(
+		z.object({
+			id: z.string().min(1)
+		})
+	)
 });
 
 export const presignIngestionFileRequestSchema = z

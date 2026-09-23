@@ -1,19 +1,22 @@
 import type {
+	ObjectArchiveSyncDto,
 	ObjectEditDocumentPageDto,
 	ObjectEditPayloadDto,
 	ReleaseLockResultDto,
 	SaveDocumentCurationResultDto,
 	SaveMetadataResultDto,
-	SubmitCurationResultDto,
+	SubmitObjectChangesResultDto,
 } from '$lib/api/schemas/objectEdit';
 import type {
+	ObjectArchiveSync,
+	ObjectArchiveSyncSubmission,
 	ObjectEditCurationPayload,
 	ObjectEditDocumentPage,
 	ObjectEditPayload,
 	ReleaseLockResult,
 	SaveDocumentCurationResult,
 	SaveMetadataResult,
-	SubmitCurationResult,
+	SubmitObjectChangesResult,
 } from '$lib/services/objectEdit';
 
 export const mapObjectEditDocumentPage = (raw: ObjectEditDocumentPageDto): ObjectEditDocumentPage => ({
@@ -69,7 +72,7 @@ export const mapObjectEditPayload = (raw: ObjectEditPayloadDto): ObjectEditPaylo
 	capabilities: {
 		canEditMetadata: raw.capabilities.can_edit_metadata,
 		canCurateText: raw.capabilities.can_curate_text,
-		canSubmitReview: raw.capabilities.can_submit_review,
+		canSubmitChanges: raw.capabilities.can_submit_changes,
 	},
 	curation: mapObjectEditCurationPayload(raw.curation_payload),
 });
@@ -90,14 +93,43 @@ export const mapSaveDocumentCurationResult = (
 	updatedAt: raw.updated_at,
 });
 
-export const mapSubmitCurationResult = (raw: SubmitCurationResultDto): SubmitCurationResult => ({
+export const mapSubmitObjectChangesResult = (raw: SubmitObjectChangesResultDto): SubmitObjectChangesResult => ({
 	objectId: raw.object_id,
-	revision: raw.revision,
-	curationState: raw.curation_state,
-	submittedAt: raw.submitted_at,
-	submittedBy: raw.submitted_by,
-	requestId: raw.request.id,
-	requestStatus: raw.request.status,
+	currentRevision: raw.current_revision,
+	submittedRevision: raw.submitted_revision,
+	submission: {
+		id: raw.submission.id,
+		requestId: raw.submission.request_id,
+		status: raw.submission.status,
+		submittedAt: raw.submission.submitted_at,
+		submittedBy: raw.submission.submitted_by,
+	},
+});
+
+export const mapObjectArchiveSyncSubmission = (
+	raw: ObjectArchiveSyncDto['latest_submission'],
+): ObjectArchiveSyncSubmission | null => {
+	if (!raw) return null;
+	return {
+		id: raw.id,
+		requestId: raw.request_id,
+		submittedRevision: raw.submitted_revision,
+		status: raw.status,
+		submittedAt: raw.submitted_at,
+		submittedBy: raw.submitted_by,
+		completedAt: raw.completed_at,
+		failureReason: raw.failure_reason,
+	};
+};
+
+export const mapObjectArchiveSync = (raw: ObjectArchiveSyncDto): ObjectArchiveSync => ({
+	objectId: raw.object_id,
+	currentRevision: raw.current_revision,
+	latestSubmittedRevision: raw.latest_submitted_revision,
+	latestAppliedRevision: raw.latest_applied_revision,
+	archiveOutOfSync: raw.archive_out_of_sync,
+	activeSubmission: mapObjectArchiveSyncSubmission(raw.active_submission),
+	latestSubmission: mapObjectArchiveSyncSubmission(raw.latest_submission),
 });
 
 export const mapReleaseLockResult = (raw: ReleaseLockResultDto): ReleaseLockResult => ({

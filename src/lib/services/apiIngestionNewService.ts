@@ -1,9 +1,8 @@
-import { mapCreatedIngestionBatchId } from '$lib/api/mappers/ingestionsMapper';
 import {
 	createIngestionRequestSchema,
 	createIngestionResponseSchema
 } from '$lib/api/schemas/ingestions';
-import { ApiClientError, backendRequest } from '$lib/server/apiClient';
+import { backendRequest } from '$lib/server/apiClient';
 import type { IngestionNewService } from './ingestionNew';
 
 export const apiIngestionNewService: IngestionNewService = {
@@ -14,6 +13,9 @@ export const apiIngestionNewService: IngestionNewService = {
 			context: 'ingestions.create',
 			method: 'POST',
 			token: context.token,
+			headers: {
+				'x-idempotency-key': context.idempotencyKey
+			},
 			body: {
 				batch_label: payload.name,
 				schema_version: '1.0',
@@ -31,15 +33,6 @@ export const apiIngestionNewService: IngestionNewService = {
 			responseSchema: createIngestionResponseSchema
 		});
 
-		const batchId = mapCreatedIngestionBatchId(response.ingestion);
-		if (!batchId) {
-			throw new ApiClientError({
-				status: 502,
-				code: 'INVALID_RESPONSE',
-				message: 'Invalid backend response for ingestions.create'
-			});
-		}
-
-		return { batchId };
+		return { batchId: response.ingestion.id };
 	}
 };

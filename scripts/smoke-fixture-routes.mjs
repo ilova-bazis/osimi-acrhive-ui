@@ -42,7 +42,20 @@ export const createContext = () => ({
 	uploadsByFileId: new Map(),
 	uploadsByToken: new Map(),
 	committedUploads: new Set(),
-	nextUploadId: 1
+	nextUploadId: 1,
+	ingestionCreates: [],
+	ingestionBatchesByKey: new Map(),
+	nextNewIngestionId: 1,
+	newIngestionCreateDelayMs: Number(process.env.SMOKE_NEW_INGESTION_DELAY_MS ?? 0),
+	objectEdit: {
+		revision: 4,
+		title: 'War-time newspaper issue',
+		appliedRevision: 4,
+		submission: null,
+		submitCount: 0,
+		nextSubmissionId: 1
+	},
+	objectSyncDelayMs: Number(process.env.SMOKE_OBJECT_SYNC_DELAY_MS ?? 800)
 });
 
 const PNG_BYTES = Buffer.from(
@@ -167,6 +180,34 @@ const baseIngestionResource = (id, label, status, overrides = {}) => ({
 		can_delete: true
 	},
 	...overrides
+});
+
+const newIngestionResource = (id, label) => ({
+	id,
+	batch_label: label,
+	tenant_id: TENANT_ID,
+	status: 'DRAFT',
+	created_by: USER_ID,
+	schema_version: '1.0',
+	classification_type: 'document',
+	item_kind: 'scanned_document',
+	language_code: 'ru',
+	pipeline_preset: 'ocr_text',
+	access_level: 'private',
+	embargo_until: null,
+	rights_note: null,
+	sensitivity_note: null,
+	summary: {
+		title: { primary: label, original_script: null, translations: [] },
+		classification: { tags: [], summary: null },
+		dates: {
+			published: { value: null, approximate: false, confidence: 'medium', note: null },
+			created: { value: null, approximate: false, confidence: 'medium', note: null }
+		}
+	},
+	error_summary: null,
+	created_at: FIXED_TIME,
+	updated_at: FIXED_TIME
 });
 
 const previewEntry = (contentType, width = 640, height = 480, url = null) => ({
@@ -672,15 +713,15 @@ const resyncRequest = () => ({
 	completed_at: null
 });
 
-const editPayload = () => ({
+const editPayload = (context) => ({
 	object_id: DOC_OBJECT_ID,
-	revision: 4,
+	revision: context.objectEdit.revision,
 	media_type: 'document',
 	lock: { locked: false, locked_by: null, locked_until: null },
 	curation_state: 'review_in_progress',
 	draft: null,
 	metadata: {
-		title: 'War-time newspaper issue',
+		title: context.objectEdit.title,
 		publication_date: '1945-05-09',
 		date_precision: 'day',
 		date_approximate: false,
@@ -709,6 +750,52 @@ const editPayload = () => ({
 		]
 	}
 });
+
+const submissionPayload = (context, submission) => ({
+	id: submission.id,
+	request_id: submission.requestId,
+	action_type: 'object_revision_apply',
+	status: submission.status,
+	submitted_at: submission.submittedAt,
+	submitted_by: submission.submittedBy
+});
+
+const changeStatusPayload = (context) => {
+	const submission = context.objectEdit.submission;
+	const currentRevision = context.objectEdit.revision;
+	const appliedRevision = context.objectEdit.appliedRevision;
+	return {
+		object_id: DOC_OBJECT_ID,
+		current_revision: currentRevision,
+		latest_submitted_revision: submission?.submittedRevision ?? null,
+		latest_applied_revision: submission && submission.status === 'COMPLETED' ? appliedRevision : null,
+		archive_out_of_sync: appliedRevision < currentRevision,
+		active_submission: submission && (submission.status === 'PENDING' || submission.status === 'PROCESSING')
+			? {
+				id: submission.id,
+				request_id: submission.requestId,
+				submitted_revision: submission.submittedRevision,
+				status: submission.status,
+				submitted_at: submission.submittedAt,
+				submitted_by: submission.submittedBy,
+				completed_at: null,
+				failure_reason: null
+			}
+			: null,
+		latest_submission: submission
+			? {
+				id: submission.id,
+				request_id: submission.requestId,
+				submitted_revision: submission.submittedRevision,
+				status: submission.status,
+				submitted_at: submission.submittedAt,
+				submitted_by: submission.submittedBy,
+				completed_at: submission.status === 'COMPLETED' ? FIXED_TIME : null,
+				failure_reason: null
+			}
+			: null
+	};
+};
 
 const dashboardSummary = () => ({
 	summary: {
@@ -955,9 +1042,34 @@ export const buildRoutes = (
 		method: 'POST',
 		pattern: /^\/api\/ingestions$/,
 		auth: true,
+		handler: async (request, response) => {
+			const idempotencyKey = request.headers['x-idempotency-key'] ?? null;
+			context.ingestionCreates.push({ idempotencyKey, received_at: FIXED_TIME });
+			const replayedId = idempotencyKey ? context.ingestionBatchesByKey.get(idempotencyKey) : undefined;
+			if (replayedId) {
+				json(response, 201, { ingestion: newIngestionResource(replayedId, 'Smoke New Batch') });
+				return;
+			}
+			const batchId = `SMOKE-NEW-${context.nextNewIngestionId}`;
+			context.nextNewIngestionId += 1;
+			if (idempotencyKey) context.ingestionBatchesByKey.set(idempotencyKey, batchId);
+			if (context.newIngestionCreateDelayMs > 0) {
+				await new Promise((resolve) => setTimeout(resolve, context.newIngestionCreateDelayMs));
+			}
+			json(response, 201, { ingestion: newIngestionResource(batchId, 'Smoke New Batch') });
+		}
+	},
+	{
+		method: 'GET',
+		pattern: /^\/__smoke__\/ingestion-creates$/,
+		auth: true,
 		handler: async (_request, response) =>
-			json(response, 201, {
-				ingestion: baseIngestionResource(BATCH_ID, 'Smoke Batch', 'UPLOADING')
+			json(response, 200, {
+				creates: context.ingestionCreates,
+				batches: [...context.ingestionBatchesByKey.entries()].map(([key, batchId]) => ({
+					idempotencyKey: key,
+					batchId
+				}))
 			})
 	},
 	{
@@ -1227,7 +1339,7 @@ export const buildRoutes = (
 				(targetId !== null && targetType === null) ||
 				(targetId !== null && targetId.length === 0) ||
 				(targetType === 'object' && targetId !== null && !/^OBJ-\d{8}-[A-Z0-9]{6}$/.test(targetId)) ||
-				(actionType !== null && !['object_resync', 'artifact_fetch', 'curation_apply'].includes(actionType)) ||
+				(actionType !== null && !['object_resync', 'artifact_fetch', 'curation_apply', 'object_revision_apply'].includes(actionType)) ||
 				rawStatuses.some((status) => status.length === 0) ||
 				statuses.some((status) => !validStatuses.has(status)) ||
 				(activeOnly !== null && !['true', 'false'].includes(activeOnly)) ||
@@ -1353,19 +1465,173 @@ export const buildRoutes = (
 		method: 'GET',
 		pattern: /^\/api\/objects\/[^/]+\/edit$/,
 		auth: true,
-		handler: async (_request, response) => json(response, 200, editPayload())
+		handler: async (_request, response) => json(response, 200, editPayload(context))
 	},
 	{
 		method: 'PATCH',
 		pattern: /^\/api\/objects\/[^/]+\/metadata$/,
 		auth: true,
-		handler: async (_request, response) =>
+		handler: async (request, response) => {
+			let body = {};
+			try {
+				body = JSON.parse((await readBody(request)).toString('utf8'));
+			} catch {
+				json(response, 400, { error: { code: 'BAD_REQUEST', message: 'Invalid JSON.' }, request_id: 'req-um98-metadata-invalid' });
+				return;
+			}
+			if (!Number.isInteger(body.revision) || body.revision !== context.objectEdit.revision) {
+				json(response, 409, {
+					error: {
+						code: 'REVISION_CONFLICT',
+						message: 'Object metadata revision is stale.',
+						details: { latest_revision: context.objectEdit.revision }
+					},
+					request_id: 'req-um98-metadata-conflict'
+				});
+				return;
+			}
+			if (typeof body.metadata?.title === 'string') {
+				context.objectEdit.title = body.metadata.title;
+			}
+			context.objectEdit.revision += 1;
 			json(response, 200, {
 				object_id: DOC_OBJECT_ID,
-				revision: 5,
+				revision: context.objectEdit.revision,
 				curation_state: 'review_in_progress',
 				updated_at: FIXED_TIME
-			})
+			});
+		}
+	},
+	{
+		method: 'POST',
+		pattern: /^\/api\/objects\/[^/]+\/changes\/submit$/,
+		auth: true,
+		handler: async (request, response) => {
+			let body = {};
+			try {
+				body = JSON.parse((await readBody(request)).toString('utf8'));
+			} catch {
+				json(response, 400, { error: { code: 'BAD_REQUEST', message: 'Invalid JSON.' }, request_id: 'req-um98-submit-invalid' });
+				return;
+			}
+			if (!Number.isInteger(body.revision)) {
+				json(response, 400, { error: { code: 'BAD_REQUEST', message: 'Revision is required.' }, request_id: 'req-um98-submit-invalid' });
+				return;
+			}
+			const existing = context.objectEdit.submission;
+			if (existing) {
+				if (existing.submittedRevision === body.revision) {
+					json(response, 200, {
+						object_id: DOC_OBJECT_ID,
+						current_revision: context.objectEdit.revision,
+						submitted_revision: existing.submittedRevision,
+						submission: submissionPayload(context, existing)
+					});
+					return;
+				}
+				if (existing.status === 'PENDING' || existing.status === 'PROCESSING') {
+					json(response, 409, {
+						error: {
+							code: 'CONFLICT',
+							message: 'An object update is already active for this object.',
+							details: {
+								code: 'CHANGES_ALREADY_ACTIVE',
+								existing_request_id: existing.requestId,
+								existing_request_status: existing.status
+							}
+						},
+						request_id: 'req-um98-submit-active'
+					});
+					return;
+				}
+			}
+			if (body.revision !== context.objectEdit.revision) {
+				json(response, 409, {
+					error: {
+						code: 'REVISION_CONFLICT',
+						message: 'Object revision is stale.',
+						details: { latest_revision: context.objectEdit.revision }
+					},
+					request_id: 'req-um98-submit-conflict'
+				});
+				return;
+			}
+			const submissionNumber = context.objectEdit.nextSubmissionId;
+			context.objectEdit.nextSubmissionId += 1;
+			const submission = {
+				id: `sub-um98-${submissionNumber}`,
+				requestId: `request-um98-changes-${submissionNumber}`,
+				status: 'PENDING',
+				submittedRevision: body.revision,
+				submittedAt: FIXED_TIME,
+				submittedBy: USER_ID
+			};
+			context.objectEdit.submission = submission;
+			context.objectEdit.submitCount += 1;
+			setTimeout(() => {
+				if (
+					context.objectEdit.submission === submission &&
+					(submission.status === 'PENDING' || submission.status === 'PROCESSING')
+				) {
+					submission.status = 'COMPLETED';
+					context.objectEdit.appliedRevision = submission.submittedRevision;
+				}
+			}, context.objectSyncDelayMs);
+			json(response, 202, {
+				object_id: DOC_OBJECT_ID,
+				current_revision: context.objectEdit.revision,
+				submitted_revision: submission.submittedRevision,
+				submission: submissionPayload(context, submission)
+			});
+		}
+	},
+	{
+		method: 'GET',
+		pattern: /^\/api\/objects\/[^/]+\/changes\/status$/,
+		auth: true,
+		handler: async (_request, response) => json(response, 200, changeStatusPayload(context))
+	},
+	{
+		method: 'POST',
+		pattern: /^\/api\/objects\/[^/]+\/change-submissions\/[^/]+\/retry$/,
+		auth: true,
+		handler: async (_request, response) => {
+			const submission = context.objectEdit.submission;
+			if (!submission) {
+				json(response, 404, { error: { code: 'NOT_FOUND', message: 'Submission request was not found.' }, request_id: 'req-um98-retry-missing' });
+				return;
+			}
+			if (submission.status === 'FAILED' || submission.status === 'CANCELED') {
+				submission.status = 'PENDING';
+			}
+			json(response, 202, {
+				object_id: DOC_OBJECT_ID,
+				current_revision: context.objectEdit.revision,
+				submitted_revision: submission.submittedRevision,
+				submission: submissionPayload(context, submission)
+			});
+		}
+	},
+	{
+		method: 'GET',
+		pattern: /^\/__smoke__\/object-sync$/,
+		auth: true,
+		handler: async (_request, response) => {
+			const submission = context.objectEdit.submission;
+			json(response, 200, {
+				revision: context.objectEdit.revision,
+				applied_revision: context.objectEdit.appliedRevision,
+				submit_count: context.objectEdit.submitCount,
+				submission: submission
+					? {
+						id: submission.id,
+						request_id: submission.requestId,
+						status: submission.status,
+						submitted_revision: submission.submittedRevision
+					}
+					: null
+			});
+		}
 	},
 	{
 		method: 'PUT',

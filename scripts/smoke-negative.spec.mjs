@@ -84,7 +84,7 @@ describe.skipIf(SKIP)('smoke negative gating', () => {
 					'info-drawer-absent',
 					'support-sheet-stale',
 					'resync-http',
-					'publish-close-stuck',
+					'submit-close-stuck',
 					'console-error',
 					'page-error',
 					'request-abort',
@@ -97,7 +97,7 @@ describe.skipIf(SKIP)('smoke negative gating', () => {
 			expect(output).toMatch(/FAIL desktop interaction info drawer: exercised.*did not open/);
 			expect(output).toMatch(/FAIL desktop interaction support sheet: exercised.*did not render/);
 			expect(output).toMatch(/FAIL desktop interaction resync confirmation: exercised.*status 503/);
-			expect(output).toMatch(/FAIL desktop interaction publish dialog: exercised.*did not close/);
+			expect(output).toMatch(/FAIL desktop interaction submit changes dialog: exercised.*did not close/);
 			expect(output).toContain('SMOKE_FAULT console-error');
 			expect(output).toContain('SMOKE_FAULT page-error');
 			expect(output).toContain('/smoke-fault-request-abort');
