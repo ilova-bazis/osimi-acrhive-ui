@@ -34,6 +34,13 @@ export const actions: Actions = {
 			);
 			setSessionCookie(cookies, token);
 		} catch (error) {
+			if (isApiClientError(error) && error.status === 429) {
+				return fail(429, {
+					errorCode: 'rateLimited' satisfies LoginErrorCode,
+					username
+				});
+			}
+
 			if (isApiClientError(error) && (error.status === 400 || error.status === 401)) {
 				return fail(error.status, {
 					errorCode: 'invalidCredentials' satisfies LoginErrorCode,

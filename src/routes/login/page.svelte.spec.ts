@@ -103,6 +103,7 @@ describe('login page localization', () => {
 		'invalidOrigin',
 		'credentialsRequired',
 		'invalidCredentials',
+		'rateLimited',
 		'loginFailed'
 	])('renders a visible localized message for %s', async (errorCode) => {
 		render(LoginPage, { form: { errorCode } });

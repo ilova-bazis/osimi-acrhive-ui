@@ -12,6 +12,7 @@ export type ApiClientErrorCode =
     | "VALIDATION_FAILED"
     | "NOT_FOUND"
     | "BAD_REQUEST"
+    | "RATE_LIMITED"
     | "INVALID_RESPONSE"
     | "NETWORK_ERROR"
     | "UNKNOWN_ERROR";
@@ -100,6 +101,7 @@ const toAppCode = (
     if (backendCode === "CONFLICT" || status === 409) return "CONFLICT";
     if (backendCode === "VALIDATION_FAILED" || status === 422) return "VALIDATION_FAILED";
     if (backendCode === "NOT_FOUND" || status === 404) return "NOT_FOUND";
+    if (backendCode === "RATE_LIMITED" || status === 429) return "RATE_LIMITED";
     return "UNKNOWN_ERROR";
 };
 

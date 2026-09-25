@@ -95,6 +95,24 @@ describe('/login +page.server', () => {
 		expect(setSessionCookieMock).not.toHaveBeenCalled();
 	});
 
+	it('maps backend rate-limit errors to a stable code without leaking messages', async () => {
+		const form = new FormData();
+		form.set('username', 'admin');
+		form.set('password', 'wrong');
+		loginWithBackendMock.mockRejectedValue(
+			new ApiClientError({ status: 429, code: 'RATE_LIMITED', message: 'Too many failed login attempts' })
+		);
+
+		const result = await actions.default(makeEvent(makeLoginRequest(form)));
+
+		expect(result).toMatchObject({
+			status: 429,
+			data: { errorCode: 'rateLimited', username: 'admin' }
+		});
+		expect(JSON.stringify(result)).not.toContain('Too many failed login attempts');
+		expect(setSessionCookieMock).not.toHaveBeenCalled();
+	});
+
 	it('maps unexpected login errors to a stable code without leaking messages', async () => {
 		const form = new FormData();
 		form.set('username', 'admin');

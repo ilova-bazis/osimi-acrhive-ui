@@ -152,8 +152,9 @@ export const translations = {
 				invalidOrigin: 'Invalid request origin.',
 				credentialsRequired: 'Username and password are required.',
 				invalidCredentials: 'Invalid username or password.',
-					loginFailed: 'Sign-in failed. Please try again.',
-					generic: 'Sign-in failed. Please try again.'
+				rateLimited: 'Too many attempts. Please try again later.',
+				loginFailed: 'Sign-in failed. Please try again.',
+				generic: 'Sign-in failed. Please try again.'
 			}
 		},
 		ingestionOverview: {
@@ -1682,8 +1683,9 @@ export const translations = {
 				invalidOrigin: 'Недопустимый источник запроса.',
 				credentialsRequired: 'Требуются имя пользователя и пароль.',
 				invalidCredentials: 'Неверное имя пользователя или пароль.',
-					loginFailed: 'Вход не выполнен. Попробуйте ещё раз.',
-					generic: 'Не удалось войти. Попробуйте ещё раз.'
+				rateLimited: 'Слишком много попыток. Попробуйте позже.',
+				loginFailed: 'Вход не выполнен. Попробуйте ещё раз.',
+				generic: 'Не удалось войти. Попробуйте ещё раз.'
 			}
 		},
 		ingestionOverview: {

@@ -4,11 +4,13 @@ export type LoginErrorCode =
 	| 'invalidOrigin'
 	| 'credentialsRequired'
 	| 'invalidCredentials'
+	| 'rateLimited'
 	| 'loginFailed';
 
 export const loginErrorKeys: Record<LoginErrorCode, TranslationKey> = {
 	invalidOrigin: 'login.errors.invalidOrigin',
 	credentialsRequired: 'login.errors.credentialsRequired',
 	invalidCredentials: 'login.errors.invalidCredentials',
+	rateLimited: 'login.errors.rateLimited',
 	loginFailed: 'login.errors.loginFailed'
 };
