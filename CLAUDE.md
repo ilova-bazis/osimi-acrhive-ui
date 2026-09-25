@@ -142,7 +142,7 @@ npx vitest run --project=server --reporter=verbose src/lib/api/mappers/objectsMa
 - Keep the established archival visual language: `burnt-peach`, `pearl-beige`, `blue-slate`, `pale-sky`, and `alabaster-grey`.
 - Reuse established button styling patterns such as `rounded-full px-4 py-2 text-xs uppercase tracking-[0.2em]`.
 - Use existing typography utilities like `font-display` and `font-body`.
-- Prefer composition of documented building blocks such as `BaseButton`, `Chip`, `StatusBadge`, and `PageHeader`.
+- Prefer composition of documented building blocks such as `BaseButton`, `Chip`, `StatusBadge`, and `AppHeader`.
 - When adding a new reusable component, update `docs/components.md` in the same change.
 
 ## Testing Expectations
