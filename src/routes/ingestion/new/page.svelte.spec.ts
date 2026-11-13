@@ -110,6 +110,71 @@ describe('/ingestion/new +page.svelte localization', () => {
 		await expect.element(page.getByText('Что это представляет?')).toBeInTheDocument();
 	});
 
+	it('renders a validation failure in English', async () => {
+		renderPage({
+			error: 'Invalid item kind.',
+			errorCode: 'invalidItemKind',
+			code: 'INVALID_PIPELINE_CAPABILITY',
+			idempotencyKey: attemptData.idempotencyKey,
+			attemptCreatedAt: attemptData.attemptCreatedAt,
+			values: { name: 'Batch 01' }
+		});
+
+		await expect
+			.element(page.getByText('The selected item kind is not supported.'))
+			.toBeInTheDocument();
+	});
+
+	it('renders a validation failure in Russian', async () => {
+		locale.setLocale('ru');
+		renderPage({
+			error: 'Invalid item kind.',
+			errorCode: 'invalidItemKind',
+			code: 'INVALID_PIPELINE_CAPABILITY',
+			idempotencyKey: attemptData.idempotencyKey,
+			attemptCreatedAt: attemptData.attemptCreatedAt,
+			values: { name: 'Batch 01' }
+		});
+
+		await expect
+			.element(page.getByText('Выбранный вид элемента не поддерживается.'))
+			.toBeInTheDocument();
+	});
+
+	it('never renders the raw server message', async () => {
+		renderPage({
+			error: 'Invalid item kind.',
+			errorCode: 'invalidItemKind',
+			code: 'INVALID_PIPELINE_CAPABILITY',
+			idempotencyKey: attemptData.idempotencyKey,
+			attemptCreatedAt: attemptData.attemptCreatedAt,
+			values: { name: 'Batch 01' }
+		});
+
+		await expect.element(page.getByText('Invalid item kind.')).not.toBeInTheDocument();
+	});
+
+	it('retranslates a visible failure when the locale changes', async () => {
+		renderPage({
+			error: 'Invalid item kind.',
+			errorCode: 'invalidItemKind',
+			code: 'INVALID_PIPELINE_CAPABILITY',
+			idempotencyKey: attemptData.idempotencyKey,
+			attemptCreatedAt: attemptData.attemptCreatedAt,
+			values: { name: 'Batch 01' }
+		});
+
+		await expect
+			.element(page.getByText('The selected item kind is not supported.'))
+			.toBeInTheDocument();
+
+		locale.setLocale('ru');
+
+		await expect
+			.element(page.getByText('Выбранный вид элемента не поддерживается.'))
+			.toBeInTheDocument();
+	});
+
 	it('adds tags interactively without breaking translated labels', async () => {
 		renderPage();
 
@@ -287,6 +352,7 @@ describe('/ingestion/new +page.svelte localization', () => {
 		it('prefers action data attempt values after a failed submission', () => {
 			const screen = renderPage({
 				error: 'Invalid item kind.',
+				errorCode: 'invalidItemKind',
 				code: 'INVALID_PIPELINE_CAPABILITY',
 				idempotencyKey: '99999999-9999-4999-8999-999999999999',
 				attemptCreatedAt: '2026-09-21T09:30:00.000Z',
@@ -301,6 +367,7 @@ describe('/ingestion/new +page.svelte localization', () => {
 		it('rehydrates form state from action data after a native failure', () => {
 			const screen = renderPage({
 				error: 'Request failed for ingestions.create',
+				errorCode: 'requestFailed',
 				code: 'UNKNOWN_ERROR',
 				idempotencyKey: attemptData.idempotencyKey,
 				attemptCreatedAt: attemptData.attemptCreatedAt,
@@ -432,6 +499,7 @@ describe('/ingestion/new +page.svelte localization', () => {
 		it('shows a fresh attempt link when the backend reports a conflict', async () => {
 			renderPage({
 				error: 'Idempotency key was already used for a different request.',
+				errorCode: 'conflict',
 				code: 'CONFLICT',
 				idempotencyKey: attemptData.idempotencyKey,
 				attemptCreatedAt: attemptData.attemptCreatedAt,

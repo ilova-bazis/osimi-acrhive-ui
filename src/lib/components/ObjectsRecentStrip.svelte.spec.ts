@@ -16,6 +16,7 @@ import { locale } from '$lib/i18n/locale';
 import ObjectsRecentStrip from './ObjectsRecentStrip.svelte';
 
 const recent: ObjectRow = {
+	description: null,
 	id: 'OBJ-20260804-RECENT1', objectId: 'OBJ-20260804-RECENT1', thumbnailArtifactId: null,
 	title: 'Recent production object', type: 'DOCUMENT', processingState: 'index_done', curationState: 'reviewed',
 	availabilityState: 'AVAILABLE', accessLevel: 'private', language: 'en', tags: [], tenantId: 'tenant-1',

@@ -242,7 +242,7 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 		await expect
 			.element(page.getByText('Object metadata could not be saved'))
 			.toBeInTheDocument();
-		await expect.element(page.getByText('Network unavailable.')).toBeInTheDocument();
+		await expect.element(page.getByText('Object metadata failed to save.')).toBeInTheDocument();
 		await expect.element(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
 	});
 
@@ -567,7 +567,7 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 		vi.stubGlobal(
 			'fetch',
 			vi.fn().mockResolvedValue(
-				new Response(JSON.stringify({ error: 'Batch is locked.' }), {
+				new Response(JSON.stringify({ error: 'Batch is locked.', errorCode: 'locked' }), {
 					status: 423,
 					headers: { 'content-type': 'application/json' }
 				})
@@ -581,7 +581,9 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 
 		await page.getByRole('button', { name: 'Delete batch' }).click();
 
-		await expect.element(page.getByRole('alert')).toHaveTextContent('Batch is locked.');
+		await expect
+			.element(page.getByRole('alert'))
+			.toHaveTextContent('This item is locked and cannot be changed right now.');
 		await expect.element(page.getByRole('button', { name: 'Retry delete' })).toBeInTheDocument();
 		expect(gotoMock).not.toHaveBeenCalled();
 	});
@@ -1122,14 +1124,19 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 		await new Promise((resolve) => setTimeout(resolve, 350));
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 		resolvers[1](
-			new Response(JSON.stringify({ error: 'Rejected latest intent.' }), {
-				status: 409,
-				headers: { 'content-type': 'application/json' }
-			})
+			new Response(
+				JSON.stringify({ error: 'Rejected latest intent.', errorCode: 'conflict' }),
+				{
+					status: 409,
+					headers: { 'content-type': 'application/json' }
+				}
+			)
 		);
 		await vi.waitFor(() => expect(itemKindSelect.value).toBe('audio'));
 		expect(sessionStorage.getItem('ingestion-item-kind:batch-1')).toBe('audio');
-		await expect.element(page.getByText('Rejected latest intent.')).toBeInTheDocument();
+		await expect
+			.element(page.getByText('This action conflicts with the current state. Refresh and try again.'))
+			.toBeInTheDocument();
 	});
 
 	it('does not confirm or store an item kind after metadata save returns 401', async () => {
@@ -1439,5 +1446,245 @@ describe('/ingestion/[batchId]/setup +page.svelte', () => {
 		const date = updateCall?.metadata?.date as { value: string | null; approximate: boolean };
 		expect(date.value).toBeNull();
 		expect(date.approximate).toBe(false);
+	});
+});
+
+describe('/ingestion/[batchId]/setup error localization', () => {
+	beforeEach(() => {
+		beforeNavigateMock.mockReset();
+		gotoMock.mockReset();
+		gotoMock.mockResolvedValue(undefined);
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		vi.useRealTimers();
+		sessionStorage.clear();
+		locale.setLocale('en');
+	});
+
+	const unsupportedFiles = (count: number): File[] =>
+		Array.from(
+			{ length: count },
+			(_, index) => new File(['content'], `note-${index}.txt`, { type: 'text/plain' }),
+		);
+
+	const emptyPageData = (): ReturnType<typeof pageData> => {
+		const data = pageData();
+		data.existingFiles = [];
+		data.items = [];
+		return data;
+	};
+
+	const uploadFiles = async (files: File[]): Promise<void> => {
+		const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+		await userEvent.upload(input, files);
+	};
+
+	it('localizes the rejected-file remainder in English', async () => {
+		render(SetupPage, { data: emptyPageData() });
+		await uploadFiles(unsupportedFiles(5));
+
+		await expect.element(page.getByText(/note-0\.txt, note-1\.txt, note-2\.txt \+2 more/)).toBeInTheDocument();
+	});
+
+	it('localizes the rejected-file remainder in Russian', async () => {
+		locale.setLocale('ru');
+		render(SetupPage, { data: emptyPageData() });
+		await uploadFiles(unsupportedFiles(5));
+
+		await expect.element(page.getByText(/note-0\.txt, note-1\.txt, note-2\.txt и ещё 2/)).toBeInTheDocument();
+	});
+
+	it('retranslates the rejected-file error after switching locale', async () => {
+		render(SetupPage, { data: emptyPageData() });
+		await uploadFiles(unsupportedFiles(5));
+
+		await expect.element(page.getByText(/\+2 more/)).toBeInTheDocument();
+
+		locale.setLocale('ru');
+
+		await expect.element(page.getByText(/и ещё 2/)).toBeInTheDocument();
+	});
+
+	it('does not add a remainder suffix for exactly three rejected files', async () => {
+		render(SetupPage, { data: emptyPageData() });
+		await uploadFiles(unsupportedFiles(3));
+		await expect.element(page.getByText(/note-0\.txt, note-1\.txt, note-2\.txt/)).toBeInTheDocument();
+		await expect.element(page.getByText(/\+\d+ more/)).not.toBeInTheDocument();
+	});
+
+	it('keeps both rejection categories and retranslates the expected media label', async () => {
+		render(SetupPage, { data: pageData() });
+		await uploadFiles([
+			...Array.from({ length: 5 }, (_, index) =>
+				new File(['audio'], `sound-${index}.mp3`, { type: 'audio/mpeg' })),
+			...unsupportedFiles(5)
+		]);
+		await expect.element(page.getByText(/sound-0\.mp3.*\+2 more.*note-0\.txt.*\+2 more/)).toBeInTheDocument();
+
+		locale.setLocale('ru');
+		await expect.element(page.getByText(/sound-0\.mp3.*и ещё 2.*note-0\.txt.*и ещё 2/)).toBeInTheDocument();
+		await expect.element(page.getByText(/Only .* files are allowed/)).not.toBeInTheDocument();
+	});
+
+	it('preserves and retranslates a specific local date-validation error', async () => {
+		const fetchMock = vi.fn();
+		vi.stubGlobal('fetch', fetchMock);
+		render(SetupPage, { data: pageData() });
+		await page.getByRole('button', { name: 'Continue' }).click();
+		await page.getByRole('button', { name: 'Edit defaults' }).click();
+		const summary = Array.from(document.querySelectorAll('summary')).find(
+			(element) => element.textContent?.trim() === 'Publication date'
+		)!;
+		const section = summary.closest('details')!;
+		for (let ancestor: Element | null = section; ancestor; ancestor = ancestor.parentElement) {
+			if (ancestor instanceof HTMLDetailsElement) ancestor.open = true;
+		}
+		await userEvent.selectOptions(section.querySelector('select')!, 'year');
+		await userEvent.fill(section.querySelector('input[type="number"]')!, '12');
+
+		await expect.element(page.getByText('Publication date: enter a valid year (YYYY).')).toBeInTheDocument();
+		expect(fetchMock).not.toHaveBeenCalled();
+		locale.setLocale('ru');
+		await expect.element(page.getByText('Дата публикации: введите корректный год (ГГГГ).')).toBeInTheDocument();
+	});
+
+	it('retranslates a batch metadata save failure', async () => {
+		const resolvers: Array<(response: Response) => void> = [];
+		const fetchMock = vi.fn().mockImplementation(
+			() => new Promise<Response>((resolve) => resolvers.push(resolve)),
+		);
+		vi.stubGlobal('fetch', fetchMock);
+
+		const data = pageData();
+		data.metadata.classificationType = 'other';
+		data.metadata.itemKind = 'photo';
+		render(SetupPage, { data });
+		await page.getByRole('button', { name: 'Continue' }).click();
+
+		const itemKindSelect = document.querySelector('select#intent-item-kind') as HTMLSelectElement;
+		await userEvent.selectOptions(itemKindSelect, 'audio');
+		await new Promise((resolve) => setTimeout(resolve, 350));
+
+		resolvers[0](
+			new Response(JSON.stringify({ error: 'Rejected batch intent.' }), {
+				status: 409,
+				headers: { 'content-type': 'application/json' },
+			}),
+		);
+
+		await expect
+			.element(page.getByText('Failed to update ingestion defaults.'))
+			.toBeInTheDocument();
+
+		locale.setLocale('ru');
+
+		await expect
+			.element(page.getByText('Не удалось обновить параметры загрузки по умолчанию.'))
+			.toBeInTheDocument();
+	});
+
+	it('retranslates an item mutation failure toast', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(JSON.stringify({ error: 'Item mutation refused.' }), {
+				status: 409,
+				headers: { 'content-type': 'application/json' },
+			}),
+		);
+		vi.stubGlobal('fetch', fetchMock);
+
+		render(SetupPage, { data: pageData() });
+		await page.getByRole('button', { name: 'Continue' }).click();
+		await page.getByRole('textbox', { name: 'Title' }).last().fill('Changed title');
+		await new Promise((resolve) => setTimeout(resolve, 350));
+
+		await expect
+			.element(page.getByText('Object metadata could not be saved'))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByText('Failed to save object metadata.'))
+			.toBeInTheDocument();
+
+		locale.setLocale('ru');
+
+		await expect
+			.element(page.getByText('Не удалось сохранить: Метаданные объекта'))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByText('Не удалось сохранить метаданные объекта.'))
+			.toBeInTheDocument();
+	});
+
+	it('retranslates a submission failure', async () => {
+		let callCount = 0;
+		const fetchMock = vi.fn().mockImplementation(async () => {
+			callCount += 1;
+			if (callCount === 2) throw new Error('upload exploded');
+			return new Response(JSON.stringify({ id: 'item-9', itemIndex: 9 }), { status: 200 });
+		});
+		vi.stubGlobal('fetch', fetchMock);
+
+		const data = pageData();
+		data.existingFiles = [data.existingFiles[0]!];
+		data.items = [];
+		data.metadata.summary = {
+			...batchSummary,
+			classification: { tags: ['batch'], summary: null },
+			dates: {
+				...batchSummary.dates,
+				published: {
+					value: '2020',
+					approximate: false,
+					confidence: 'medium',
+					note: null
+				}
+			}
+		};
+		render(SetupPage, { data });
+		await page.getByRole('button', { name: 'Continue' }).click();
+		const submitButton = page.getByRole('button', { name: 'Continue' });
+		await expect.element(submitButton).toBeEnabled();
+		await submitButton.click();
+
+		await expect
+			.element(page.getByText('Failed to submit ingestion.'))
+			.toBeInTheDocument();
+
+		locale.setLocale('ru');
+
+		await expect
+			.element(page.getByText('Не удалось отправить загрузку.'))
+			.toBeInTheDocument();
+	});
+
+	it('retranslates a batch deletion failure in the abandon dialog', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue(
+				new Response(JSON.stringify({ error: 'Batch is locked.', errorCode: 'locked' }), {
+					status: 423,
+					headers: { 'content-type': 'application/json' },
+				}),
+			),
+		);
+
+		const emptyData = pageData();
+		emptyData.existingFiles = [];
+		emptyData.items = [];
+		render(SetupPage, { data: emptyData });
+		openEmptyBatchDialog();
+
+		await page.getByRole('button', { name: 'Delete batch' }).click();
+
+		await expect
+			.element(page.getByRole('alert'))
+			.toHaveTextContent('This item is locked and cannot be changed right now.');
+
+		locale.setLocale('ru');
+
+		await expect
+			.element(page.getByRole('alert'))
+			.toHaveTextContent('Элемент заблокирован. Сейчас его нельзя изменить.');
 	});
 });

@@ -10,6 +10,10 @@ import {
 } from '$lib/ingestion/pipelineCapabilities';
 import { clearSessionCookie } from '$lib/server/auth';
 import { isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
+import {
+	mutationBackendErrorResponse,
+	mutationErrorResponse
+} from '$lib/server/mutationErrorResponse';
 import { isAuthFailureResponse, mapApiErrorStatus, requireMutationAuth } from '$lib/server/routeGuards';
 import { json } from '@sveltejs/kit';
 import { z } from 'zod';
@@ -38,7 +42,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals, cookies, 
 	const payload = await request.json().catch(() => null);
 	const parsed = metadataUpdateSchema.safeParse(payload);
 	if (!parsed.success) {
-		return json({ error: 'Invalid metadata update payload.' }, { status: 400 });
+		return mutationErrorResponse(400, 'invalidPayload', 'Invalid metadata update payload.');
 	}
 
 	try {
@@ -66,13 +70,11 @@ export const PATCH: RequestHandler = async ({ params, request, locals, cookies, 
 			});
 
 			if (!validation.valid) {
-				return json(
-					{
-						error: 'Incompatible pipeline preset.',
-						code: 'INVALID_PIPELINE_CAPABILITY',
-						details: validation
-					},
-					{ status: 400 }
+				return mutationErrorResponse(
+					400,
+					'incompatibleCapability',
+					'Incompatible pipeline preset.',
+					{ code: 'INVALID_PIPELINE_CAPABILITY', details: validation }
 				);
 			}
 		}
@@ -88,19 +90,18 @@ export const PATCH: RequestHandler = async ({ params, request, locals, cookies, 
 	} catch (cause) {
 		if (isUnauthorizedError(cause)) {
 			clearSessionCookie(cookies);
-			return json({ error: 'Unauthorized' }, { status: 401 });
+			return mutationErrorResponse(401, 'unauthorized', 'Unauthorized');
 		}
 
 		if (isApiClientError(cause)) {
-			return json(
-				{
-					error: cause.message,
-					requestId: cause.requestId
-				},
-				{ status: mapApiErrorStatus(cause.status) }
+			return mutationBackendErrorResponse(
+				mapApiErrorStatus(cause.status),
+				cause.code,
+				cause.message,
+				{ requestId: cause.requestId }
 			);
 		}
 
-		return json({ error: 'Unexpected metadata update error.' }, { status: 500 });
+		return mutationErrorResponse(500, 'unexpected', 'Unexpected metadata update error.');
 	}
 };

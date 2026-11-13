@@ -12,6 +12,11 @@
 	import { dashboardActivityEventKeys } from '$lib/i18n/domainLabels';
 	import { batchStatusKey, batchStatusTone, fileStatusKey, fileStatusTone } from '$lib/i18n/statusLabels';
 	import { formatTemplate, translate } from '$lib/i18n/translate';
+	import {
+		readMutationErrorPayload,
+		renderLocalizedMessage,
+		type LocalizedMessageState
+	} from '$lib/i18n/mutationErrors';
 	import type { FileStatus } from '$lib/types';
 
 	let { data } = $props<{ data: { detail: IngestionDetail; activity: DashboardActivity[]; activityError: string | null } }>();
@@ -25,6 +30,8 @@
 	type DetailAction = Exclude<IngestionAction, 'view'>;
 
 	const actionLabel = (action: DetailAction): string => t(`ingestionDetail.actions.${action}`);
+	const actionLabelKey = (action: DetailAction): TranslationKey =>
+		`ingestionDetail.actions.${action}`;
 
 	const detailActions = $derived(actionsFromCapabilities(detail.actionCapabilities));
 
@@ -36,20 +43,16 @@
 		return resolve(`/ingestion/${detail.id}`);
 	};
 
-	let actionError = $state('');
+	let actionErrorState = $state<LocalizedMessageState | null>(null);
 	let runningAction = $state<DetailAction | null>(null);
 	let confirmAction = $state<DetailAction | null>(null);
 
-	const readErrorMessage = async (response: Response, fallback: string): Promise<string> => {
-		const payload = await response.json().catch(() => null);
-		if (payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string') {
-			return payload.error;
-		}
-		return fallback;
-	};
+	const actionError = $derived(
+		actionErrorState ? renderLocalizedMessage(dictionary, $locale, actionErrorState) : ''
+	);
 
 	const runAction = async (action: DetailAction): Promise<void> => {
-		actionError = '';
+		actionErrorState = null;
 
 		if (action === 'resume') {
 			await goto(resolve(`/ingestion/${detail.id}/setup`));
@@ -68,14 +71,13 @@
 			}
 
 			if (!response.ok) {
-				throw new Error(
-					await readErrorMessage(
-						response,
-						formatTemplate(t('ingestionDetail.errors.failed'), {
-							action: actionLabel(action).toLowerCase()
-						})
-					)
-				);
+				const payload = await readMutationErrorPayload(response);
+				actionErrorState = {
+					key: 'ingestionDetail.errors.failed',
+					params: { action: { kind: 'label', key: actionLabelKey(action), lower: true } },
+					failure: payload
+				};
+				return;
 			}
 
 			if (action === 'delete') {
@@ -84,8 +86,10 @@
 			}
 
 			await invalidateAll();
-		} catch (error) {
-			actionError = error instanceof Error ? error.message : t('ingestionDetail.messages.actionFailed');
+		} catch {
+			actionErrorState = {
+				key: 'ingestionDetail.messages.actionFailed'
+			};
 		} finally {
 			runningAction = null;
 		}

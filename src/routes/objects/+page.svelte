@@ -13,6 +13,11 @@
 	} from '$lib/i18n/domainLabels';
 	import { formatCount } from '$lib/i18n/format';
 	import { formatPlural, formatTemplate, translate } from '$lib/i18n/translate';
+	import {
+		readMutationErrorPayloadFromBody,
+		renderLocalizedMessage,
+		type LocalizedMessageState
+	} from '$lib/i18n/mutationErrors';
 	import type {
 		AccessLevel,
 		AvailabilityState,
@@ -34,9 +39,21 @@
 	let selectionCopied = $state(false);
 	let showResyncConfirm = $state(false);
 	let resyncRunning = $state(false);
-	let resyncMessage = $state<{ type: 'success' | 'error'; text: string } | null>(null);
+
+	type ResyncMessage = {
+		type: 'success' | 'error';
+		state: LocalizedMessageState;
+	};
+
+	let resyncMessage = $state<ResyncMessage | null>(null);
 	const dictionary = $derived(translations[$locale]);
 	const t = (key: TranslationKey) => translate(dictionary, key);
+
+	const resyncMessageText = $derived(
+		resyncMessage
+			? renderLocalizedMessage(dictionary, $locale, resyncMessage.state)
+			: ''
+	);
 	const canRequestResync = $derived(data.session?.role === 'archiver' || data.session?.role === 'admin');
 
 	const availabilityOptions: AvailabilityState[] = [
@@ -120,18 +137,28 @@
 			}
 			const payload = await response.json().catch(() => null);
 			if (!response.ok || !payload?.results) {
-				resyncMessage = { type: 'error', text: t('objects.resync.failed') };
+				const failure = readMutationErrorPayloadFromBody(payload, response.status);
+				resyncMessage = {
+					type: 'error',
+					state: { key: 'objects.resync.failed', failure }
+				};
 			} else {
 				const succeeded = (payload.results as { ok: boolean }[]).filter((r) => r.ok).length;
 				const total = objectIds.length;
 				resyncMessage = {
 					type: succeeded === total ? 'success' : 'error',
-					text: formatTemplate(t('objects.resync.resyncDone'), { succeeded: formatCount(succeeded, $locale), total: formatCount(total, $locale) })
+					state: {
+						key: 'objects.resync.resyncDone',
+						params: {
+							succeeded: { kind: 'count', value: succeeded },
+							total: { kind: 'count', value: total }
+						}
+					}
 				};
 				selectedIds = [];
 			}
 		} catch {
-			resyncMessage = { type: 'error', text: t('objects.resync.failed') };
+			resyncMessage = { type: 'error', state: { key: 'objects.resync.failed' } };
 		} finally {
 			resyncRunning = false;
 		}
@@ -322,7 +349,7 @@
 
 	{#if resyncMessage}
 		<p class={`-mt-3 text-xs ${resyncMessage.type === 'success' ? 'text-blue-slate' : 'text-burnt-peach'}`}>
-			{resyncMessage.text}
+			{resyncMessageText}
 		</p>
 	{/if}
 

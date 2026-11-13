@@ -45,6 +45,7 @@ const toObjectBase = (item: ObjectListItemDto | ObjectDetailItemDto): ObjectBase
 	objectId: item.object_id,
 	thumbnailArtifactId: item.thumbnail_artifact_id,
 	title: item.title,
+	description: item.description,
 	processingState: item.processing_state,
 	curationState: item.curation_state,
 	availabilityState: item.availability_state,
@@ -74,6 +75,7 @@ const toObjectRow = (item: ObjectListItemDto): ObjectRow => ({
 
 const toObjectDetail = (item: ObjectDetailItemDto): ObjectDetail => ({
 	...toObjectBase(item),
+	people: item.people,
 	ingestManifest: item.ingest_manifest ?? null,
 	isAuthorized: item.is_authorized ?? false,
 	isDeliverable: item.is_deliverable ?? false

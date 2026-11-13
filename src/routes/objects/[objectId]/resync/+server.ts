@@ -1,6 +1,10 @@
 import { objectsService } from '$lib/services';
 import { clearSessionCookie } from '$lib/server/auth';
 import { isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
+import {
+	mutationBackendErrorResponse,
+	mutationErrorResponse
+} from '$lib/server/mutationErrorResponse';
 import { isAuthFailureResponse, mapApiErrorStatus, requireMutationAuth } from '$lib/server/routeGuards';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
@@ -12,10 +16,10 @@ export const POST: RequestHandler = async ({ params, locals, cookies, fetch, req
 	if (isAuthFailureResponse(auth)) return auth;
 	const { session, token } = auth;
 	if (!canRequestResync(session.role)) {
-		return json({ error: 'Forbidden' }, { status: 403 });
+		return mutationErrorResponse(403, 'forbidden', 'Forbidden');
 	}
 	if (!params.objectId) {
-		return json({ error: 'Object not found.' }, { status: 404 });
+		return mutationErrorResponse(404, 'notFound', 'Object not found.');
 	}
 
 	try {
@@ -28,16 +32,18 @@ export const POST: RequestHandler = async ({ params, locals, cookies, fetch, req
 	} catch (cause) {
 		if (isUnauthorizedError(cause)) {
 			clearSessionCookie(cookies);
-			return json({ error: 'Unauthorized' }, { status: 401 });
+			return mutationErrorResponse(401, 'unauthorized', 'Unauthorized');
 		}
 
 		if (isApiClientError(cause)) {
-			return json(
-				{ error: cause.message, requestId: cause.requestId },
-				{ status: mapApiErrorStatus(cause.status) }
+			return mutationBackendErrorResponse(
+				mapApiErrorStatus(cause.status),
+				cause.code,
+				cause.message,
+				{ requestId: cause.requestId }
 			);
 		}
 
-		return json({ error: 'Unexpected resync error.' }, { status: 500 });
+		return mutationErrorResponse(500, 'unexpected', 'Unexpected resync error.');
 	}
 };

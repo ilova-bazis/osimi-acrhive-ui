@@ -415,6 +415,7 @@ Behavior:
 - Renders one native `button type="button"` per top-level translation dictionary locale; option labels are the uppercase locale codes. Adding a new dictionary locale automatically adds a selector option.
 - Exposes selection through `aria-pressed` and a localized group name (`header.localeSelector`).
 - Changing the locale updates the interface immediately and persists the preference under `localStorage['osimi-locale']`; see `docs/localization.md` for details.
+- The initially active locale comes from the locale store, which restores a saved preference first and otherwise detects the browser language. A manual selection overrides the detected locale and persists the choice.
 - Selected/unselected treatment uses background and border contrast, never color alone, and preserves visible keyboard focus.
 
 ---

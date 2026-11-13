@@ -25,6 +25,7 @@ describe('mapObjectsList', () => {
 						object_id: 'OBJ-20260101-1',
 						thumbnail_artifact_id: '60000000-0000-4000-8000-000000000777',
 						title: 'Sample object',
+						description: 'An archival object.',
 						processing_state: 'index_done',
 						curation_state: 'reviewed',
 						availability_state: 'AVAILABLE',
@@ -56,6 +57,7 @@ describe('mapObjectsList', () => {
 		});
 
 		expect(mapped.rows).toHaveLength(1);
+		expect(mapped.rows[0]?.description).toBe('An archival object.');
 		expect(mapped.rows[0]?.availabilityState).toBe('AVAILABLE');
 		expect(mapped.rows[0]?.accessLevel).toBe('family');
 		expect(mapped.rows[0]?.tags).toEqual(['source:family_archive', 'subject:history']);
@@ -79,6 +81,7 @@ describe('mapObjectsList', () => {
 						object_id: 'OBJ-20260101-2',
 						thumbnail_artifact_id: null,
 						title: null,
+						description: null,
 						processing_state: 'queued',
 						curation_state: 'needs_review',
 						availability_state: 'UNAVAILABLE',
@@ -126,6 +129,7 @@ describe('mapObjectsList', () => {
 						object_id: 'OBJ-20260101-3',
 						thumbnail_artifact_id: null,
 						title: 'Legacy object',
+						description: null,
 						processing_state: 'queued',
 						curation_state: 'needs_review',
 						availability_state: 'UNAVAILABLE',
@@ -165,6 +169,8 @@ describe('mapObjectsList', () => {
 				object_id: 'OBJ-20260101-9',
 				thumbnail_artifact_id: '60000000-0000-4000-8000-000000000999',
 				title: 'Detail object',
+				people: ['Muhammad Osimi', 'Ahmad Hasan Dani'],
+				description: 'The authoritative description.',
 				processing_state: 'index_done',
 				curation_state: 'reviewed',
 				availability_state: 'AVAILABLE',
@@ -195,6 +201,8 @@ describe('mapObjectsList', () => {
 		});
 
 		expect(mapped.detail.objectId).toBe('OBJ-20260101-9');
+		expect(mapped.detail.description).toBe('The authoritative description.');
+		expect(mapped.detail.people).toEqual(['Muhammad Osimi', 'Ahmad Hasan Dani']);
 		expect(mapped.detail.thumbnailArtifactId).toBe('60000000-0000-4000-8000-000000000999');
 		expect(mapped.detail.tags).toEqual(['source:family_archive']);
 		expect(mapped.detail.ingestManifest).toEqual({
@@ -214,6 +222,7 @@ describe('mapObjectsList', () => {
 					object_id: 'OBJ-20260101-11',
 					thumbnail_artifact_id: null,
 					title: 'Indicator object',
+					description: null,
 					processing_state: 'queued',
 					curation_state: 'needs_review',
 					availability_state: 'UNAVAILABLE',
@@ -258,6 +267,8 @@ describe('mapObjectsList', () => {
 				object_id: 'OBJ-20260101-10',
 				thumbnail_artifact_id: null,
 				title: 'Legacy detail object',
+				people: [],
+				description: null,
 				processing_state: 'index_done',
 				curation_state: 'reviewed',
 				availability_state: 'AVAILABLE',
@@ -407,6 +418,8 @@ describe('mapObjectDetail viewer mapping', () => {
 				object_id: 'OBJ-20260101-VIEWER',
 				thumbnail_artifact_id: null,
 				title: 'Viewer object',
+				people: [],
+				description: null,
 				processing_state: 'index_done',
 				curation_state: 'reviewed',
 				availability_state: 'AVAILABLE',

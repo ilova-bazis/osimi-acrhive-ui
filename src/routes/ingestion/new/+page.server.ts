@@ -2,6 +2,10 @@ import { fail, redirect } from '@sveltejs/kit';
 import { ingestionNewService } from '$lib/services';
 import { AUTH_COOKIE_NAME, clearSessionCookie } from '$lib/server/auth';
 import { isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
+import {
+	mutationErrorCodeForResponse,
+	type MutationErrorCode
+} from '$lib/services/mutationErrors';
 import { translate, formatTemplate } from '$lib/i18n/translate';
 import { translations, type LocaleKey } from '$lib/i18n/translations';
 import {
@@ -139,6 +143,7 @@ export const actions: Actions = {
 		if (!idempotencyKey || !attemptCreatedAt) {
 			return fail(400, {
 				error: 'Invalid creation attempt.',
+				errorCode: 'invalidAttempt' satisfies MutationErrorCode,
 				code: 'INVALID_ATTEMPT',
 				idempotencyKey: undefined,
 				attemptCreatedAt: undefined,
@@ -161,6 +166,7 @@ export const actions: Actions = {
 			if (!parsedKind.success) {
 				return fail(400, {
 					error: 'Invalid item kind.',
+					errorCode: 'invalidItemKind' satisfies MutationErrorCode,
 					code: 'INVALID_PIPELINE_CAPABILITY',
 					...attemptData,
 					values
@@ -181,6 +187,7 @@ export const actions: Actions = {
 			if (!parsedClassification.success) {
 				return fail(400, {
 					error: 'Invalid classification type.',
+					errorCode: 'invalidClassificationType' satisfies MutationErrorCode,
 					code: 'INVALID_PIPELINE_CAPABILITY',
 					...attemptData,
 					values
@@ -195,6 +202,7 @@ export const actions: Actions = {
 		if (!isItemKindAllowedForClassification(classificationType, itemKind)) {
 			return fail(400, {
 				error: 'Incompatible classification type and item kind.',
+				errorCode: 'incompatibleClassificationType' satisfies MutationErrorCode,
 				code: 'INVALID_PIPELINE_CAPABILITY',
 				...attemptData,
 				values
@@ -207,6 +215,7 @@ export const actions: Actions = {
 			if (!isPipelinePreset(rawPipelinePreset)) {
 				return fail(400, {
 					error: 'Invalid pipeline preset.',
+					errorCode: 'invalidPipelinePreset' satisfies MutationErrorCode,
 					code: 'INVALID_PIPELINE_CAPABILITY',
 					...attemptData,
 					values
@@ -221,6 +230,7 @@ export const actions: Actions = {
 		if (!isPipelinePresetAllowedForItemKind(pipelinePreset, itemKind)) {
 			return fail(400, {
 				error: 'Incompatible pipeline preset and item kind.',
+				errorCode: 'incompatiblePipelinePreset' satisfies MutationErrorCode,
 				code: 'INVALID_PIPELINE_CAPABILITY',
 				...attemptData,
 				values
@@ -233,6 +243,7 @@ export const actions: Actions = {
 			if (rawAccessLevel !== 'private' && rawAccessLevel !== 'family' && rawAccessLevel !== 'public') {
 				return fail(400, {
 					error: 'Invalid access level.',
+					errorCode: 'invalidAccessLevel' satisfies MutationErrorCode,
 					code: 'INVALID_PIPELINE_CAPABILITY',
 					...attemptData,
 					values
@@ -315,7 +326,9 @@ export const actions: Actions = {
 							: 502;
 				return fail(status, {
 					error: cause.message,
+					errorCode: mutationErrorCodeForResponse(status, cause.code),
 					code: cause.code,
+					requestId: cause.requestId,
 					...attemptData,
 					values
 				});

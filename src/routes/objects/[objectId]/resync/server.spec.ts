@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ApiClientError } from '$lib/server/apiClient';
+
 const { requestResyncMock } = vi.hoisted(() => ({
 	requestResyncMock: vi.fn(),
 }));
@@ -34,6 +36,7 @@ describe('/objects/[objectId]/resync +server', () => {
 		);
 
 		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: 'Forbidden', errorCode: 'forbidden' });
 		expect(requestResyncMock).not.toHaveBeenCalled();
 	});
 
@@ -41,7 +44,31 @@ describe('/objects/[objectId]/resync +server', () => {
 		const response = await POST(makeEvent({ params: {} }));
 
 		expect(response.status).toBe(404);
+		expect(await response.json()).toEqual({
+			error: 'Object not found.',
+			errorCode: 'notFound',
+		});
 		expect(requestResyncMock).not.toHaveBeenCalled();
+	});
+
+	it('maps a backend failure onto a stable error code', async () => {
+		requestResyncMock.mockRejectedValue(
+			new ApiClientError({
+				status: 423,
+				code: 'LOCKED',
+				message: 'Object is locked',
+				requestId: 'req-resync',
+			}),
+		);
+
+		const response = await POST(makeEvent());
+
+		expect(response.status).toBe(423);
+		expect(await response.json()).toEqual({
+			error: 'Object is locked',
+			errorCode: 'locked',
+			requestId: 'req-resync',
+		});
 	});
 
 	it('queues resync for archivers', async () => {

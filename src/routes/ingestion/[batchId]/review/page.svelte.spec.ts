@@ -105,6 +105,31 @@ describe('/ingestion/[batchId]/review +page.svelte', () => {
 			.not.toBeInTheDocument();
 	});
 
+	it('keeps file size and status separated at narrow widths in both locales', async () => {
+		try {
+			await page.viewport(440, 800);
+			render(ReviewPage, { data: pageData() });
+
+			const size = page.getByTestId('review-file-size-file-1').element();
+			const statusContainer = page.getByTestId('review-file-status-file-1').element();
+			const status = statusContainer.querySelector('span');
+			expect(status).not.toBeNull();
+
+			const assertSeparated = () => {
+				const sizeRect = size.getBoundingClientRect();
+				const statusRect = status!.getBoundingClientRect();
+				expect(statusRect.left - sizeRect.right).toBeGreaterThanOrEqual(10);
+			};
+
+			assertSeparated();
+			locale.setLocale('ru');
+			await expect.element(page.getByText('Загружен', { exact: true })).toBeInTheDocument();
+			assertSeparated();
+		} finally {
+			await page.viewport(1280, 720);
+		}
+	});
+
 	it('renders localized English review copy', async () => {
 		render(ReviewPage, { data: pageData() });
 

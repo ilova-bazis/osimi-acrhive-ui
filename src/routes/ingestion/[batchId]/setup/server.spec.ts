@@ -347,6 +347,7 @@ describe('/ingestion/[batchId]/setup +server', () => {
 		expect(response.status).toBe(409);
 		expect(await response.json()).toEqual({
 			error: 'Batch is locked',
+			errorCode: 'locked',
 			requestId: 'req-delete-conflict'
 		});
 	});

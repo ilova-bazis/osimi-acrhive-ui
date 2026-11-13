@@ -64,6 +64,7 @@ export const objectBaseSchema = z.object({
     object_id: objectIdSchema,
     thumbnail_artifact_id: z.string().min(1).nullable(),
     title: z.string().nullable(),
+    description: z.string().nullable(),
     processing_state: processingStateSchema,
     curation_state: curationStateSchema,
     availability_state: availabilityStateSchema,
@@ -99,6 +100,7 @@ export const objectsListResponseSchema = z.object({
 });
 
 export const objectDetailItemSchema = objectBaseSchema.extend({
+    people: z.array(z.string()),
     ingest_manifest: z.record(z.string(), z.unknown()).nullable().optional(),
     is_authorized: z.boolean().optional(),
     is_deliverable: z.boolean().optional(),

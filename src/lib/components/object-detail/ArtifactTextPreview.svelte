@@ -6,7 +6,7 @@
 	let {
 		title,
 		url,
-		emptyLabel = 'No text available.',
+		emptyLabel,
 		compact = false
 	} = $props<{
 		title: string;
@@ -17,6 +17,8 @@
 
 	const dictionary = $derived(translations[$locale]);
 	const t = (key: TranslationKey) => translate(dictionary, key);
+
+	const resolvedEmptyLabel = $derived(emptyLabel ?? t('objects.detail.viewer.noTextAvailable'));
 
 	let text = $state<string | null>(null);
 	let loading = $state(false);
@@ -102,6 +104,6 @@
 			<p class="whitespace-pre-wrap">{text}</p>
 		</div>
 	{:else if !loading}
-		<p class="mt-3 text-sm text-text-muted">{emptyLabel}</p>
+		<p class="mt-3 text-sm text-text-muted">{resolvedEmptyLabel}</p>
 	{/if}
 </section>

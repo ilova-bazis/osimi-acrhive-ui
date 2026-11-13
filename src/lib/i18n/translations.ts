@@ -902,6 +902,7 @@ export const translations = {
 					captions: 'Captions',
 					transcriptEmpty: 'Transcript is not available.',
 					captionsEmpty: 'Captions are not available.',
+					noTextAvailable: 'No text available.',
 					sceneNotes: 'Scene notes',
 					previewAvailable: 'Preview available',
 					videoPreview: 'Video preview',
@@ -1114,6 +1115,7 @@ export const translations = {
 				removeFailed: 'Failed to remove file.',
 				typeMismatch: 'Only {expectedType} files are allowed in this batch. Rejected: {rejected}.',
 				unsupportedFormats: 'Unsupported format for this batch. Rejected: {rejected}. Supported formats: {supportedFormats}.',
+				moreRejected: '{sample} +{count} more',
 				expectedTypeFallback: 'the locked batch type',
 				previewPurged: 'Preview unavailable: retention period expired',
 				previewExpand: 'Expand preview of {name}'
@@ -1528,6 +1530,30 @@ export const translations = {
 			layoutOcr: 'Layout OCR',
 			speechToText: 'Speech-to-text',
 			imageTagging: 'Image tagging'
+		},
+		mutationErrors: {
+			unauthorized: 'Your session has expired. Sign in again to continue.',
+			forbidden: 'You do not have permission to perform this action.',
+			notFound: 'The requested item could not be found.',
+			locked: 'This item is locked and cannot be changed right now.',
+			conflict: 'This action conflicts with the current state. Refresh and try again.',
+			rateLimited: 'Too many requests. Please wait a moment before trying again.',
+			invalidPayload: 'The request was rejected because the submitted data was invalid.',
+			incompatibleCapability:
+				'The selected pipeline preset is not compatible with the items in this batch.',
+			requestFailed: 'The server could not complete the request. Try again.',
+			unexpected: 'Something went wrong while performing this action.',
+			invalidAttempt: 'This form is no longer valid. Reload the page and try again.',
+			invalidItemKind: 'The selected item kind is not supported.',
+			invalidClassificationType: 'The selected classification type is not supported.',
+			incompatibleClassificationType:
+				'The selected classification type cannot be used with this item kind.',
+			invalidPipelinePreset: 'The selected pipeline preset is not supported.',
+			incompatiblePipelinePreset:
+				'The selected pipeline preset cannot be used with this item kind.',
+			invalidAccessLevel: 'The selected access level is not supported.',
+			creationFailed: 'The ingestion could not be created. Try again.',
+			withRequest: '{message} (request: {id})'
 		}
 	},
 	ru: {
@@ -1741,8 +1767,8 @@ export const translations = {
 			},
 			errors: {
 				deleteConflict: 'Удалять можно только черновые, загружаемые или отмененные загрузки.',
-				failedNamed: 'Не удалось выполнить действие {action} для загрузки {name}.',
-				failed: 'Не удалось выполнить действие {action} для загрузки.'
+				failedNamed: 'Не удалось {action} загрузку «{name}».',
+				failed: 'Не удалось {action} загрузку.'
 			},
 			pagination: {
 				prev: '← Назад',
@@ -1799,7 +1825,7 @@ export const translations = {
 				restore: 'Восстановить эту отмененную загрузку?'
 			},
 			errors: {
-				failed: 'Не удалось выполнить действие {action} для загрузки.'
+				failed: 'Не удалось {action} загрузку.'
 			}
 		},
 			ingestionNew: {
@@ -2248,8 +2274,8 @@ export const translations = {
 				limit: 'Лимит',
 				reset: 'Сбросить',
 				applyFilters: 'Применить фильтры',
-				batchPlaceholder: 'batch-2026',
-				tagPlaceholder: 'tag',
+				batchPlaceholder: 'партия-2026',
+				tagPlaceholder: 'метка',
 				moreSelected: 'ещё'
 			},
 			recent: {
@@ -2437,6 +2463,7 @@ export const translations = {
 					captions: 'Субтитры',
 					transcriptEmpty: 'Транскрипция недоступна.',
 					captionsEmpty: 'Субтитры недоступны.',
+					noTextAvailable: 'Текст недоступен.',
 					sceneNotes: 'Заметки сцены',
 					previewAvailable: 'Предпросмотр доступен',
 					videoPreview: 'Предпросмотр видео',
@@ -2649,6 +2676,7 @@ export const translations = {
 				removeFailed: 'Не удалось удалить файл.',
 				typeMismatch: 'В этой партии разрешены только файлы типа {expectedType}. Отклонено: {rejected}.',
 				unsupportedFormats: 'Неподдерживаемый формат для этой партии. Отклонено: {rejected}. Поддерживаемые форматы: {supportedFormats}.',
+				moreRejected: '{sample} и ещё {count}',
 				expectedTypeFallback: 'зафиксированный тип партии',
 				previewPurged: 'Предпросмотр недоступен: срок хранения истек',
 				previewExpand: 'Развернуть предпросмотр {name}'
@@ -3063,6 +3091,30 @@ export const translations = {
 			layoutOcr: 'Макетный OCR',
 			speechToText: 'Распознавание речи',
 			imageTagging: 'Тегирование изображений'
+		},
+		mutationErrors: {
+			unauthorized: 'Срок действия сессии истек. Войдите снова, чтобы продолжить.',
+			forbidden: 'У вас нет прав на это действие.',
+			notFound: 'Запрошенный элемент не найден.',
+			locked: 'Элемент заблокирован. Сейчас его нельзя изменить.',
+			conflict: 'Это действие недоступно в текущем состоянии. Обновите страницу и повторите попытку.',
+			rateLimited: 'Слишком много запросов. Немного подождите и повторите попытку.',
+			invalidPayload: 'Запрос отклонен, так как переданные данные некорректны.',
+			incompatibleCapability:
+				'Выбранный пресет конвейера несовместим с элементами этой партии.',
+			requestFailed: 'Сервер не смог выполнить запрос. Повторите попытку.',
+			unexpected: 'При выполнении действия произошла ошибка.',
+			invalidAttempt: 'Данные формы недействительны. Обновите страницу и повторите попытку.',
+			invalidItemKind: 'Выбранный вид элемента не поддерживается.',
+			invalidClassificationType: 'Выбранный тип классификации не поддерживается.',
+			incompatibleClassificationType:
+				'Выбранный тип классификации нельзя использовать с этим видом элемента.',
+			invalidPipelinePreset: 'Выбранный пресет конвейера не поддерживается.',
+			incompatiblePipelinePreset:
+				'Выбранный пресет конвейера нельзя использовать с этим видом элемента.',
+			invalidAccessLevel: 'Выбранный уровень доступа не поддерживается.',
+			creationFailed: 'Не удалось создать загрузку. Повторите попытку.',
+			withRequest: '{message} (запрос: {id})'
 		}
 	}
 } as const;

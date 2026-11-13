@@ -10,6 +10,13 @@
     import { locale } from "$lib/i18n/locale";
     import { formatCount, formatFileSize } from "$lib/i18n/format";
     import { formatPlural, formatTemplate, translate } from "$lib/i18n/translate";
+    import {
+        readMutationErrorPayload,
+        renderLocalizedMessage,
+        StructuredFailureError,
+        type LocalizedMessageState,
+        type MessageParam,
+    } from "$lib/i18n/mutationErrors";
     import { translations, type TranslationKey } from "$lib/i18n/translations";
     import {
         fileStatusKey,
@@ -116,7 +123,7 @@
         backendStatus: IngestionFileStatus | null;
         backendStatusRaw: string;
         backendFileId?: string;
-        uploadError?: string;
+        uploadError?: LocalizedMessageState;
         preview?: IngestionDetailFile["preview"];
     };
 
@@ -244,7 +251,7 @@
     type ItemMutationOperation = "metadata" | "rename" | "attach" | "reorder";
     type ItemMutationFailure = {
         operation: ItemMutationOperation;
-        message: string;
+        state: LocalizedMessageState;
     };
 
     class SetupMutationUnauthorizedError extends Error {
@@ -304,17 +311,18 @@
 
                 itemMutationFailure = {
                     operation,
-                    message:
-                        cause instanceof Error && cause.message
-                            ? cause.message
-                            : formatTemplate(
-                                  t("ingestionSetup.mutations.failedToSave"),
-                                  {
-                                      label: t(
-                                          itemMutationLabels[operation],
-                                      ),
+                    state:
+                        cause instanceof StructuredFailureError
+                            ? cause.state
+                            : {
+                                  key: "ingestionSetup.mutations.failedToSave",
+                                  params: {
+                                      label: {
+                                          kind: "label",
+                                          key: itemMutationLabels[operation],
+                                      },
                                   },
-                              ),
+                              },
                 };
             } finally {
                 activeItemMutationCount -= 1;
@@ -364,7 +372,7 @@
                         itemId: serverId,
                         metadata,
                     },
-                    t("ingestionSetup.mutations.fallbackSaveMetadata"),
+                    "ingestionSetup.mutations.fallbackSaveMetadata",
                 ),
             );
         }, 300);
@@ -556,34 +564,33 @@
 
     const toSummaryDateValue = (
         editor: SummaryDateEditor,
-        label: string,
+        labelKey: TranslationKey,
     ): string | null => {
         if (editor.precision === "none") return null;
         if (editor.precision === "year") {
             if (!/^\d{4}$/.test(editor.year)) {
-                throw new Error(
-                    format(t("ingestionSetup.batchIntent.invalidYear"), {
-                        label,
-                    }),
-                );
+                throw new StructuredFailureError({
+                    key: "ingestionSetup.batchIntent.invalidYear",
+                    params: { label: { kind: "label", key: labelKey } },
+                });
             }
             return editor.year;
         }
         if (editor.precision === "month") {
             if (!/^\d{4}-\d{2}$/.test(editor.month)) {
-                throw new Error(
-                    format(t("ingestionSetup.batchIntent.invalidMonth"), {
-                        label,
-                    }),
-                );
+                throw new StructuredFailureError({
+                    key: "ingestionSetup.batchIntent.invalidMonth",
+                    params: { label: { kind: "label", key: labelKey } },
+                });
             }
             return editor.month;
         }
 
         if (!/^\d{4}-\d{2}-\d{2}$/.test(editor.day)) {
-            throw new Error(
-                format(t("ingestionSetup.batchIntent.invalidDay"), { label }),
-            );
+            throw new StructuredFailureError({
+                key: "ingestionSetup.batchIntent.invalidDay",
+                params: { label: { kind: "label", key: labelKey } },
+            });
         }
 
         return editor.day;
@@ -754,8 +761,16 @@
     let summaryTagInput = $state("");
 
     let isSubmitting = $state(false);
-    let submitError = $state("");
-    let addFilesError = $state("");
+    let submitError = $state<LocalizedMessageState | null>(null);
+
+    type AddFilesFailure = {
+        kind: "typeMismatch" | "unsupportedFormats";
+        rejectedNames: string[];
+        expectedTypeKey?: TranslationKey;
+        supportedFormats?: string;
+    };
+
+    let addFilesError = $state<AddFilesFailure[] | null>(null);
     let removingIds = $state<number[]>([]);
     let hydratedFromServer = $state(false);
     let groupingWarningDismissed = $state(false);
@@ -763,13 +778,13 @@
     let autoGroupToastTimer: ReturnType<typeof setTimeout> | null = null;
     let metadataHydrated = $state(false);
     let confirmedBatchIntent = $state<BatchIntent | null>(null);
-    let batchIntentError = $state("");
+    let batchIntentError = $state<LocalizedMessageState | null>(null);
     let pendingItemMetadataSaves = $state<Record<string, string>>({});
     let attachedFileIdsByItem = $state<Record<string, string[]>>({});
     let mismatchDialog = $state<{
         open: boolean;
-        expectedLabel: string;
-        incomingLabel: string;
+        expectedKey: TranslationKey;
+        incomingKey: TranslationKey;
         incomingMediaType: BatchMediaType;
         suggestedItemKind: ItemKind;
         rejectedSample: string;
@@ -781,13 +796,59 @@
         null,
     );
     let abandonDeleting = $state(false);
-    let abandonDeleteError = $state("");
+    let abandonDeleteError = $state<LocalizedMessageState | null>(null);
+    let metadataSaveError = $state<LocalizedMessageState | null>(null);
     let abandonNavigateBypass = false;
     let setupNavigationBypass = false;
 
     const uploadControllers = new SvelteMap<number, AbortController>();
     const maxConcurrentUploads = 2;
     let uploadQueue = $state<number[]>([]);
+
+    const rejectedSample = (names: string[]): string => {
+        const sample = names.slice(0, 3).join(", ");
+        if (names.length <= 3) return sample;
+        return formatTemplate(t("ingestionSetup.files.moreRejected"), {
+            sample,
+            count: formatCount(names.length - 3, $locale),
+        });
+    };
+
+    const renderAddFilesError = (failure: AddFilesFailure): string => {
+        const rejected = rejectedSample(failure.rejectedNames);
+        if (failure.kind === "typeMismatch") {
+            const expectedType = failure.expectedTypeKey
+                ? t(failure.expectedTypeKey)
+                : t("ingestionSetup.files.expectedTypeFallback");
+            return format(t("ingestionSetup.files.typeMismatch"), {
+                expectedType,
+                rejected,
+            });
+        }
+        return format(t("ingestionSetup.files.unsupportedFormats"), {
+            rejected,
+            supportedFormats: failure.supportedFormats ?? "",
+        });
+    };
+
+    const addFilesErrorText = $derived(
+        addFilesError ? addFilesError.map(renderAddFilesError).join(" ") : "",
+    );
+
+    const renderStateMessage = (state: LocalizedMessageState | null): string =>
+        state ? renderLocalizedMessage(dictionary, $locale, state) : "";
+
+    const submitErrorText = $derived(renderStateMessage(submitError));
+    const metadataSaveErrorText = $derived(renderStateMessage(metadataSaveError));
+    const batchIntentErrorText = $derived(renderStateMessage(batchIntentError));
+    const abandonDeleteErrorText = $derived(
+        renderStateMessage(abandonDeleteError),
+    );
+    const itemMutationFailureText = $derived(
+        itemMutationFailure
+            ? renderLocalizedMessage(dictionary, $locale, itemMutationFailure.state)
+            : "",
+    );
 
     $effect(() => {
         if (metadataHydrated) return;
@@ -971,7 +1032,7 @@
                         itemId: group.serverId,
                         label: label || "",
                     },
-                    t("ingestionSetup.mutations.fallbackRename"),
+                    "ingestionSetup.mutations.fallbackRename",
                 ),
             );
         }
@@ -1004,7 +1065,7 @@
                         fileId: backendFileId,
                         sortOrder,
                     },
-                    t("ingestionSetup.mutations.fallbackAttach"),
+                    "ingestionSetup.mutations.fallbackAttach",
                 ),
             );
         }
@@ -1051,7 +1112,7 @@
                             itemId: group.serverId,
                             files: fileEntries,
                         },
-                        t("ingestionSetup.mutations.fallbackReorder"),
+                        "ingestionSetup.mutations.fallbackReorder",
                     ),
                 );
             }
@@ -1212,8 +1273,18 @@
         return t("ingestionSetup.fileTypes.document");
     };
 
+    const mediaTypeLabelKey = (mediaType: BatchMediaType): TranslationKey => {
+        if (mediaType === "audio") return "ingestionSetup.fileTypes.audio";
+        if (mediaType === "video") return "ingestionSetup.fileTypes.video";
+        if (mediaType === "image") return "ingestionSetup.fileTypes.image";
+        return "ingestionSetup.fileTypes.document";
+    };
+
     const itemKindLabel = (itemKind: ItemKind): string =>
         t(`ingestionSetup.itemKinds.${itemKind}`);
+
+    const itemKindLabelKey = (itemKind: ItemKind): TranslationKey =>
+        `ingestionSetup.itemKinds.${itemKind}`;
 
     const allowedItemKinds = $derived(
         getAllowedItemKinds(batchDefaults.classificationType),
@@ -1335,7 +1406,7 @@
     };
 
     const setClassificationType = (classificationType: ClassificationType) => {
-        batchIntentError = "";
+        batchIntentError = null;
         applyBatchIntent(
             applyClassificationSelection(
                 currentBatchIntent(),
@@ -1346,7 +1417,7 @@
     };
 
     const setItemKind = (itemKind: ItemKind) => {
-        batchIntentError = "";
+        batchIntentError = null;
         applyBatchIntent(
             applyItemKindSelection(currentBatchIntent(), itemKind),
         );
@@ -1473,8 +1544,8 @@
     const addFiles = (incoming: FileList | File[]) => {
         const list = Array.from(incoming);
         if (!list.length) return;
-        submitError = "";
-        addFilesError = "";
+        submitError = null;
+        addFilesError = null;
 
         const allowedKinds = getAllowedMediaKinds(batchDefaults.itemKind);
         const accepted: LocalIngestionFile[] = [];
@@ -1548,54 +1619,39 @@
             const sample = rejectedMediaNames.slice(0, 3).join(", ");
             mismatchDialog = {
                 open: true,
-                expectedLabel: itemKindLabel(batchDefaults.itemKind),
-                incomingLabel: mediaTypeLabel(mismatchIncomingType),
+                expectedKey: itemKindLabelKey(batchDefaults.itemKind),
+                incomingKey: mediaTypeLabelKey(mismatchIncomingType),
                 incomingMediaType: mismatchIncomingType,
                 suggestedItemKind,
                 rejectedSample: sample,
                 rejectedCount: rejectedMediaNames.length,
                 files: mismatchFiles,
             };
-            addFilesError = "";
+            addFilesError = null;
             return;
         }
 
         enqueueUploads(accepted.map((file) => file.id));
 
-        const errorMessages: string[] = [];
-
+        const failures: AddFilesFailure[] = [];
         if (rejectedMediaNames.length > 0) {
-            const sample = rejectedMediaNames.slice(0, 3).join(", ");
-            const remainder =
-                rejectedMediaNames.length > 3
-                    ? ` +${rejectedMediaNames.length - 3} more`
-                    : "";
-            errorMessages.push(
-                format(t("ingestionSetup.files.typeMismatch"), {
-                    expectedType: allowedMediaLabel,
-                    rejected: `${sample}${remainder}`,
-                }),
-            );
+            failures.push({
+                kind: "typeMismatch",
+                rejectedNames: rejectedMediaNames,
+                expectedTypeKey:
+                    allowedMediaKinds.length === 1
+                        ? mediaTypeLabelKey(allowedMediaKinds[0])
+                        : itemKindLabelKey(batchDefaults.itemKind),
+            });
         }
-
         if (unsupportedNames.length > 0) {
-            const sample = unsupportedNames.slice(0, 3).join(", ");
-            const remainder =
-                unsupportedNames.length > 3
-                    ? ` +${unsupportedNames.length - 3} more`
-                    : "";
-            errorMessages.push(
-                format(t("ingestionSetup.files.unsupportedFormats"), {
-                    rejected: `${sample}${remainder}`,
-                    supportedFormats: formatsFor(allowedKinds),
-                }),
-            );
+            failures.push({
+                kind: "unsupportedFormats",
+                rejectedNames: unsupportedNames,
+                supportedFormats: formatsFor(allowedKinds),
+            });
         }
-
-        addFilesError = errorMessages.join(" ");
-        if (errorMessages.length === 0) {
-            addFilesError = "";
-        }
+        addFilesError = failures.length > 0 ? failures : null;
     };
 
     const handleFileInput = (event: Event) => {
@@ -1705,7 +1761,7 @@
 
         if (!nextFiles.length) {
             selectedIds = [];
-            addFilesError = "";
+            addFilesError = null;
         }
 
         return { file: removed, index };
@@ -1923,7 +1979,10 @@
         );
     };
 
-    const setFileUploadError = (id: number, message: string | undefined) => {
+    const setFileUploadError = (
+        id: number,
+        message: LocalizedMessageState | undefined,
+    ) => {
         files = files.map((file) =>
             file.id === id
                 ? {
@@ -1951,20 +2010,13 @@
             .join("");
     };
 
-    const readErrorMessage = async (
+    const structuredFailure = async (
         response: Response,
-        fallback: string,
-    ): Promise<string> => {
-        const payload = await response.json().catch(() => null);
-        if (
-            payload &&
-            typeof payload === "object" &&
-            "error" in payload &&
-            typeof payload.error === "string"
-        ) {
-            return payload.error;
-        }
-        return fallback;
+        key: TranslationKey,
+        params?: Record<string, MessageParam>,
+    ): Promise<StructuredFailureError> => {
+        const payload = await readMutationErrorPayload(response);
+        return new StructuredFailureError({ key, params, failure: payload });
     };
 
     const setupEndpoint = (): string =>
@@ -1981,7 +2033,6 @@
     let metadataSaveGeneration = 0;
     let metadataSaveChain: Promise<void> = Promise.resolve();
     let metadataSaveClosed = false;
-    let metadataSaveError = $state("");
     let metadataSaveState = $state<
         "idle" | "pending" | "saving" | "saved" | "error"
     >("idle");
@@ -2068,7 +2119,7 @@
     const deleteBatchAndLeave = async () => {
         if (!abandonDialog || abandonDeleting) return;
         abandonDeleting = true;
-        abandonDeleteError = "";
+        abandonDeleteError = null;
         const url = abandonDialog.pendingUrl;
         try {
             const res = await postSetupAction({ action: "delete_batch" });
@@ -2081,7 +2132,9 @@
                     await goto(resolve("/login"));
                 } catch {
                     setupNavigationBypass = false;
-                    abandonDeleteError = t("ingestionSetup.abandon.sessionExpired");
+                    abandonDeleteError = {
+                        key: "ingestionSetup.abandon.sessionExpired",
+                    };
                 }
                 return;
             }
@@ -2089,8 +2142,13 @@
             const deleted = res.status === 404 || (res.ok && (await res.json().catch(() => null))?.ok === true);
             if (!deleted) {
                 abandonDeleteError = !res.ok
-                    ? await readErrorMessage(res, t("ingestionSetup.abandon.deleteFailed"))
-                    : t("ingestionSetup.abandon.deleteUnconfirmed");
+                    ? (
+                          await structuredFailure(
+                              res,
+                              "ingestionSetup.abandon.deleteFailed",
+                          )
+                      ).state
+                    : { key: "ingestionSetup.abandon.deleteUnconfirmed" };
                 return;
             }
 
@@ -2102,7 +2160,9 @@
                 abandonNavigateBypass = false;
             }
         } catch {
-            abandonDeleteError = t("ingestionSetup.abandon.deleteFailed");
+            abandonDeleteError = {
+                key: "ingestionSetup.abandon.deleteFailed",
+            };
         } finally {
             abandonDeleting = false;
         }
@@ -2119,7 +2179,7 @@
             published: {
                 value: toSummaryDateValue(
                     summaryDateEditors.published,
-                    t("ingestionSetup.batchIntent.publishedDate"),
+                    "ingestionSetup.batchIntent.publishedDate",
                 ),
                 approximate: summaryDateEditors.published.approximate,
                 confidence: summaryDateEditors.published.confidence,
@@ -2128,7 +2188,7 @@
             created: {
                 value: toSummaryDateValue(
                     summaryDateEditors.created,
-                    t("ingestionSetup.batchIntent.createdDate"),
+                    "ingestionSetup.batchIntent.createdDate",
                 ),
                 approximate: summaryDateEditors.created.approximate,
                 confidence: summaryDateEditors.created.confidence,
@@ -2170,15 +2230,15 @@
         if (response.status === 401) {
             metadataSaveClosed = true;
             await goto(resolve("/login"));
-            throw new Error("Unauthorized metadata update.");
+            throw new StructuredFailureError({
+                key: "mutationErrors.unauthorized",
+            });
         }
 
         if (!response.ok) {
-            throw new Error(
-                await readErrorMessage(
-                    response,
-                    t("ingestionSetup.mutations.fallbackUpdateDefaults"),
-                ),
+            throw await structuredFailure(
+                response,
+                "ingestionSetup.mutations.fallbackUpdateDefaults",
             );
         }
 
@@ -2189,7 +2249,7 @@
         if (metadataSaveClosed) return;
 
         const generation = ++metadataSaveGeneration;
-        metadataSaveError = "";
+        metadataSaveError = null;
         metadataSaveState = "pending";
         if (metadataSaveTimer) {
             clearTimeout(metadataSaveTimer);
@@ -2217,7 +2277,7 @@
                         storeItemKind(batchId, savedIntent.itemKind);
                         if (generation !== metadataSaveGeneration) return;
 
-                        batchIntentError = "";
+                        batchIntentError = null;
                         metadataSaveState = "saved";
                         metadataSavedTimer = setTimeout(() => {
                             if (generation === metadataSaveGeneration) {
@@ -2228,9 +2288,11 @@
                         if (generation !== metadataSaveGeneration) return;
 
                         metadataSaveError =
-                            error instanceof Error
-                                ? error.message
-                                : "Failed to update ingestion defaults.";
+                            error instanceof StructuredFailureError
+                                ? error.state
+                                : {
+                                      key: "ingestionSetup.mutations.fallbackUpdateDefaults",
+                                  };
                         if (
                             confirmedBatchIntent &&
                             !isBatchIntentEqual(
@@ -2239,9 +2301,9 @@
                             )
                         ) {
                             restoreConfirmedBatchIntent();
-                            batchIntentError = t(
-                                "ingestionSetup.batchIntent.intentSaveRollback",
-                            );
+                            batchIntentError = {
+                                key: "ingestionSetup.batchIntent.intentSaveRollback",
+                            };
                         }
                         metadataSaveState = "error";
                     }
@@ -2279,7 +2341,8 @@
 
     const requireSetupActionOk = async (
         response: Response,
-        fallback: string,
+        fallbackKey: TranslationKey,
+        fallbackParams?: Record<string, MessageParam>,
     ): Promise<void> => {
         if (response.status === 401) {
             setupNavigationBypass = true;
@@ -2288,16 +2351,20 @@
         }
 
         if (!response.ok) {
-            throw new Error(await readErrorMessage(response, fallback));
+            throw await structuredFailure(
+                response,
+                fallbackKey,
+                fallbackParams,
+            );
         }
     };
 
     const runCheckedSetupAction = async (
         body: unknown,
-        fallback: string,
+        fallbackKey: TranslationKey,
     ): Promise<void> => {
         const response = await postSetupAction(body);
-        await requireSetupActionOk(response, fallback);
+        await requireSetupActionOk(response, fallbackKey);
     };
 
     const persistCreatedItemMetadata = async (
@@ -2314,7 +2381,7 @@
         });
         await requireSetupActionOk(
             response,
-            t("ingestionSetup.mutations.fallbackSaveMetadata"),
+            "ingestionSetup.mutations.fallbackSaveMetadata",
         );
     };
 
@@ -2326,7 +2393,7 @@
     const removeFile = async (id: number): Promise<void> => {
         if (removingIds.includes(id)) return;
 
-        submitError = "";
+        submitError = null;
 
         const file = findFile(id);
         if (!file) return;
@@ -2357,7 +2424,7 @@
                     restoreLocalFile(snapshot);
                     setFileUploadError(
                         id,
-                        t("ingestionSetup.files.cannotRemoveCommitted"),
+                        { key: "ingestionSetup.files.cannotRemoveCommitted" },
                     );
                     return;
                 }
@@ -2366,17 +2433,19 @@
                     restoreLocalFile(snapshot);
                     setFileUploadError(
                         id,
-                        await readErrorMessage(
-                            response,
-                            t("ingestionSetup.files.removeFailed"),
-                        ),
+                        (
+                            await structuredFailure(
+                                response,
+                                "ingestionSetup.files.removeFailed",
+                            )
+                        ).state,
                     );
                     return;
                 }
             }
         } catch {
             restoreLocalFile(snapshot);
-            setFileUploadError(id, t("ingestionSetup.files.removeFailed"));
+            setFileUploadError(id, { key: "ingestionSetup.files.removeFailed" });
         } finally {
             removingIds = removingIds.filter((value) => value !== id);
         }
@@ -2420,14 +2489,10 @@
             }
 
             if (!presignResponse.ok) {
-                throw new Error(
-                    await readErrorMessage(
-                        presignResponse,
-                        formatTemplate(
-                            t("ingestionSetup.mutations.fallbackPrepareUpload"),
-                            { name: file.name },
-                        ),
-                    ),
+                throw await structuredFailure(
+                    presignResponse,
+                    "ingestionSetup.mutations.fallbackPrepareUpload",
+                    { name: { kind: "text", value: file.name } },
                 );
             }
 
@@ -2458,11 +2523,10 @@
             });
 
             if (!uploadResponse.ok) {
-                throw new Error(
-                    formatTemplate(t("ingestionSetup.mutations.fallbackUpload"), {
-                        name: file.name,
-                    }),
-                );
+                throw new StructuredFailureError({
+                    key: "ingestionSetup.mutations.fallbackUpload",
+                    params: { name: { kind: "text", value: file.name } },
+                });
             }
 
             const checksumSha256 = await sha256Hex(file.rawFile);
@@ -2481,14 +2545,10 @@
             }
 
             if (!commitResponse.ok) {
-                throw new Error(
-                    await readErrorMessage(
-                        commitResponse,
-                        formatTemplate(
-                            t("ingestionSetup.mutations.fallbackCommit"),
-                            { name: file.name },
-                        ),
-                    ),
+                throw await structuredFailure(
+                    commitResponse,
+                    "ingestionSetup.mutations.fallbackCommit",
+                    { name: { kind: "text", value: file.name } },
                 );
             }
 
@@ -2506,13 +2566,15 @@
                 return;
             }
 
-            const message =
-                error instanceof Error
-                    ? error.message
-                    : formatTemplate(
-                        t("ingestionSetup.mutations.fallbackUpload"),
-                        { name: file.name },
-                    );
+            const message: LocalizedMessageState =
+                error instanceof StructuredFailureError
+                    ? error.state
+                    : {
+                          key: "ingestionSetup.mutations.fallbackUpload",
+                          params: {
+                              name: { kind: "text", value: file.name },
+                          },
+                      };
             setFileStatus(file.id, "failed");
             setFileUploadError(file.id, message);
         } finally {
@@ -2944,11 +3006,13 @@
         if (!canStartIngestion) return;
 
         isSubmitting = true;
-        submitError = "";
+        submitError = null;
 
         try {
             if (!itemIndexAllocator) {
-                throw new Error(t("ingestionSetup.mutations.fallbackInitOrdering"));
+                throw new StructuredFailureError({
+                    key: "ingestionSetup.mutations.fallbackInitOrdering",
+                });
             }
             const allocator = itemIndexAllocator;
 
@@ -2969,7 +3033,7 @@
                     });
                     await requireSetupActionOk(
                         attachResponse,
-                        t("ingestionSetup.mutations.fallbackAttachItem"),
+                        "ingestionSetup.mutations.fallbackAttachItem",
                     );
                     attached.push(fileId);
                     attachedFileIdsByItem = {
@@ -3006,7 +3070,7 @@
                     });
                     await requireSetupActionOk(
                         createResponse,
-                        t("ingestionSetup.mutations.fallbackCreateGroupedItem"),
+                        "ingestionSetup.mutations.fallbackCreateGroupedItem",
                     );
                     const result: { id: string; itemIndex: number } = await createResponse.json();
                     allocator.observe(result.itemIndex);
@@ -3039,7 +3103,7 @@
                     });
                     await requireSetupActionOk(
                         createResponse,
-                        t("ingestionSetup.mutations.fallbackCreateStandaloneItem"),
+                        "ingestionSetup.mutations.fallbackCreateStandaloneItem",
                     );
                     const result: { id: string; itemIndex: number } = await createResponse.json();
                     allocator.observe(result.itemIndex);
@@ -3058,9 +3122,9 @@
             await goto(resolve("/ingestion/[batchId]/review", { batchId }));
         } catch (error) {
             submitError =
-                error instanceof Error
-                    ? error.message
-                    : t("ingestionSetup.flow.submitFailed");
+                error instanceof StructuredFailureError
+                    ? error.state
+                    : { key: "ingestionSetup.flow.submitFailed" };
         } finally {
             isSubmitting = false;
             showConfirm = false;
@@ -3252,7 +3316,7 @@
                         </p>
                         {#if addFilesError}
                             <p class="mt-3 text-xs text-burnt-peach">
-                                {addFilesError}
+                                {addFilesErrorText}
                             </p>
                         {/if}
                         <button
@@ -3292,7 +3356,7 @@
                         </span>
                         {#if addFilesError}
                             <span class="text-xs text-burnt-peach"
-                                >{addFilesError}</span
+                                >{addFilesErrorText}</span
                             >
                         {/if}
                         <button
@@ -3776,7 +3840,7 @@
                     <p
                         class="mt-3 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach"
                     >
-                        {metadataSaveError}
+                        {metadataSaveErrorText}
                     </p>
                 {/if}
 
@@ -4354,7 +4418,7 @@
                                         <p
                                             class="mt-2 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach"
                                         >
-                                            {batchIntentError}
+                                            {batchIntentErrorText}
                                         </p>
                                     {/if}
                                 </div>
@@ -4925,7 +4989,7 @@
                         <p
                             class="rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach"
                         >
-                            {submitError}
+                            {submitErrorText}
                         </p>
                     {/if}
                 </div>
@@ -5057,8 +5121,8 @@
                     <div class="mt-4 space-y-2 text-sm text-text-muted">
                         <p>
                             {format(t("ingestionSetup.mismatch.details"), {
-                                expected: mismatchDialog.expectedLabel,
-                                incoming: mismatchDialog.incomingLabel,
+                                expected: t(mismatchDialog.expectedKey),
+                                incoming: t(mismatchDialog.incomingKey),
                             })}
                         </p>
                         <p>
@@ -5127,7 +5191,7 @@
                             role="alert"
                             class="mt-4 rounded-xl border border-burnt-peach/45 bg-pearl-beige/70 px-3 py-2 text-xs text-burnt-peach"
                         >
-                            {abandonDeleteError}
+                            {abandonDeleteErrorText}
                         </p>
                     {/if}
                     <div
@@ -5148,7 +5212,7 @@
                             onclick={deleteBatchAndLeave}
                             >{abandonDeleting
                                 ? t("ingestionSetup.abandon.deleting")
-                                : abandonDeleteError
+                                : abandonDeleteErrorText
                                   ? t("ingestionSetup.abandon.retryDelete")
                                   : t("ingestionSetup.abandon.deleteBatch")}</button
                         >
@@ -5175,7 +5239,7 @@
                             )}
                         </p>
                         <p class="mt-2 text-xs text-text-muted">
-                            {itemMutationFailure.message}
+                            {itemMutationFailureText}
                         </p>
                         <p class="mt-2 text-xs text-text-muted">
                             {t(

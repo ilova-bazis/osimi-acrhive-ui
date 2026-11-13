@@ -53,7 +53,7 @@ describe('createObjectDownloadRequestResponseSchema', () => {
 describe('object identity schemas', () => {
 	const listItem = {
 		id: 'OBJ-20260101-SCHEMA1', object_id: 'OBJ-20260101-SCHEMA1', thumbnail_artifact_id: null,
-		title: 'Object', processing_state: 'index_done', curation_state: 'reviewed',
+		title: 'Object', description: null, processing_state: 'index_done', curation_state: 'reviewed',
 		availability_state: 'AVAILABLE', access_level: 'private', type: 'DOCUMENT', tenant_id: 'tenant-1',
 		source_ingestion_id: null, source_batch_label: null, metadata: {},
 		created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
@@ -77,7 +77,7 @@ describe('object identity schemas', () => {
 describe('objectDetailResponseSchema viewer contracts', () => {
 	const detailObject = {
 		id: 'OBJ-20260101-VIEWER', object_id: 'OBJ-20260101-VIEWER', thumbnail_artifact_id: null,
-		title: 'Viewer object', processing_state: 'index_done', curation_state: 'reviewed',
+		title: 'Viewer object', description: null, people: [], processing_state: 'index_done', curation_state: 'reviewed',
 		availability_state: 'AVAILABLE', access_level: 'private', type: 'DOCUMENT', tenant_id: 'tenant-1',
 		source_ingestion_id: null, source_batch_label: null, metadata: {},
 		created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',

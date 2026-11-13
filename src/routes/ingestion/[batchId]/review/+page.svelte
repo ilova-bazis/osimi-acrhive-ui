@@ -13,6 +13,11 @@
 	import { knownFileStatusKey } from '$lib/i18n/statusLabels';
 	import { formatPlural, formatTemplate, translate } from '$lib/i18n/translate';
 	import {
+		readMutationErrorPayloadFromBody,
+		renderLocalizedMessage,
+		type LocalizedMessageState
+	} from '$lib/i18n/mutationErrors';
+	import {
 		getPipelinePresentation,
 		validatePipelinePresetCompatibility,
 		isPipelinePreset,
@@ -73,7 +78,11 @@
 
 	let confirmed = $state(false);
 	let submitting = $state(false);
-	let submitError = $state('');
+	let submitErrorState = $state<LocalizedMessageState | null>(null);
+
+	const submitError = $derived(
+		submitErrorState ? renderLocalizedMessage(dictionary, $locale, submitErrorState) : ''
+	);
 
 	const STEPS = $derived([
 		{ id: 'configure', label: t('ingestionNew.steps.configure') },
@@ -131,7 +140,7 @@
 	const beginProcessing = async () => {
 		if (!confirmed || !isReviewValid || submitting) return;
 		submitting = true;
-		submitError = '';
+		submitErrorState = null;
 		try {
 			const res = await fetch(setupEndpoint, {
 				method: 'POST',
@@ -143,22 +152,28 @@
 				return;
 			}
 			if (!res.ok) {
-				const body = await res.json().catch(() => ({})) as {
+				const body = await res.json().catch(() => null) as {
 					code?: string;
-					error?: string;
-				};
-				if (res.status === 409 && body.code === 'INVALID_PIPELINE_CAPABILITY') {
+					errorCode?: string;
+					requestId?: string;
+					request_id?: string;
+				} | null;
+				if (res.status === 409 && body?.code === 'INVALID_PIPELINE_CAPABILITY') {
 					submitCapabilityConflict = true;
 					return;
 				}
-				throw new Error(
-					body.error ?? t('ingestionReview.errors.submitFailed')
-				);
+				const payload = readMutationErrorPayloadFromBody(body, res.status);
+				submitErrorState = {
+					key: 'ingestionReview.errors.submitFailed',
+					failure: payload
+				};
+				return;
 			}
 			await goto(resolve('/ingestion'));
-		} catch (err) {
-			submitError =
-				err instanceof Error ? err.message : t('ingestionReview.errors.submitFailed');
+		} catch {
+			submitErrorState = {
+				key: 'ingestionReview.errors.submitFailed'
+			};
 		} finally {
 			submitting = false;
 		}
@@ -300,7 +315,7 @@
 
 			<div class="overflow-x-auto rounded-2xl border border-border-soft">
 				<!-- Header -->
-				<div class="grid min-w-[400px] border-b border-border-soft bg-alabaster-grey px-4 py-2" style="grid-template-columns: 48px 1fr 80px 60px">
+				<div class="grid min-w-[440px] gap-x-3 border-b border-border-soft bg-alabaster-grey px-4 py-2" style="display: grid; column-gap: 12px; grid-template-columns: 48px minmax(0, 1fr) max-content max-content">
 					<span class="text-xs uppercase tracking-[0.2em] text-text-muted">{t('objects.table.headers.preview')}</span>
 					<span class="text-xs uppercase tracking-[0.2em] text-text-muted">{t('ingestionReview.table.name')}</span>
 					<span class="text-xs uppercase tracking-[0.2em] text-text-muted text-right">{t('ingestionDetail.files.headers.size')}</span>
@@ -309,7 +324,7 @@
 
 				{#each data.enabledFiles.slice(0, FILE_PREVIEW_LIMIT) as file (file.id)}
 					{@const hasPreview = file.preview?.status === 'ready'}
-					<div class="grid min-w-[400px] items-center border-b border-border-soft px-4 py-[10px] last:border-b-0" style="grid-template-columns: 48px 1fr 80px 60px">
+					<div class="grid min-w-[440px] items-center gap-x-3 border-b border-border-soft px-4 py-[10px] last:border-b-0" style="display: grid; column-gap: 12px; grid-template-columns: 48px minmax(0, 1fr) max-content max-content">
 						<div class="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border border-border-soft bg-alabaster-grey/50">
 							{#if hasPreview}
 								<img
@@ -332,8 +347,8 @@
 							{/if}
 						</div>
 						<span class="text-sm text-text-ink truncate pr-4">{file.name}</span>
-						<span class="font-mono text-xs text-text-muted text-right">{file.sizeBytes != null ? formatFileSize(file.sizeBytes, $locale) : t('values.unknown')}</span>
-						<div class="flex justify-end">
+						<span data-testid={`review-file-size-${file.id}`} class="font-mono text-xs text-text-muted text-right">{file.sizeBytes != null ? formatFileSize(file.sizeBytes, $locale) : t('values.unknown')}</span>
+						<div data-testid={`review-file-status-${file.id}`} class="flex justify-end">
 							<Chip variant="ok">{fileStatusLabel(file)}</Chip>
 						</div>
 					</div>

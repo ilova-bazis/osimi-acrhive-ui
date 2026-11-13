@@ -19,10 +19,12 @@ import ObjectDetailPage from './+page.svelte';
 import type { ObjectDetail } from '$lib/services/objects';
 
 const detail: ObjectDetail = {
+	people: [],
 	id: 'row-1',
 	objectId: 'OBJ-20260804-CHECKSUM1',
 	thumbnailArtifactId: null,
 	title: 'Checksum archive sample',
+	description: null,
 	type: 'document',
 	processingState: 'index_done',
 	curationState: 'reviewed',
@@ -110,6 +112,68 @@ describe('/objects/[objectId] +page.svelte localization', () => {
 		await expect
 			.element(page.getByText('No artifacts found for this object.'))
 			.toBeInTheDocument();
+	});
+
+	it('displays dedicated people from the object API', async () => {
+		const data = pageData();
+		data.detail = { ...detail, people: ['Muhammad Osimi', 'Ahmad Hasan Dani'] };
+		render(ObjectDetailPage, { data });
+		const people = page.getByRole('region', { name: 'People' });
+		await expect.element(people).toBeVisible();
+		await expect.element(people.getByText('Muhammad Osimi', { exact: true })).toBeVisible();
+		await expect.element(people.getByText('Ahmad Hasan Dani', { exact: true })).toBeVisible();
+	});
+
+	it('does not restore cleared people from legacy catalog metadata', async () => {
+		const data = pageData();
+		data.detail = {
+			...detail,
+			people: [],
+			metadata: { people: { mentioned: ['Stale Person'] } }
+		};
+		render(ObjectDetailPage, { data });
+		await expect.element(page.getByRole('region', { name: 'People' })).not.toBeInTheDocument();
+		await expect.element(page.getByText('Stale Person')).not.toBeInTheDocument();
+	});
+
+	it.each(['The uploaded photograph description.', 'An edited description.'])(
+		'renders the first-class description instead of stale metadata: %s',
+		async (description) => {
+			const data = pageData();
+			data.detail = {
+				...detail,
+				description,
+				metadata: {
+					description: 'Stale metadata description.',
+					classification: { summary: 'Stale ingestion summary.' }
+				}
+			};
+			render(ObjectDetailPage, { data });
+			await expect.element(page.getByText(description, { exact: true })).toBeVisible();
+			await expect.element(page.getByText('Stale metadata description.')).not.toBeInTheDocument();
+			await expect.element(page.getByText('Stale ingestion summary.')).not.toBeInTheDocument();
+		}
+	);
+
+	it('keeps a cleared description empty despite legacy metadata and manifest values', async () => {
+		const data = pageData();
+		data.detail = {
+			...detail,
+			description: null,
+			metadata: {
+				description: 'Stale metadata description.',
+				summary: 'Stale flat summary.',
+				classification: { summary: 'Stale ingestion summary.' }
+			},
+			ingestManifest: { classification: { summary: 'Stale manifest description.' } }
+		};
+		render(ObjectDetailPage, { data });
+		for (const text of [
+			'Stale metadata description.', 'Stale flat summary.',
+			'Stale ingestion summary.', 'Stale manifest description.'
+		]) {
+			await expect.element(page.getByText(text, { exact: true })).not.toBeInTheDocument();
+		}
 	});
 
 	it('renders the same fragments in Russian', async () => {
@@ -637,5 +701,92 @@ describe('object detail count localization', () => {
 		render(ObjectDetailPage, { data });
 
 		await expect.element(page.getByText('1 page')).toBeInTheDocument();
+	});
+});
+
+describe('object detail resync notifications', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		locale.setLocale('en');
+	});
+
+	const confirmResync = async () => {
+		await page.getByRole('button', { name: 'Resync' }).click();
+		await page.getByRole('button', { name: 'Confirm' }).click();
+	};
+
+	it('renders a locked failure without raw server text and retranslates it', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue(
+				new Response(JSON.stringify({ error: 'Object is locked', errorCode: 'locked' }), {
+					status: 423,
+					headers: { 'content-type': 'application/json' }
+				})
+			)
+		);
+
+		render(ObjectDetailPage, { data: pageData() });
+		await confirmResync();
+
+		await expect
+			.element(page.getByText('This item is locked and cannot be changed right now.'))
+			.toBeInTheDocument();
+		await expect.element(page.getByText('Object is locked')).not.toBeInTheDocument();
+
+		locale.setLocale('ru');
+
+		await expect
+			.element(page.getByText('Элемент заблокирован. Сейчас его нельзя изменить.'))
+			.toBeInTheDocument();
+	});
+
+	it('retranslates the localized failure fallback', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockRejectedValue(new Error('network down'))
+		);
+
+		render(ObjectDetailPage, { data: pageData() });
+		await confirmResync();
+
+		await expect
+			.element(page.getByText('Failed to request resync.'))
+			.toBeInTheDocument();
+		await expect.element(page.getByText('network down')).not.toBeInTheDocument();
+
+		locale.setLocale('ru');
+
+		await expect
+			.element(page.getByText('Не удалось запросить синхронизацию.'))
+			.toBeInTheDocument();
+	});
+
+	it('retranslates a success notification', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+		);
+
+		render(ObjectDetailPage, { data: pageData() });
+		await confirmResync();
+
+		await expect
+			.element(
+				page.getByText(
+					'Resync requested. The object state will update once the sync completes.'
+				)
+			)
+			.toBeInTheDocument();
+
+		locale.setLocale('ru');
+
+		await expect
+			.element(
+				page.getByText(
+					'Синхронизация запрошена. Состояние объекта обновится по завершении.'
+				)
+			)
+			.toBeInTheDocument();
 	});
 });

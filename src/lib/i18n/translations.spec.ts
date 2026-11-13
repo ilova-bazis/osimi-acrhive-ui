@@ -16,6 +16,18 @@ describe('production translation dictionaries', () => {
 
 	it('keeps a snapshot of the current English leaf count as a growth alarm', () => {
 		const english = collectTranslationLeaves(translations.en as never);
-		expect(english.length).toBe(1161);
+		expect(english.length).toBe(1183);
+	});
+});
+
+describe('object filter placeholders', () => {
+	it('uses Russian examples for the batch and tag filters', () => {
+		expect(translations.ru.objects.filters.batchPlaceholder).toBe('партия-2026');
+		expect(translations.ru.objects.filters.tagPlaceholder).toBe('метка');
+	});
+
+	it('keeps the English filter examples unchanged', () => {
+		expect(translations.en.objects.filters.batchPlaceholder).toBe('batch-2026');
+		expect(translations.en.objects.filters.tagPlaceholder).toBe('tag');
 	});
 });

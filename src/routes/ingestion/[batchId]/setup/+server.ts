@@ -2,6 +2,10 @@ import { ingestionSetupService, ingestionDetailService } from '$lib/services';
 import { validatePipelinePresetCompatibility } from '$lib/ingestion/pipelineCapabilities';
 import { clearSessionCookie } from '$lib/server/auth';
 import { isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
+import {
+	mutationBackendErrorResponse,
+	mutationErrorResponse
+} from '$lib/server/mutationErrorResponse';
 import { isAuthFailureResponse, mapApiErrorStatus, requireMutationAuth } from '$lib/server/routeGuards';
 import { json } from '@sveltejs/kit';
 import { z } from 'zod';
@@ -95,7 +99,7 @@ export const POST: RequestHandler = async ({ request, params, cookies, locals, f
 	const payload = await request.json().catch(() => null);
 	const parsed = setupActionSchema.safeParse(payload);
 	if (!parsed.success) {
-		return json({ error: 'Invalid setup request payload.' }, { status: 400 });
+		return mutationErrorResponse(400, 'invalidPayload', 'Invalid setup request payload.');
 	}
 
 	const context = {
@@ -204,13 +208,11 @@ export const POST: RequestHandler = async ({ request, params, cookies, locals, f
 		});
 
 		if (!validation.valid) {
-			return json(
-				{
-					error: 'Incompatible pipeline preset for batch item kinds.',
-					code: 'INVALID_PIPELINE_CAPABILITY',
-					details: validation
-				},
-				{ status: 409 }
+			return mutationErrorResponse(
+				409,
+				'incompatibleCapability',
+				'Incompatible pipeline preset for batch item kinds.',
+				{ code: 'INVALID_PIPELINE_CAPABILITY', details: validation }
 			);
 		}
 
@@ -223,19 +225,18 @@ export const POST: RequestHandler = async ({ request, params, cookies, locals, f
 	} catch (cause) {
 		if (isUnauthorizedError(cause)) {
 			clearSessionCookie(cookies);
-			return json({ error: 'Unauthorized' }, { status: 401 });
+			return mutationErrorResponse(401, 'unauthorized', 'Unauthorized');
 		}
 
 		if (isApiClientError(cause)) {
-			return json(
-				{
-					error: cause.message,
-					requestId: cause.requestId
-				},
-				{ status: mapApiErrorStatus(cause.status) }
+			return mutationBackendErrorResponse(
+				mapApiErrorStatus(cause.status),
+				cause.code,
+				cause.message,
+				{ requestId: cause.requestId }
 			);
 		}
 
-		return json({ error: 'Unexpected setup error.' }, { status: 500 });
+		return mutationErrorResponse(500, 'unexpected', 'Unexpected setup error.');
 	}
 };

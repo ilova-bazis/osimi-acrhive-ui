@@ -1,6 +1,10 @@
 import { ingestionSetupService } from '$lib/services';
 import { clearSessionCookie } from '$lib/server/auth';
 import { isApiClientError, isUnauthorizedError } from '$lib/server/apiClient';
+import {
+	mutationBackendErrorResponse,
+	mutationErrorResponse
+} from '$lib/server/mutationErrorResponse';
 import { isAuthFailureResponse, mapApiErrorStatus, requireMutationAuth } from '$lib/server/routeGuards';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
@@ -24,19 +28,18 @@ export const DELETE: RequestHandler = async ({ params, locals, cookies, fetch, r
 	} catch (cause) {
 		if (isUnauthorizedError(cause)) {
 			clearSessionCookie(cookies);
-			return json({ error: 'Unauthorized' }, { status: 401 });
+			return mutationErrorResponse(401, 'unauthorized', 'Unauthorized');
 		}
 
 		if (isApiClientError(cause)) {
-			return json(
-				{
-					error: cause.message,
-					requestId: cause.requestId
-				},
-				{ status: mapApiErrorStatus(cause.status) }
+			return mutationBackendErrorResponse(
+				mapApiErrorStatus(cause.status),
+				cause.code,
+				cause.message,
+				{ requestId: cause.requestId }
 			);
 		}
 
-		return json({ error: 'Unexpected file removal error.' }, { status: 500 });
+		return mutationErrorResponse(500, 'unexpected', 'Unexpected file removal error.');
 	}
 };

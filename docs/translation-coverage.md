@@ -49,7 +49,7 @@ Object detail additionally renders the image, audio, and video fixture variants
 
 ## Dictionary contract
 
-- `en` and `ru` expose identical nested leaf paths (**1125** leaves each, enforced by `src/lib/i18n/translations.spec.ts` as a growth alarm).
+- `en` and `ru` expose identical nested leaf paths (**1183** leaves each, enforced by `src/lib/i18n/translations.spec.ts` as a growth alarm).
 - Every leaf is a string; intermediate nodes are plain objects; keys may not contain `.`; empty values are rejected.
 - Placeholder names and counts match across locales (enforced by `src/lib/i18n/translationValidation.ts`).
 - Static lookups are typed with `TranslationKey` (derived from the English dictionary), so unknown paths, object paths, and typos fail `npm run check`.
@@ -78,13 +78,25 @@ Object detail additionally renders the image, audio, and video fixture variants
 - The new-ingestion default batch label is generated in the submitting client's locale via a hidden `locale` form field (`ingestionNew.untitledBatch`). User-typed labels are user content and stay verbatim.
 - SvelteKit `throw error(...)` pages are developer-facing error surfaces outside the localized route scope.
 
+## Mutation error contract
+
+- Ingestion mutation endpoints and single-object resync answer with a stable `errorCode` from `src/lib/services/mutationErrors.ts` alongside the diagnostic `error` string. Shared auth guards and responses without recognized codes remain supported through translated fallbacks.
+- The renderer does not show diagnostic `error` strings. It uses `mutationErrors.*` copy or the caller's translated operation-specific fallback.
+- `src/lib/i18n/mutationErrors.ts` maps every code to a translation key. An explicitly named, specific code uses shared wording; generic codes and failures inferred only from response status keep the caller's operation-specific fallback (for example "Failed to delete ingestion"). The one exception is rate limiting: a bare HTTP `429` or the backend `RATE_LIMITED` code (including normalized `502` responses) shows the `mutationErrors.rateLimited` wait-and-retry guidance.
+- Request identifiers are appended through the localized `mutationErrors.withRequest` template so support can correlate a message with a backend trace.
+- Ingestion overview/detail/review/setup and single/bulk object-resync notifications retain `LocalizedMessageState` descriptors. New-ingestion errors are derived from structured form data. Render-time resolution includes action/field labels and counts, so switching languages does not leave English parameters in Russian sentences.
+- Setup local date validation uses `StructuredFailureError` to keep specific guidance, while unknown exceptions use translated fallbacks rather than native `Error.message`. Existing retry, rollback, unauthorized, and abort behavior is preserved.
+- Rejected-file summaries preserve raw filenames and all rejection categories, with a translated remainder after the first three names. Stored file-level `uploadError` descriptors currently have no display consumer; no new upload-error UI was added.
+- Shared not-found, locked, and conflict wording is resource-neutral, including on object resync.
+- `src/lib/i18n/mutationErrors.spec.ts` covers code/status mapping, response parsing, descriptor parameters, and request references. Route browser specs cover visible failures, action-label and validation retranslation, rejection counts, and single/bulk resync notifications. These automated checks do not replace a live end-to-end walkthrough or a full linguistic review.
+
 ## Dynamic labels documented as out of scope
 
 Only genuinely open values render raw:
 
 - User content: titles, filenames, tags, people, notes, descriptions, user-typed batch labels, summary text.
 - Unknown backend values after a typed guard fails: enum/status/type/action/preset/language codes, dashboard event types, arbitrary payload messages (`{ code: 'raw', text }`).
-- Backend-provided error text where no stable contract exists: setup/review action `error` payloads, publication `failureReason`.
+- Backend-provided error text where no stable contract exists: publication `failureReason`.
 - Content MIME types and archival text/OCR/transcript content.
 - Language endonyms and native-script labels (فارسی, Тоҷикӣ) are displayed verbatim by design.
 - Technical tokens: `YYYY` date placeholder, IDs, request IDs.

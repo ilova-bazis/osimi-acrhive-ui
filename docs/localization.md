@@ -19,19 +19,29 @@ The UI locale controls interface text only. Archival content languages (Persian,
 - Shared shell navigation: `src/lib/navigation/appShell.ts` defines the desktop/mobile destinations and route matching; `labelKey` is a typed `TranslationKey`.
 - Selection UI: `src/lib/components/LocaleSwitcher.svelte`, consumed by the authenticated desktop shell utility row (`+layout.svelte`), `AppMobileHeader` (mobile), and the login page.
 
-## Persistence and initialization
+## Language detection and persistence
 
+- Resolution order on startup: **saved user preference → browser language → English**.
+- Browser detection reads `navigator.languages` in preference order and falls back to `navigator.language` when the list is empty. The first entry that maps to a supported dictionary locale wins.
+- Tags are normalized before matching: case is folded, `_` is treated as `-`, and the region/script subtags are dropped (`ru-RU`, `ru_ru`, and `RU` all resolve to `ru`).
 - Storage key: `osimi-locale` in `localStorage`.
-- Default locale: `en` when no preference has been saved.
-- `locale.setLocale()` updates the store immediately, then synchronizes `document.documentElement.lang` and persistence.
-- `locale.init()` runs once in the root layout `onMount`. It restores valid saved values and resets missing or invalid values to English.
-- Only **own** top-level dictionary keys are valid locales. Inherited property names such as `constructor`, `toString`, and `__proto__` are rejected during initialization.
-- Storage failures are contained: an inaccessible `localStorage` never blocks the in-memory locale, document language, or layout mounting.
+- `locale.setLocale()` updates the store immediately, then synchronizes `document.documentElement.lang` and persists the choice. Only a manual switch writes to storage.
+- `locale.init()` runs once in the root layout `onMount`. It restores a saved preference, otherwise detects the browser language, otherwise falls back to English.
+- Every valid saved locale is honored, including English. A manual choice is never overridden by browser detection, and a manual selection always wins on the next visit.
+- An automatically detected locale is **not** persisted. The UI therefore keeps following the browser preference until the visitor picks a language themselves.
+- Older builds persisted the resolved locale on startup, so an existing saved `en` cannot be distinguished from a manual English selection. Both are preserved rather than re-detected; clearing `osimi-locale` restores automatic detection.
+- Only **own** top-level dictionary keys are valid locales. Inherited property names such as `constructor`, `toString`, and `__proto__` are rejected during initialization and during browser detection.
+- Storage failures are contained: an inaccessible `localStorage` never blocks the in-memory locale, document language, detection, or layout mounting.
+
+
 
 ## Dictionary and formatting guarantees
 
 - `src/lib/i18n/translations.spec.ts` enforces structural parity across locales: identical leaf paths, string-only leaves, plain-object intermediates, matching placeholder names and counts, no empty values, and no `.` in property names. The English leaf count is snapshotted as a growth alarm.
 - `src/lib/i18n/translate.spec.ts` covers lookup failure behavior, prototype-key rejection, dynamic fallbacks, and compile-time `TranslationKey` assertions.
+- `src/lib/i18n/locale.spec.ts` covers browser detection (exact tags, regional variants, casing/underscore normalization, preference ordering, unsupported tags) and the startup resolution order.
+- `src/lib/i18n/mutationErrors.spec.ts` covers the mutation error code set, the backend-status mapping, the explicit-versus-inferred distinction, the request-id template, and the Russian wording.
+- `src/lib/components/LocaleSwitcher.svelte.spec.ts` covers the browser-side detection flow and the persisted-choice precedence.
 - Timestamps render with `dateStyle: 'medium'`, `timeStyle: 'short'`, and `timeZone: 'UTC'` so server and browser output is identical; invalid values render `values.unknown`.
 - Byte sizes and counts use `Intl.NumberFormat` for the active locale, including sub-1024 bytes. File-size units extend from B through TB/PB.
 - Plurals use `Intl.PluralRules($locale)`; Russian `one`/`few`/`many`/`other` forms are provided where templates exist. Plural families live across dashboard, ingestion, objects, and object editing.
@@ -47,9 +57,24 @@ The UI locale controls interface text only. Archival content languages (Persian,
 
 ## Server-originated copy
 
-- Application-owned server messages never ship English sentences to the page. Load/action errors return stable structured codes (`{ code: 'loadFailed', requestId }`, `errorCode`, `messageCode`) that the page translates with typed keys and `{requestId}` templates.
-- The new-ingestion default batch label is generated in the submitting client's locale through a hidden `locale` form field; genuinely backend-provided error text renders raw only where no stable contract exists (setup/review action errors, publication `failureReason`).
+- Localized load/action flows return stable structured codes (`{ code: 'loadFailed', requestId }`, `errorCode`, `messageCode`) that the page translates with typed keys and request-reference templates. Diagnostic English `error` fields can still be present in responses; the mutation-message renderer does not display them.
+- The new-ingestion default batch label is generated in the submitting client's locale through a hidden `locale` form field; genuinely backend-provided error text renders raw only where no stable contract exists (publication `failureReason`).
 - SvelteKit `throw error(...)` error pages are developer-facing and outside the localized surface.
+
+## Mutation failures
+
+- Ingestion mutation endpoints and the single-object resync endpoint answer with a stable `errorCode` from `src/lib/services/mutationErrors.ts` next to the diagnostic `error` string. Responses without a recognized code, including shared auth-guard responses, use the caller's translated fallback.
+- The `error` string is diagnostic only. These mutation flows render `mutationErrors.*` copy or a translated operation-specific fallback rather than raw response text.
+- `src/lib/i18n/mutationErrors.ts` maps each code to a translation key and resolves a failure into localized text.
+- An explicitly named, specific code uses the shared wording. Generic codes (`requestFailed`, `unexpected`, `creationFailed`) and failures inferred only from response status keep the caller's operation-specific fallback.
+- Rate limiting is the one deliberate exception to that fallback rule. HTTP `429` unambiguously means rate limiting, so it is treated as a named failure and shows the `mutationErrors.rateLimited` wait-and-retry guidance even when the response carries no `errorCode`. The backend `RATE_LIMITED` code is recognized directly, which also covers routes that normalize upstream `429` responses to `502`.
+- Request identifiers are appended through the localized `mutationErrors.withRequest` template.
+- Ingestion overview, detail, review, and setup failures are stored as `LocalizedMessageState` descriptors and rendered with `renderLocalizedMessage(dictionary, locale, state)`. New-ingestion form errors are derived from structured action data. Action and field labels are retained as translation keys, not text captured in the previous locale.
+- Descriptor parameters distinguish verbatim text (filenames, batch names), translated labels, and locale-formatted counts. Request IDs and user content remain unchanged across language switches.
+- Setup uses `StructuredFailureError` to preserve local validation and server-failure descriptors across await/catch boundaries. Unknown exceptions use an operation-specific translated fallback; their `Error.message` is not displayed. Unauthorized and aborted operations retain their existing control flow.
+- Setup rejection summaries keep the rejected filenames and rejection categories, showing the first three filenames and a translated `moreRejected` count. Both media mismatch and unsupported-format messages are retained when they occur together. Mismatch-dialog labels are translated at render time too.
+- File-level upload failures are stored as descriptors, but the current setup page has no consumer that displays its `uploadError` field. This change does not add a new upload-error UI.
+- Single-object and bulk-resync notifications store message descriptors, including raw success/total counts, so success and failure messages retranslate after a locale switch. Shared not-found, locked, and conflict messages use resource-neutral wording.
 
 ## Selector options
 
@@ -71,7 +96,8 @@ Modal confirmations use the shared `BaseDialog` component (`src/lib/components/B
 
 ## Known limitations
 
-- Persistence is client-only. SSR emits English, `app.html` starts with `lang="en"`, and a saved Russian locale is applied after hydration.
+- Persistence is client-only. SSR emits English, `app.html` starts with `lang="en"`, and the resolved locale is applied after hydration.
+- Browser detection happens on the client only. The server does not negotiate on `Accept-Language`, so the first paint is always English.
 - The preference is per browser/device on the current origin, not per user account, and does not synchronize between devices.
 - Changing the locale does not reload the page or trigger a backend request.
 - Dynamic backend-provided labels without stable code contracts remain untranslated and are documented in `docs/translation-coverage.md`.
@@ -91,7 +117,7 @@ Explicitly out of scope:
    - `translateDynamic()` has no production callers — it is retained only as a generic helper.
 3. Keep dynamic data (usernames, batch names, counts, backend-provided open values) out of the dictionaries; genuinely unknown external values render raw.
 4. UI tests that assert translated text should restore `locale.setLocale('en')` in `afterEach`/`finally`.
-5. Adding a new top-level locale dictionary automatically exposes a selector option; add its translations completely before shipping.
+5. Adding a new top-level locale dictionary automatically exposes a selector option; add its translations completely before shipping. Browser detection picks up the new locale without further changes because it matches against the dictionary keys.
 
 ## Placeholder grammar
 

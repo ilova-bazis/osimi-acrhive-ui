@@ -12,6 +12,10 @@
     import { translations, type TranslationKey } from "$lib/i18n/translations";
     import { formatTemplate, translate } from "$lib/i18n/translate";
     import {
+        localizeMutationError,
+        readMutationErrorPayloadFromBody,
+    } from "$lib/i18n/mutationErrors";
+    import {
         classificationTypes,
         defaultItemKindForClassification,
         getAllowedItemKinds,
@@ -185,7 +189,18 @@
         { id: "public", label: t("ingestionNew.visibility.public.label"), sub: t("ingestionNew.visibility.public.sub") },
     ]);
 
-    const errorMessage = $derived(form?.error ?? "");
+    const errorMessage = $derived.by(() => {
+        if (!form?.errorCode && !form?.error) return "";
+        const payload = readMutationErrorPayloadFromBody(
+            form as Record<string, unknown> | null | undefined,
+            400,
+        );
+        return localizeMutationError(
+            dictionary,
+            payload,
+            t("mutationErrors.creationFailed"),
+        );
+    });
 
     const visibleItemKinds = $derived(
         itemKindOptions.filter((kind) =>

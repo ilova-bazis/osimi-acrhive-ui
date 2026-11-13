@@ -77,6 +77,41 @@ describe('ArtifactTextPreview', () => {
 		await expect.element(page.getByText('Nothing to show')).toBeInTheDocument();
 	});
 
+	it('falls back to a localized empty label when none is supplied', async () => {
+		fetchMock.mockResolvedValue(textResponse('   \n  '));
+		renderPreview();
+
+		await expect.element(page.getByText('No text available.')).toBeInTheDocument();
+	});
+
+	it('falls back to a Russian empty label when none is supplied', async () => {
+		locale.setLocale('ru');
+		fetchMock.mockResolvedValue(textResponse('   \n  '));
+		renderPreview();
+
+		await expect.element(page.getByText('Текст недоступен.')).toBeInTheDocument();
+	});
+
+	it('retranslates the fallback empty label when the locale changes', async () => {
+		fetchMock.mockResolvedValue(textResponse('   \n  '));
+		renderPreview();
+
+		await expect.element(page.getByText('No text available.')).toBeInTheDocument();
+
+		locale.setLocale('ru');
+
+		await expect.element(page.getByText('Текст недоступен.')).toBeInTheDocument();
+	});
+
+	it('prefers a supplied empty label over the localized fallback', async () => {
+		locale.setLocale('ru');
+		fetchMock.mockResolvedValue(textResponse('   \n  '));
+		renderPreview('/artifacts/text-1/view', 'Nothing to show');
+
+		await expect.element(page.getByText('Nothing to show')).toBeInTheDocument();
+		await expect.element(page.getByText('Текст недоступен.')).not.toBeInTheDocument();
+	});
+
 	it('fails on non-OK responses', async () => {
 		fetchMock.mockResolvedValue(new Response('nope', { status: 500 }));
 		renderPreview();

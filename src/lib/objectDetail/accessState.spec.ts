@@ -4,10 +4,12 @@ import type { ArchiveRequest } from '$lib/services/archiveRequests';
 import type { ObjectAvailableFile, ObjectDetail } from '$lib/services/objects';
 
 const baseDetail: ObjectDetail = {
+	people: [],
 	id: 'OBJ-1',
 	objectId: 'OBJ-1',
 	thumbnailArtifactId: 'thumb-1',
 	title: 'Object 1',
+	description: null,
 	type: 'VIDEO',
 	processingState: 'index_done',
 	curationState: 'reviewed',

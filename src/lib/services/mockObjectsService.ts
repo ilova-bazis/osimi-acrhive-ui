@@ -11,6 +11,7 @@ const rows: ObjectRow[] = [
 		objectId: 'OBJ-20260202-000312',
 		thumbnailArtifactId: 'artifact-thumb-1',
 		title: 'NoorMags Issue 80-82',
+		description: null,
 		type: 'DOCUMENT',
 		processingState: 'index_done',
 		curationState: 'reviewed',
@@ -38,6 +39,7 @@ const rows: ObjectRow[] = [
 		objectId: 'OBJ-20260201-000287',
 		thumbnailArtifactId: null,
 		title: null,
+		description: null,
 		type: 'IMAGE',
 		processingState: 'derivatives_done',
 		curationState: 'needs_review',
@@ -65,6 +67,7 @@ const rows: ObjectRow[] = [
 		objectId: 'OBJ-20260131-000255',
 		thumbnailArtifactId: 'artifact-thumb-3',
 		title: 'Tajik Radio Interview – Episode 4',
+		description: null,
 		type: 'AUDIO',
 		processingState: 'ingesting',
 		curationState: 'review_in_progress',
@@ -92,6 +95,7 @@ const rows: ObjectRow[] = [
 		objectId: 'OBJ-20260130-000231',
 		thumbnailArtifactId: null,
 		title: 'Letter from Dushanbe',
+		description: null,
 		type: 'DOCUMENT',
 		processingState: 'processing_failed',
 		curationState: 'curation_failed',
@@ -134,6 +138,7 @@ export const mockObjectsService: ObjectsService = {
 		return {
 			detail: {
 				...found,
+				people: [],
 				ingestManifest: {
 					schema_version: '1.0',
 					object_id: found.objectId,

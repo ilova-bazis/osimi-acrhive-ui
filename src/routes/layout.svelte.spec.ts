@@ -43,7 +43,8 @@ vi.mock('$app/paths', () => ({
 
 import Layout from './+layout.svelte';
 import BaseDialog from '$lib/components/BaseDialog.svelte';
-import { locale } from '$lib/i18n/locale';
+import { LOCALE_STORAGE_KEY, locale } from '$lib/i18n/locale';
+import { stubBrowserLanguages } from '$lib/testing/browserLanguages';
 import { page as mockedPage } from '$app/stores';
 
 const setPageUrl = (pathname: string) => {
@@ -53,7 +54,7 @@ const setPageUrl = (pathname: string) => {
 	});
 };
 
-const STORAGE_KEY = 'osimi-locale';
+const STORAGE_KEY = LOCALE_STORAGE_KEY;
 
 const session = {
 	id: 'user-1',
@@ -87,8 +88,8 @@ describe('root layout shell', () => {
 		beforeNavigateMock.mockReset();
 		afterNavigateMock.mockReset();
 		vi.restoreAllMocks();
-		window.localStorage.clear();
 		locale.setLocale('en');
+		window.localStorage.clear();
 		pageState.current = { url: { pathname: '/', search: '' }, route: { id: '/' } };
 	});
 
@@ -113,7 +114,31 @@ describe('root layout shell', () => {
 	});
 
 	it('falls back to English for invalid persisted locale values', async () => {
+		stubBrowserLanguages(['en-US']);
 		window.localStorage.setItem(STORAGE_KEY, 'constructor');
+
+		renderLayout();
+
+		await expect
+			.element(page.getByRole('button', { name: 'EN' }))
+			.toHaveAttribute('aria-pressed', 'true');
+		expect(document.documentElement.lang).toBe('en');
+	});
+
+	it('applies the detected browser locale on mount when nothing is persisted', async () => {
+		stubBrowserLanguages(['ru-RU']);
+
+		renderLayout();
+
+		await expect
+			.element(page.getByRole('button', { name: 'RU' }))
+			.toHaveAttribute('aria-pressed', 'true');
+		expect(document.documentElement.lang).toBe('ru');
+	});
+
+	it('honors a persisted locale over the detected browser locale on mount', async () => {
+		window.localStorage.setItem(STORAGE_KEY, 'en');
+		stubBrowserLanguages(['ru-RU']);
 
 		renderLayout();
 

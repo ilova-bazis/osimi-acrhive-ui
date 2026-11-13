@@ -126,3 +126,118 @@ describe('/ingestion +page.svelte', () => {
 			.toBeInTheDocument();
 	});
 });
+
+describe('/ingestion action failures', () => {
+	const deletableSummary = (): IngestionOverviewSummary => {
+		const base = summary();
+		return {
+			...base,
+			activeAndRecent: [
+				{
+					...base.activeAndRecent[0]!,
+					actionCapabilities: { ...noActions, canDelete: true },
+					actions: ['delete']
+				}
+			]
+		};
+	};
+
+	const renderWithFailure = (body: unknown, status = 409) => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue(
+				new Response(JSON.stringify(body), {
+					status,
+					headers: { 'content-type': 'application/json' }
+				})
+			)
+		);
+
+		render(IngestionOverviewPage, {
+			data: { summary: deletableSummary(), activePage: 1, draftPage: 1 }
+		});
+	};
+
+	const clickDelete = async (label: string) => {
+		const details = document.querySelector('details');
+		if (details) details.open = true;
+		await page.getByRole('button', { name: label }).click();
+	};
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		locale.setLocale('en');
+	});
+
+	it('renders a localized message for an explicitly coded failure', async () => {
+		renderWithFailure({ error: 'Batch is locked.', errorCode: 'locked' }, 423);
+
+		await clickDelete('Delete');
+
+		await expect
+			.element(page.getByText('This item is locked and cannot be changed right now.'))
+			.toBeInTheDocument();
+	});
+
+	it('renders the failure in Russian', async () => {
+		locale.setLocale('ru');
+		renderWithFailure({ error: 'Batch is locked.', errorCode: 'locked' }, 423);
+
+		await clickDelete('Удалить');
+
+		await expect
+			.element(page.getByText('Элемент заблокирован. Сейчас его нельзя изменить.'))
+			.toBeInTheDocument();
+	});
+
+	it('never renders the raw server message', async () => {
+		renderWithFailure({ error: 'Batch is locked.', errorCode: 'locked' }, 423);
+
+		await clickDelete('Delete');
+
+		await expect.element(page.getByText('Batch is locked.')).not.toBeInTheDocument();
+	});
+
+	it('uses the operation fallback when the server did not name the failure', async () => {
+		renderWithFailure({ error: 'Batch is locked.' }, 423);
+
+		await clickDelete('Delete');
+
+		await expect
+			.element(page.getByText('Failed to delete ingestion Known batch.'))
+			.toBeInTheDocument();
+	});
+
+	it('retranslates the operation fallback, including the action label', async () => {
+		renderWithFailure({ error: 'Batch is locked.' }, 423);
+
+		await clickDelete('Delete');
+		await expect
+			.element(page.getByText('Failed to delete ingestion Known batch.'))
+			.toBeInTheDocument();
+
+		locale.setLocale('ru');
+
+		await expect
+			.element(page.getByText('Не удалось удалить загрузку «Known batch».'))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByText('Failed to delete ingestion Known batch.'))
+			.not.toBeInTheDocument();
+	});
+
+	it('retranslates a visible failure when the locale changes', async () => {
+		renderWithFailure({ error: 'Batch is locked.', errorCode: 'locked' }, 423);
+
+		await clickDelete('Delete');
+		await expect
+			.element(page.getByText('This item is locked and cannot be changed right now.'))
+			.toBeInTheDocument();
+
+		locale.setLocale('ru');
+
+		await expect
+			.element(page.getByText('Элемент заблокирован. Сейчас его нельзя изменить.'))
+			.toBeInTheDocument();
+	});
+});

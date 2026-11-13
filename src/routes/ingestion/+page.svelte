@@ -8,10 +8,17 @@
 		IngestionStatus
 	} from '$lib/services/ingestionOverview';
 	import { locale } from '$lib/i18n/locale';
-import { translations, type TranslationKey } from '$lib/i18n/translations';
-import { formatCount, formatDateTime } from '$lib/i18n/format';
-import { formatTemplate, translate } from '$lib/i18n/translate';
-import { batchStatusKey, batchStatusTone } from '$lib/i18n/statusLabels';
+    import { translations, type TranslationKey } from '$lib/i18n/translations';
+    import { formatCount, formatDateTime } from '$lib/i18n/format';
+    import { formatTemplate, translate } from '$lib/i18n/translate';
+    import {
+	readMutationErrorPayload,
+	renderLocalizedMessage,
+	type LocalizedMessageState
+} from '$lib/i18n/mutationErrors';
+
+    import { batchStatusKey, batchStatusTone } from '$lib/i18n/statusLabels';
+
 import type { FileStatus } from '$lib/types';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 
@@ -59,6 +66,9 @@ import type { FileStatus } from '$lib/types';
 	const getActionLabel = (action: IngestionAction) =>
 		actionLabelMap[action as keyof typeof actionLabelMap] ?? action;
 
+	const actionLabelKey = (action: IngestionAction): TranslationKey =>
+		`ingestionOverview.actions.${action}`;
+
 	const getActionPath = (batchId: string, action: string): string => {
 		if (action === 'retry') return resolve(`/ingestion/${batchId}/retry`);
 		if (action === 'cancel') return resolve(`/ingestion/${batchId}/cancel`);
@@ -69,23 +79,14 @@ import type { FileStatus } from '$lib/types';
 	};
 
 	let actingBatchId = $state('');
-	let actionError = $state('');
+	let actionErrorState = $state<LocalizedMessageState | null>(null);
 
-	const readErrorMessage = async (response: Response, fallback: string): Promise<string> => {
-		const payload = await response.json().catch(() => null);
-		if (
-			payload &&
-			typeof payload === 'object' &&
-			'error' in payload &&
-			typeof payload.error === 'string'
-		) {
-			return payload.error;
-		}
-		return fallback;
-	};
+	const actionError = $derived(
+		actionErrorState ? renderLocalizedMessage(dictionary, $locale, actionErrorState) : ''
+	);
 
 	const runBatchAction = async (batch: IngestionBatch, action: IngestionAction): Promise<void> => {
-		actionError = '';
+		actionErrorState = null;
 
 		if (action === 'view') {
 			await goto(resolve(`/ingestion/${batch.id}`));
@@ -113,26 +114,26 @@ import type { FileStatus } from '$lib/types';
 			}
 
 			if (!response.ok) {
-				throw new Error(
-					await readErrorMessage(
-						response,
-						formatTemplate(t('ingestionOverview.errors.failedNamed'), {
-							action: getActionLabel(action).toLowerCase(),
-							name: batch.name
-						})
-					)
-				);
+				const payload = await readMutationErrorPayload(response);
+				actionErrorState = {
+					key: 'ingestionOverview.errors.failedNamed',
+					params: {
+						action: { kind: 'label', key: actionLabelKey(action), lower: true },
+						name: { kind: 'text', value: batch.name }
+					},
+					failure: payload
+				};
+				return;
 			}
 
 			await invalidateAll();
-		} catch (error) {
-			actionError =
-				error instanceof Error
-					? error.message
-					: formatTemplate(t('ingestionOverview.errors.failed'), {
-						action: getActionLabel(action).toLowerCase()
-					});
+		} catch {
+			actionErrorState = {
+				key: 'ingestionOverview.errors.failed',
+				params: { action: { kind: 'label', key: actionLabelKey(action), lower: true } }
+			};
 		} finally {
+
 			actingBatchId = '';
 		}
 	};

@@ -46,6 +46,7 @@ export type ObjectBase = {
 	objectId: string;
 	thumbnailArtifactId: string | null;
 	title: string | null;
+	description: string | null;
 	type: string;
 	processingState: ProcessingState;
 	curationState: CurationState;
@@ -73,6 +74,7 @@ export type ObjectRow = ObjectBase & {
 };
 
 export type ObjectDetail = ObjectBase & {
+	people: string[];
 	ingestManifest: Record<string, unknown> | null;
 	isAuthorized: boolean;
 	isDeliverable: boolean;

@@ -1,7 +1,8 @@
 import { page } from 'vitest/browser';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import type { IngestionDetail } from '$lib/services/ingestionDetail';
+import { locale } from '$lib/i18n/locale';
 
 const { gotoMock, invalidateAllMock } = vi.hoisted(() => ({
 	gotoMock: vi.fn(),
@@ -74,6 +75,30 @@ const detail: IngestionDetail = {
 };
 
 describe('/ingestion/[batchId] +page.svelte', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		locale.setLocale('en');
+	});
+
+	it('retranslates the generic error and action label from Russian to English', async () => {
+		locale.setLocale('ru');
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 502 })));
+		render(IngestionDetailPage, {
+			data: {
+				detail: { ...detail, actionCapabilities: { ...detail.actionCapabilities, canRetry: true } },
+				activity: [],
+				activityError: null
+			}
+		});
+		document.querySelector('details')!.open = true;
+		await page.getByRole('button', { name: 'Повторить' }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Подтвердить' }).click();
+		await expect.element(page.getByText('Не удалось повторить загрузку.')).toBeInTheDocument();
+
+		locale.setLocale('en');
+		await expect.element(page.getByText('Failed to retry ingestion.')).toBeInTheDocument();
+	});
+
 	it('renders retention-purged previews as unavailable', async () => {
 		render(IngestionDetailPage, { data: { detail, activity: [], activityError: null } });
 

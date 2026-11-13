@@ -17,6 +17,7 @@ import ObjectsTable from './ObjectsTable.svelte';
 
 const baseRow: Omit<ObjectRow, 'id' | 'objectId' | 'title' | 'canDownload' | 'accessReasonCode' | 'indicators'> = {
 	thumbnailArtifactId: null,
+	description: null,
 	type: 'DOCUMENT',
 	processingState: 'index_done',
 	curationState: 'reviewed',

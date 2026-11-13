@@ -20,6 +20,11 @@
 	import { locale } from '$lib/i18n/locale';
 	import { translations, type TranslationKey } from '$lib/i18n/translations';
 	import { formatPlural, formatTemplate, translate } from '$lib/i18n/translate';
+	import {
+		readMutationErrorPayloadFromBody,
+		renderLocalizedMessage,
+		type LocalizedMessageState
+	} from '$lib/i18n/mutationErrors';
 	import type { ArchiveRequest } from '$lib/services/archiveRequests';
 	import type {
 		ObjectArtifact,
@@ -74,7 +79,11 @@
 	let showRawManifest = $state(false);
 	let showResyncConfirm = $state(false);
 	let resyncRunning = $state(false);
-	let resyncMessage = $state<{ type: 'success' | 'error'; text: string } | null>(null);
+	let resyncMessage = $state<{
+		type: 'success' | 'error';
+		state: LocalizedMessageState;
+	} | null>(null);
+
 	let requestForm = $state<HTMLFormElement | null>(null);
 	let supportLauncherEl = $state<HTMLButtonElement | null>(null);
 
@@ -89,14 +98,21 @@
 				return;
 			}
 			if (!response.ok) {
-				const payload = await response.json().catch(() => null);
-				resyncMessage = { type: 'error', text: payload?.error ?? t('objects.resync.failed') };
+				const body = await response.json().catch(() => null);
+				const failure = readMutationErrorPayloadFromBody(body, response.status);
+				resyncMessage = {
+					type: 'error',
+					state: { key: 'objects.resync.failed', failure }
+				};
 			} else {
-				resyncMessage = { type: 'success', text: t('objects.resync.success') };
+				resyncMessage = {
+					type: 'success',
+					state: { key: 'objects.resync.success' }
+				};
 				await invalidateAll();
 			}
 		} catch {
-			resyncMessage = { type: 'error', text: t('objects.resync.failed') };
+			resyncMessage = { type: 'error', state: { key: 'objects.resync.failed' } };
 		} finally {
 			resyncRunning = false;
 		}
@@ -104,6 +120,12 @@
 
 	const dictionary = $derived(translations[$locale]);
 	const t = (key: TranslationKey) => translate(dictionary, key);
+
+	const resyncMessageText = $derived(
+		resyncMessage
+			? renderLocalizedMessage(dictionary, $locale, resyncMessage.state)
+			: ''
+	);
 
 	const availabilityLabel = (value: ObjectDetail['availabilityState']): string =>
 		t(availabilityStateKeys[value]);
@@ -204,13 +226,6 @@
 
 	const formatOptionalSize = (bytes: number | null): string =>
 		bytes === null ? t('values.unknown') : formatSize(bytes);
-	const asRecord = (value: unknown): Record<string, unknown> | null => {
-		if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-			return value as Record<string, unknown>;
-		}
-		return null;
-	};
-
 	const asText = (value: unknown): string | null => {
 		if (typeof value !== 'string') {
 			return null;
@@ -219,18 +234,7 @@
 		return normalized.length > 0 ? normalized : null;
 	};
 
-	const resolveDescription = (item: ObjectDetail): string | null => {
-		const fromMetadata = asText(item.metadata.description) ?? asText(item.metadata.summary);
-		if (fromMetadata) {
-			return fromMetadata;
-		}
-
-		const manifest = asRecord(item.ingestManifest);
-		const classification = manifest ? asRecord(manifest.classification) : null;
-		return classification ? asText(classification.summary) : null;
-	};
-
-	const descriptionText = $derived(resolveDescription(detail));
+	const descriptionText = $derived(asText(detail.description));
 	const displayTags = $derived.by(() => {
 		const unique: string[] = [];
 		for (const tag of detail.tags) {
@@ -326,7 +330,9 @@
 	onResync={() => (showResyncConfirm = true)}
 	{canRequestResync}
 	{resyncRunning}
-	{resyncMessage}
+	resyncMessage={resyncMessage
+		? { type: resyncMessage.type, text: resyncMessageText }
+		: null}
 />
 
 
@@ -335,6 +341,16 @@
 		<div class="max-w-3xl">
 			<p class={`text-xs uppercase tracking-[0.2em] ${introLabelClass}`}>{formatTemplate(t('objects.detail.typeObject'), { type: mediaTypeLabel })}</p>
 			<p class={`mt-2 text-sm leading-relaxed ${introTextClass}`}>{descriptionText ?? t('objects.detail.fallbackDescription')}</p>
+			{#if detail.people.length > 0}
+				<section class="mt-4" aria-label={t('objectEdit.metadata.people')}>
+					<p class={`text-xs uppercase tracking-[0.2em] ${introLabelClass}`}>{t('objectEdit.metadata.people')}</p>
+					<ul class="mt-2 flex flex-wrap gap-2">
+						{#each detail.people as person (person)}
+							<li><Chip class="border-blue-slate/20 bg-pale-sky/25 text-sm text-blue-slate">{person}</Chip></li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
 			<div class="mt-4 flex flex-wrap items-center gap-2">
 				<Chip class="border-border-soft bg-surface-white/80 text-xs uppercase tracking-[0.2em] text-text-muted">{t('objects.detail.viewMode')}</Chip>
 				{#if data.session?.role === 'archiver' || data.session?.role === 'admin'}
